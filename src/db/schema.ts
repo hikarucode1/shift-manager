@@ -225,6 +225,8 @@ export const weeklyShifts = pgTable(
       .references(() => profiles.id, { onDelete: "restrict" }),
     date: date("date").notNull(),
     slotNumber: smallint("slot_number").notNull(),
+    /** 座席番号 (CSV の 座番)。未確定の場合 null */
+    seatNumber: text("seat_number"),
     /** 代講・差替によって元と変わっている場合に true */
     isOverride: boolean("is_override").notNull().default(false),
     note: text("note"),
@@ -236,6 +238,58 @@ export const weeklyShifts = pgTable(
     uniq: unique("weekly_shifts_unique").on(t.uploadId, t.tutorId, t.date, t.slotNumber),
     dateSlotIdx: index("weekly_shifts_date_slot_idx").on(t.date, t.slotNumber),
     tutorIdx: index("weekly_shifts_tutor_idx").on(t.tutorId, t.date),
+  }),
+);
+
+/* ------------------------------------------------------------------ */
+/*  students — 生徒マスタ (CSV から自動登録)                             */
+/* ------------------------------------------------------------------ */
+
+export const students = pgTable(
+  "students",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    name: text("name").notNull(),
+    /** 名寄せ用の正規化キー (name と同じにしておき、必要になれば別途) */
+    nameKey: text("name_key").notNull(),
+    isActive: boolean("is_active").notNull().default(true),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (t) => ({
+    nameKeyUnique: unique("students_name_key_unique").on(t.nameKey),
+  }),
+);
+
+/* ------------------------------------------------------------------ */
+/*  shift_assignments — 確定シフト内の生徒割り当て (最大2名 / slot)       */
+/* ------------------------------------------------------------------ */
+
+export const shiftAssignments = pgTable(
+  "shift_assignments",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    weeklyShiftId: uuid("weekly_shift_id")
+      .notNull()
+      .references(() => weeklyShifts.id, { onDelete: "cascade" }),
+    studentId: uuid("student_id")
+      .notNull()
+      .references(() => students.id, { onDelete: "restrict" }),
+    /** 科目コード (例: 英/数/国/理/社/物理/化学/古典/算/他/数Ⅰ ...) */
+    subject: text("subject").notNull(),
+    /** 1 または 2 (左席 / 右席) */
+    position: smallint("position").notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (t) => ({
+    positionUnique: unique("shift_assignments_position_unique").on(
+      t.weeklyShiftId,
+      t.position,
+    ),
+    studentIdx: index("shift_assignments_student_idx").on(t.studentId),
   }),
 );
 
@@ -394,7 +448,7 @@ export const shiftUploadsRelations = relations(shiftUploads, ({ one, many }) => 
   weeklyShifts: many(weeklyShifts),
 }));
 
-export const weeklyShiftsRelations = relations(weeklyShifts, ({ one }) => ({
+export const weeklyShiftsRelations = relations(weeklyShifts, ({ one, many }) => ({
   upload: one(shiftUploads, {
     fields: [weeklyShifts.uploadId],
     references: [shiftUploads.id],
@@ -402,6 +456,22 @@ export const weeklyShiftsRelations = relations(weeklyShifts, ({ one }) => ({
   tutor: one(profiles, {
     fields: [weeklyShifts.tutorId],
     references: [profiles.id],
+  }),
+  assignments: many(shiftAssignments),
+}));
+
+export const studentsRelations = relations(students, ({ many }) => ({
+  assignments: many(shiftAssignments),
+}));
+
+export const shiftAssignmentsRelations = relations(shiftAssignments, ({ one }) => ({
+  weeklyShift: one(weeklyShifts, {
+    fields: [shiftAssignments.weeklyShiftId],
+    references: [weeklyShifts.id],
+  }),
+  student: one(students, {
+    fields: [shiftAssignments.studentId],
+    references: [students.id],
   }),
 }));
 
