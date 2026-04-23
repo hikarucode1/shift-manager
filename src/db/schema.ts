@@ -197,11 +197,15 @@ export const shiftUploads = pgTable("shift_uploads", {
     .references(() => profiles.id, { onDelete: "restrict" }),
   /** 対象週の月曜日 */
   weekStart: date("week_start").notNull(),
-  /** Supabase Storage のオブジェクトキー */
-  storagePath: text("storage_path").notNull(),
+  /** 対象週の日曜日 */
+  weekEnd: date("week_end").notNull(),
+  /** Supabase Storage のオブジェクトキー (将来 Storage 移行時に使用) */
+  storagePath: text("storage_path"),
+  /** 元 CSV の生テキスト (Shift_JIS から UTF-8 化済み)。監査・再解析用 */
+  rawContent: text("raw_content").notNull(),
   originalFilename: text("original_filename").notNull(),
   fileBytes: integer("file_bytes").notNull(),
-  /** 読み取り結果・警告などの解析メタ */
+  /** 解析時の警告・メタ情報 (JSON 文字列) */
   parseMeta: text("parse_meta"),
   publishedAt: timestamp("published_at", { withTimezone: true }),
   createdAt: timestamp("created_at", { withTimezone: true })
