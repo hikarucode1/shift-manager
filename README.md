@@ -39,12 +39,13 @@ npm install
 
 ### 2. Supabase プロジェクト準備
 
-1. [Supabase](https://supabase.com) で新規プロジェクト作成
+1. [Supabase](https://supabase.com) で新規プロジェクト作成（リージョン: `Northeast Asia (Tokyo)` 推奨）
 2. Project Settings > API から以下を取得
-   - Project URL
+   - **Project URL**: `https://<project-ref>.supabase.co`
+     ⚠️ 末尾の `/rest/v1/` を含めない（含めると Auth が PostgREST に流れて 404 になる）
    - anon public key
    - service_role key
-3. Project Settings > Database > Connection pooling から `Transaction` ポートの URL を控える
+3. Project Settings > Database > Connection string > **Transaction pooler** タブの URI を控える（ポート 6543）
 
 ### 3. 環境変数
 
@@ -52,23 +53,40 @@ npm install
 cp .env.local.example .env.local
 ```
 
-`.env.local` を編集し、控えた値を設定します。
-`DATABASE_URL` は **pooler (6543) を推奨**（`postgres-js` は `prepare: false` で接続）。
+`.env.local` を編集して上記 4 つの値を設定。`DATABASE_URL` のパスワード部分 `[YOUR-PASSWORD]` を実際のパスワードに置換するのを忘れずに。
+
+> Next.js も Drizzle CLI も `.env.local` を読みます。`.env` ではないので注意。
 
 ### 4. DB マイグレーション
 
 ```bash
-# 変更から SQL を生成
+# スキーマから SQL を生成（既に generate 済みなら不要）
 npm run db:generate
 
-# 反映（開発時は push で十分）
-npm run db:push
+# 適用
+npm run db:migrate
 ```
 
-初期レコード（コマ定義、教室長アカウントなど）は Supabase ダッシュボード
-もしくは `drizzle-studio` (`npm run db:studio`) で投入してください。
+### 5. 初期データ投入
 
-### 5. 開発サーバー
+Supabase ダッシュボードの **SQL Editor** で実行:
+
+```sql
+insert into slot_definitions (slot_number, label, start_time, end_time) values
+  (1, '1限', '09:30', '10:55'),
+  (2, '2限', '11:00', '12:25'),
+  (3, '3限', '12:30', '13:55'),
+  (4, '4限', '14:00', '15:25'),
+  (5, '5限', '15:30', '16:55'),
+  (6, '6限', '17:00', '18:25'),
+  (7, '7限', '18:30', '19:55'),
+  (8, '8限', '20:00', '21:25');
+```
+
+admin ユーザーは **Authentication > Users > Add user** で作成後、`profiles` に対応する行を `role = 'admin'` で追加。
+詳細は [`scripts/README.md`](./scripts/README.md) の `seed-stub-tutors.ts` なども参照。
+
+### 6. 開発サーバー
 
 ```bash
 npm run dev
