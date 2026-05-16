@@ -16,6 +16,7 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import { WEEKDAYS } from "@/lib/shift-constants";
+import { findMappingDuplicates } from "@/lib/mapping-validation";
 import { cn } from "@/lib/utils";
 import { commitUploadedCsv, parseUploadedCsv } from "./actions";
 
@@ -96,6 +97,12 @@ export function UploadWizard({ tutors }: { tutors: Tutor[] }) {
     const missing = bundle.parsed.uniqueTeacherNames.filter((n) => !mappings[n]);
     if (missing.length > 0) {
       setError(`未対応の講師があります: ${missing.join(", ")}`);
+      return;
+    }
+    if (findMappingDuplicates(mappings).length > 0) {
+      setError(
+        "同じ講師アカウントに複数の CSV 名が割り当てられています。修正してください。",
+      );
       return;
     }
     startCommit(async () => {
@@ -263,6 +270,22 @@ function PreviewStage({
     (n) => !mappings[n],
   ).length;
 
+  const duplicates = useMemo(
+    () => findMappingDuplicates(mappings),
+    [mappings],
+  );
+  const tutorNameById = useMemo(
+    () => new Map(tutors.map((t) => [t.id, t.displayName])),
+    [tutors],
+  );
+  /** 重複に巻き込まれている CSV 名の集合 (行ハイライト用) */
+  const conflictingCsvNames = useMemo(() => {
+    const s = new Set<string>();
+    for (const d of duplicates) for (const n of d.csvNames) s.add(n);
+    return s;
+  }, [duplicates]);
+  const hasDuplicates = duplicates.length > 0;
+
   return (
     <div className="space-y-4">
       <Card>
@@ -301,6 +324,11 @@ function PreviewStage({
                 {unmatchedCount} 件 未対応
               </Badge>
             )}
+            {hasDuplicates && (
+              <Badge variant="destructive" className="ml-2">
+                {duplicates.length} 件 重複
+              </Badge>
+            )}
           </CardTitle>
           <CardDescription>
             CSV の講師名をシステム上の講師アカウントに割り当てます。自動一致したものは事前選択済みです。
@@ -320,14 +348,20 @@ function PreviewStage({
                 return (
                   <div
                     key={name}
-                    className="flex flex-col gap-2 py-2 sm:flex-row sm:items-center sm:justify-between"
+                    className={cn(
+                      "flex flex-col gap-2 py-2 sm:flex-row sm:items-center sm:justify-between",
+                      conflictingCsvNames.has(name) &&
+                        "-mx-2 rounded-md bg-destructive/10 px-2",
+                    )}
                   >
                     <div className="flex items-center gap-2">
                       <span className="text-sm font-medium">{name}</span>
-                      {matched ? (
-                        <Badge variant="secondary">対応OK</Badge>
-                      ) : (
+                      {!matched ? (
                         <Badge variant="destructive">未対応</Badge>
+                      ) : conflictingCsvNames.has(name) ? (
+                        <Badge variant="destructive">重複</Badge>
+                      ) : (
+                        <Badge variant="secondary">対応OK</Badge>
                       )}
                     </div>
                     <select
@@ -352,6 +386,39 @@ function PreviewStage({
           )}
         </CardContent>
       </Card>
+
+      {hasDuplicates && (
+        <Card className="border-destructive/40">
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2 text-base text-destructive">
+              <AlertCircle className="size-4" />
+              同じ講師アカウントへの重複割当
+            </CardTitle>
+            <CardDescription>
+              1 つのアカウントに複数の CSV 名を割り当てると、同じ講師が同じコマに重複し公開できません。
+              いずれかを別のアカウントに変更してください。
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            <ul className="space-y-2 text-sm">
+              {duplicates.map((d) => (
+                <li
+                  key={d.tutorId}
+                  className="rounded-md bg-destructive/10 px-3 py-2"
+                >
+                  <span className="font-medium">
+                    {tutorNameById.get(d.tutorId) ?? "(不明な講師)"}
+                  </span>
+                  <span className="text-muted-foreground">
+                    {" "}
+                    ← CSV「{d.csvNames.join("」「")}」
+                  </span>
+                </li>
+              ))}
+            </ul>
+          </CardContent>
+        </Card>
+      )}
 
       <Card>
         <CardHeader>
@@ -393,7 +460,10 @@ function PreviewStage({
         <Button variant="outline" onClick={onCancel} disabled={isPending}>
           キャンセル
         </Button>
-        <Button onClick={onCommit} disabled={isPending || unmatchedCount > 0}>
+        <Button
+          onClick={onCommit}
+          disabled={isPending || unmatchedCount > 0 || hasDuplicates}
+        >
           {isPending ? "公開中..." : "確定公開"}
         </Button>
       </div>

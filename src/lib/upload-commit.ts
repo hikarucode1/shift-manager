@@ -8,6 +8,7 @@ import {
   weeklyShifts,
 } from "@/db/schema";
 import type { ParsedShiftCsv } from "@/lib/shift-csv-parser";
+import { findMappingDuplicates } from "@/lib/mapping-validation";
 
 export type TeacherMapping = Record<string, string>; // teacherName → profileId
 
@@ -49,6 +50,17 @@ export async function commitShiftUpload(
   if (missing.length > 0) {
     throw new Error(
       `講師の対応付けが未完了です: ${missing.join(", ")}`,
+    );
+  }
+
+  // 同一アカウントへの重複割当を拒否 (DB の unique 制約に当たる前に明示エラー)
+  const dups = findMappingDuplicates(mappings);
+  if (dups.length > 0) {
+    const detail = dups
+      .map((d) => `「${d.csvNames.join("」「")}」`)
+      .join(", ");
+    throw new Error(
+      `同じ講師アカウントに複数の CSV 名が割り当てられています: ${detail}。1 名につき 1 アカウントにしてください。`,
     );
   }
 
