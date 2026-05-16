@@ -8,6 +8,13 @@
       "when": 1778490202106,
       "tag": "0000_careless_stryfe",
       "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "7",
+      "when": 1778961953119,
+      "tag": "0001_fixed_logan",
+      "breakpoints": true
     }
   ]
 }

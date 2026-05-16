@@ -16,8 +16,13 @@ export type SessionProfile = {
   isActive: boolean;
 };
 
+/**
+ * Supabase auth.users.id から内部プロフィールを解決する。
+ * profiles.id ではなく profiles.auth_user_id で引く点に注意:
+ * CSV 由来の stub プロフィール (auth 未連携) と本人ログインを分離した設計。
+ */
 export const getProfile = cache(
-  async (userId: string): Promise<SessionProfile | null> => {
+  async (authUserId: string): Promise<SessionProfile | null> => {
     const rows = await db
       .select({
         id: profiles.id,
@@ -27,7 +32,7 @@ export const getProfile = cache(
         isActive: profiles.isActive,
       })
       .from(profiles)
-      .where(eq(profiles.id, userId))
+      .where(eq(profiles.authUserId, authUserId))
       .limit(1);
 
     return rows[0] ?? null;

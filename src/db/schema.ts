@@ -49,8 +49,10 @@ export const weekdayEnum = pgEnum("weekday", [
 /* ------------------------------------------------------------------ */
 
 export const profiles = pgTable("profiles", {
-  // Supabase auth.users.id と同じ UUID
-  id: uuid("id").primaryKey(),
+  // 内部不変 ID。weekly_shifts 等が参照するため auth とは独立に保つ。
+  id: uuid("id").primaryKey().defaultRandom(),
+  // Supabase auth.users.id。null = まだログインアカウント未連携 (CSV 由来の stub)。
+  authUserId: uuid("auth_user_id").unique(),
   displayName: text("display_name").notNull(),
   role: userRoleEnum("role").notNull().default("tutor"),
   email: text("email").notNull(),
