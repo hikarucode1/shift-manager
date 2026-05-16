@@ -108,6 +108,8 @@ export const periods = pgTable(
     }),
     /** 締切後に再開放した場合 true */
     isReopened: boolean("is_reopened").notNull().default(false),
+    /** アーカイブ (論理削除)。true = 管理一覧から隠す。履歴は保持 */
+    isArchived: boolean("is_archived").notNull().default(false),
     createdBy: uuid("created_by")
       .notNull()
       .references(() => profiles.id, { onDelete: "restrict" }),
