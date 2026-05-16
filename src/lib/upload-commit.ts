@@ -8,6 +8,7 @@ import {
   weeklyShifts,
 } from "@/db/schema";
 import type { ParsedShiftCsv } from "@/lib/shift-csv-parser";
+import { findMappingDuplicates } from "@/lib/mapping-validation";
 
 export type TeacherMapping = Record<string, string>; // teacherName → profileId
 
@@ -49,6 +50,53 @@ export async function commitShiftUpload(
   if (missing.length > 0) {
     throw new Error(
       `講師の対応付けが未完了です: ${missing.join(", ")}`,
+    );
+  }
+
+  // 判定対象は CSV に実在する講師名のみに限定 (missing チェックと同じ正準ソース)。
+  // クライアントが余分/古いキーを送っても誤検出しないようスコープを揃える。
+  const scopedMappings: TeacherMapping = {};
+  for (const name of parsed.uniqueTeacherNames) {
+    scopedMappings[name] = mappings[name];
+  }
+
+  // 同一アカウントへの重複割当を拒否 (DB の unique 制約に当たる前に明示エラー)
+  const dups = findMappingDuplicates(scopedMappings);
+  if (dups.length > 0) {
+    const detail = dups
+      .map((d) => `「${d.csvNames.join("」「")}」`)
+      .join(", ");
+    throw new Error(
+      `同じ講師アカウントに複数の CSV 名が割り当てられています: ${detail}。1 名につき 1 アカウントにしてください。`,
+    );
+  }
+
+  // CSV 内で同じ講師が同じ日・同じコマに 2 回以上現れるケースを検出
+  // (座席を2つ持つ等)。mapping 重複とは別系統だが weekly_shifts_unique
+  // (upload_id, tutor_id, date, slot_number) 違反になるため事前に弾く。
+  const seen = new Set<string>();
+  const collisions: string[] = [];
+  for (const day of parsed.days) {
+    if (day.isHoliday) continue;
+    for (const slot of day.slots) {
+      for (const a of slot.assignments) {
+        const tutorId = scopedMappings[a.teacherName];
+        if (!tutorId) continue;
+        const key = `${day.date}|${slot.slotNumber}|${tutorId}`;
+        if (seen.has(key)) {
+          collisions.push(
+            `${day.date} ${slot.slotNumber}限: ${a.teacherName}`,
+          );
+        } else {
+          seen.add(key);
+        }
+      }
+    }
+  }
+  if (collisions.length > 0) {
+    const uniq = [...new Set(collisions)];
+    throw new Error(
+      `同じ講師が同じ日・同じコマに重複しています: ${uniq.join(" / ")}。CSV を確認してください。`,
     );
   }
 
