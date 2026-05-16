@@ -1,35 +1,32 @@
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { requireRole } from "@/lib/auth";
+import { getTutorWeekSchedule } from "@/lib/tutor-schedule";
+import { weekOf, nextWeek } from "@/lib/week";
+import { WeekScheduleView } from "./week-schedule-view";
 
-export default function TutorHome() {
+export default async function TutorHome() {
+  const { profile } = await requireRole("tutor");
+
+  const thisRange = weekOf();
+  const nextRange = nextWeek(thisRange);
+
+  const [thisWeek, next] = await Promise.all([
+    getTutorWeekSchedule(profile.id, thisRange),
+    getTutorWeekSchedule(profile.id, nextRange),
+  ]);
+
   return (
     <div className="space-y-6">
       <div>
-        <h1 className="text-2xl font-semibold">ホーム</h1>
+        <h1 className="text-2xl font-semibold">今週のシフト</h1>
         <p className="mt-1 text-sm text-muted-foreground">
-          今週のシフトと未対応の申請を確認できます。
+          {profile.displayName} さんの確定シフトです。教室長が座席表を公開すると反映されます。
         </p>
       </div>
 
-      <div className="grid gap-4 sm:grid-cols-2">
-        <Card>
-          <CardHeader>
-            <CardTitle className="text-base">今週の確定シフト</CardTitle>
-            <CardDescription>まだ公開されていません</CardDescription>
-          </CardHeader>
-          <CardContent className="text-sm text-muted-foreground">
-            教室長が Excel をアップロードすると表示されます。
-          </CardContent>
-        </Card>
-        <Card>
-          <CardHeader>
-            <CardTitle className="text-base">未対応の申請</CardTitle>
-            <CardDescription>0 件</CardDescription>
-          </CardHeader>
-          <CardContent className="text-sm text-muted-foreground">
-            欠勤・交代申請の状況がここに表示されます。
-          </CardContent>
-        </Card>
-      </div>
+      <WeekScheduleView
+        thisWeek={thisWeek}
+        nextWeek={next.hasAnyShift ? next : null}
+      />
     </div>
   );
 }
