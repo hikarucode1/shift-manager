@@ -191,6 +191,30 @@ export const trainingPreferences = pgTable(
 );
 
 /* ------------------------------------------------------------------ */
+/*  training_period_notes — 講習希望の期間単位の備考 (講師×期間で1件)   */
+/* ------------------------------------------------------------------ */
+
+export const trainingPeriodNotes = pgTable(
+  "training_period_notes",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    periodId: uuid("period_id")
+      .notNull()
+      .references(() => periods.id, { onDelete: "cascade" }),
+    tutorId: uuid("tutor_id")
+      .notNull()
+      .references(() => profiles.id, { onDelete: "cascade" }),
+    note: text("note").notNull().default(""),
+    updatedAt: timestamp("updated_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (t) => ({
+    uniq: unique("training_period_notes_unique").on(t.periodId, t.tutorId),
+  }),
+);
+
+/* ------------------------------------------------------------------ */
 /*  shift_uploads — Excel アップロードの履歴                            */
 /* ------------------------------------------------------------------ */
 
