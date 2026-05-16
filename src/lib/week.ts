@@ -85,6 +85,12 @@ export function nextWeek(range: WeekRange): WeekRange {
   return { start, end: addDays(start, 6) };
 }
 
+/** 前週 */
+export function prevWeek(range: WeekRange): WeekRange {
+  const start = addDays(range.start, -7);
+  return { start, end: addDays(start, 6) };
+}
+
 /** 週の 7 日分の ISO 日付配列 (月→日) */
 export function daysOfWeek(range: WeekRange): string[] {
   return Array.from({ length: 7 }, (_, i) => addDays(range.start, i));

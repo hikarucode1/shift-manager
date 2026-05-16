@@ -1,15 +1,13 @@
 import "server-only";
-import { cache } from "react";
 import { and, asc, between, eq, gte, isNotNull, lte } from "drizzle-orm";
 import { db } from "@/db/client";
 import {
   shiftAssignments,
   shiftUploads,
-  slotDefinitions,
   students,
   weeklyShifts,
 } from "@/db/schema";
-import { DEFAULT_SLOTS } from "@/lib/shift-constants";
+import { getSlotMeta } from "@/lib/slot-meta";
 import { daysOfWeek, weekdayOf, type WeekRange } from "@/lib/week";
 
 export type ScheduleStudent = { name: string; subject: string };
@@ -41,40 +39,6 @@ export type WeekSchedule = {
   /** この講師にこの週の出勤が 1 件でもあるか */
   hasAnyShift: boolean;
 };
-
-type SlotMeta = { label: string; start: string; end: string };
-
-/**
- * コマ定義は不変なので 1 リクエスト内でキャッシュ
- * (page.tsx は今週/来週で getTutorWeekSchedule を 2 回呼ぶため)。
- */
-const getSlotMeta = cache(async (): Promise<Map<number, SlotMeta>> => {
-  const rows = await db
-    .select()
-    .from(slotDefinitions)
-    .where(eq(slotDefinitions.isActive, true))
-    .orderBy(asc(slotDefinitions.slotNumber));
-
-  const map = new Map<number, SlotMeta>();
-  const source =
-    rows.length > 0
-      ? rows.map((s) => ({
-          slotNumber: s.slotNumber,
-          label: s.label,
-          start: s.startTime,
-          end: s.endTime,
-        }))
-      : DEFAULT_SLOTS.map((s) => ({
-          slotNumber: s.slotNumber,
-          label: s.label,
-          start: s.startTime,
-          end: s.endTime,
-        }));
-  for (const s of source) {
-    map.set(s.slotNumber, { label: s.label, start: s.start, end: s.end });
-  }
-  return map;
-});
 
 /** 指定週に公開済み (published_at あり) のアップロードが存在するか */
 async function isWeekPublished(range: WeekRange): Promise<boolean> {
