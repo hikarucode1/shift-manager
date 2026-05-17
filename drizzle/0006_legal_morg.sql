@@ -1,0 +1,2 @@
+ALTER TABLE "swap_requests" ADD COLUMN "decision_note" text;--> statement-breakpoint
+CREATE UNIQUE INDEX "swap_requests_active_uniq" ON "swap_requests" USING btree ("requester_id","date","slot_number") WHERE "swap_requests"."status" = 'pending';
