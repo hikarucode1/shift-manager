@@ -2,12 +2,15 @@
 
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
-import { and, eq, isNull } from "drizzle-orm";
+import { and, eq, inArray, isNull } from "drizzle-orm";
 import { requireRole } from "@/lib/auth";
 import { db } from "@/db/client";
-import { swapApplications, swapRequests, weeklyShifts } from "@/db/schema";
+import { profiles, swapApplications, swapRequests, weeklyShifts } from "@/db/schema";
 
 type ActionResult = { ok: true } | { ok: false; error: string };
+
+/** 承認処理中の「ユーザーに見せてよい」業務エラー (DB エラー等と区別) */
+class SwapBizError extends Error {}
 
 function revalidateAll() {
   revalidatePath("/admin/requests");
@@ -87,7 +90,7 @@ export async function decideSwapRequest(
         .where(eq(swapRequests.id, data.id))
         .limit(1);
       if (reqRows.length === 0 || reqRows[0].status !== "pending") {
-        throw new Error("対応済みの可能性があります。");
+        throw new SwapBizError("対応済みの可能性があります。");
       }
       const req = reqRows[0];
 
@@ -105,7 +108,7 @@ export async function decideSwapRequest(
         )
         .limit(1);
       if (appRows.length === 0) {
-        throw new Error("選択した応募者が見つかりません。");
+        throw new SwapBizError("選択した応募者が見つかりません。");
       }
       const applicantId = appRows[0].applicantId;
 
@@ -122,13 +125,22 @@ export async function decideSwapRequest(
         )
         .limit(1);
       if (clash.length > 0) {
-        throw new Error("代講者は既にそのコマに出勤予定です。");
+        throw new SwapBizError("代講者は既にそのコマに出勤予定です。");
       }
+
+      // 代講メモ用に氏名取得
+      const names = await tx
+        .select({ id: profiles.id, name: profiles.displayName })
+        .from(profiles)
+        .where(inArray(profiles.id, [req.requesterId, applicantId]));
+      const nameOf = (id: string) =>
+        names.find((n) => n.id === id)?.name ?? "不明";
+      const subNote = `代講(承認済): ${nameOf(req.requesterId)} → ${nameOf(applicantId)}`;
 
       // requester の確定シフトを代講者へ付け替え
       const reassigned = await tx
         .update(weeklyShifts)
-        .set({ tutorId: applicantId, isOverride: true })
+        .set({ tutorId: applicantId, isOverride: true, note: subNote })
         .where(
           and(
             eq(weeklyShifts.tutorId, req.requesterId),
@@ -138,10 +150,11 @@ export async function decideSwapRequest(
         )
         .returning({ id: weeklyShifts.id });
       if (reassigned.length === 0) {
-        throw new Error("付け替え対象の確定シフトが見つかりません。");
+        throw new SwapBizError("付け替え対象の確定シフトが見つかりません。");
       }
 
-      await tx
+      // status='pending' を条件に「奪う」更新。同時承認は rowcount 0 で弾く
+      const claimed = await tx
         .update(swapRequests)
         .set({
           status: "approved",
@@ -150,13 +163,28 @@ export async function decideSwapRequest(
           decidedAt: new Date(),
           updatedAt: new Date(),
         })
-        .where(eq(swapRequests.id, data.id));
+        .where(
+          and(
+            eq(swapRequests.id, data.id),
+            eq(swapRequests.status, "pending"),
+          ),
+        )
+        .returning({ id: swapRequests.id });
+      if (claimed.length === 0) {
+        // 競合: 別承認が先に確定 → トランザクションごとロールバック
+        throw new SwapBizError("既に他の操作で確定済みです。");
+      }
     });
   } catch (e) {
-    const msg =
-      e instanceof Error ? e.message : "承認に失敗しました。";
     console.error("decideSwapRequest approve failed", e);
-    return { ok: false, error: msg };
+    // 想定内の業務エラーのみ文言を返す。DB エラー等は汎用文言
+    if (e instanceof SwapBizError) {
+      return { ok: false, error: e.message };
+    }
+    return {
+      ok: false,
+      error: "承認に失敗しました。時間をおいて再度お試しください。",
+    };
   }
 
   revalidateAll();
