@@ -5,7 +5,7 @@ import { and, eq } from "drizzle-orm";
 import { requireRole } from "@/lib/auth";
 import { db } from "@/db/client";
 import { trainingPeriodNotes, trainingPreferences } from "@/db/schema";
-import { assertTrainingEditable } from "@/lib/training";
+import { assertTrainingEditable, validSlotNumbers } from "@/lib/training";
 import { isValidIsoDate } from "@/lib/week";
 
 type ActionResult = { ok: true } | { ok: false; error: string };
@@ -27,6 +27,16 @@ export async function setTrainingSlot(input: unknown): Promise<ActionResult> {
 
   const gate = await assertTrainingEditable(periodId);
   if (!gate.ok) return { ok: false, error: gate.reason };
+
+  // クライアントを信用しない: date が期間範囲内かをサーバーで検証
+  if (date < gate.startDate || date > gate.endDate) {
+    return { ok: false, error: "対象期間外の日付です。" };
+  }
+  // slotNumber が実コマ定義に存在するか検証
+  const validSlots = await validSlotNumbers();
+  if (!validSlots.has(slotNumber)) {
+    return { ok: false, error: "存在しないコマです。" };
+  }
 
   if (on) {
     await db

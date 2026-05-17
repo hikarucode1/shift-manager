@@ -1,5 +1,5 @@
 import "server-only";
-import { and, asc, eq } from "drizzle-orm";
+import { and, desc, eq } from "drizzle-orm";
 import { db } from "@/db/client";
 import {
   periods,
@@ -91,7 +91,10 @@ function eachDate(startIso: string, endIso: string): string[] {
   return out;
 }
 
-/** 有効な講習期間 (kind=training, 未アーカイブ) を新しい順で */
+/** 終了からこの日数を超えた講習は一覧から隠す (締切後の見直し猶予) */
+const ENDED_VISIBLE_DAYS = 30;
+
+/** 講師に出す講習期間 (kind=training, 未アーカイブ, 直近) を新しい順で */
 export async function getActiveTrainingPeriods(): Promise<
   TrainingPeriodSummary[]
 > {
@@ -106,16 +109,15 @@ export async function getActiveTrainingPeriods(): Promise<
     })
     .from(periods)
     .where(and(eq(periods.kind, "training"), eq(periods.isArchived, false)))
-    .orderBy(asc(periods.startDate));
+    .orderBy(desc(periods.startDate));
+
+  const cutoff = addDaysIso(jstStartOfToday().toISOString().slice(0, 10), -ENDED_VISIBLE_DAYS);
 
   return rows
     .filter((r) => r.submissionDeadline !== null)
     .map((r) => {
       const deadline = r.submissionDeadline as Date;
-      const { editable, daysLeft } = computeEditable(
-        deadline,
-        r.isReopened,
-      );
+      const { editable, daysLeft } = computeEditable(deadline, r.isReopened);
       return {
         id: r.id,
         name: r.name,
@@ -127,7 +129,8 @@ export async function getActiveTrainingPeriods(): Promise<
         editable,
       };
     })
-    .sort((a, b) => (a.startDate < b.startDate ? 1 : -1));
+    // まだ提出可、または終了から ENDED_VISIBLE_DAYS 日以内のものだけ残す
+    .filter((p) => p.editable || p.endDate >= cutoff);
 }
 
 /** 指定講習期間の編集用データ (講師の選択状態 + 備考 + 編集可否) */
@@ -229,13 +232,21 @@ export async function getTrainingEditorData(
   };
 }
 
-/** サーバー側で「今この期間が編集可能か」を厳密判定 (action のガード用) */
+/**
+ * サーバー側で「今この期間が編集可能か」を厳密判定 (action のガード用)。
+ * 成功時は date / slot のサーバー検証に使う期間境界も返す。
+ */
 export async function assertTrainingEditable(
   periodId: string,
-): Promise<{ ok: true } | { ok: false; reason: string }> {
+): Promise<
+  | { ok: true; startDate: string; endDate: string }
+  | { ok: false; reason: string }
+> {
   const rows = await db
     .select({
       kind: periods.kind,
+      startDate: periods.startDate,
+      endDate: periods.endDate,
       submissionDeadline: periods.submissionDeadline,
       isReopened: periods.isReopened,
       isArchived: periods.isArchived,
@@ -256,5 +267,11 @@ export async function assertTrainingEditable(
   if (!editable) {
     return { ok: false, reason: "提出締切を過ぎています。" };
   }
-  return { ok: true };
+  return { ok: true, startDate: r.startDate, endDate: r.endDate };
+}
+
+/** その期間で有効なコマ番号の集合 (slot_definitions 由来) */
+export async function validSlotNumbers(): Promise<Set<number>> {
+  const meta = await getSlotMeta();
+  return new Set(slotNumbers(meta));
 }

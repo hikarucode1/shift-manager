@@ -4,6 +4,7 @@ import { requireRole } from "@/lib/auth";
 import {
   getActiveTrainingPeriods,
   getTrainingEditorData,
+  type TrainingEditorData,
 } from "@/lib/training";
 import {
   Card,
@@ -108,9 +109,7 @@ export default async function TutorTrainingPage({
 }
 
 /** Set はクライアントに渡せないため配列化 */
-function serializeData(
-  d: Awaited<ReturnType<typeof getTrainingEditorData>> & object,
-) {
+function serializeData(d: TrainingEditorData) {
   return {
     period: d.period,
     slots: d.slots,

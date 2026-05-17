@@ -11,6 +11,7 @@ import {
 import { Badge } from "@/components/ui/badge";
 import { Label } from "@/components/ui/label";
 import { cn } from "@/lib/utils";
+import { shortDate } from "@/lib/week";
 import { saveTrainingNote, setTrainingSlot } from "./actions";
 
 type SlotDef = {
@@ -42,11 +43,6 @@ export type TrainingEditorProps = {
 };
 
 const key = (date: string, slot: number) => `${date}|${slot}`;
-
-function shortDate(iso: string): string {
-  const [, m, d] = iso.split("-");
-  return `${Number(m)}/${Number(d)}`;
-}
 
 export function TrainingEditor({ data }: TrainingEditorProps) {
   const { period, slots, days } = data;
@@ -106,17 +102,46 @@ export function TrainingEditor({ data }: TrainingEditorProps) {
 
   // 備考のデバウンス保存
   const noteTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const pendingNote = useRef<string | null>(null);
+  const mounted = useRef(true);
+
+  const flushNote = useCallback(async () => {
+    if (noteTimer.current) {
+      clearTimeout(noteTimer.current);
+      noteTimer.current = null;
+    }
+    if (pendingNote.current === null) return;
+    const v = pendingNote.current;
+    pendingNote.current = null;
+    if (mounted.current) setSavingCount((c) => c + 1);
+    const res = await saveTrainingNote({ periodId: period.id, note: v });
+    if (!mounted.current) return; // unmount 後は state 更新しない (保存自体は完了)
+    setSavingCount((c) => c - 1);
+    if (!res.ok) setNotice({ type: "error", text: res.error });
+    else setNotice({ type: "ok", text: "保存しました" });
+  }, [period.id]);
+
+  // unmount 時: タイマー解除し、未保存があれば最後に保存を投げる
+  useEffect(() => {
+    mounted.current = true;
+    return () => {
+      mounted.current = false;
+      if (noteTimer.current) clearTimeout(noteTimer.current);
+      if (pendingNote.current !== null) {
+        void saveTrainingNote({
+          periodId: period.id,
+          note: pendingNote.current,
+        });
+      }
+    };
+  }, [period.id]);
+
   function onNoteChange(v: string) {
     setNote(v);
     if (!editable) return;
+    pendingNote.current = v;
     if (noteTimer.current) clearTimeout(noteTimer.current);
-    noteTimer.current = setTimeout(async () => {
-      setSavingCount((c) => c + 1);
-      const res = await saveTrainingNote({ periodId: period.id, note: v });
-      setSavingCount((c) => c - 1);
-      if (!res.ok) setNotice({ type: "error", text: res.error });
-      else setNotice({ type: "ok", text: "保存しました" });
-    }, 800);
+    noteTimer.current = setTimeout(() => void flushNote(), 800);
   }
 
   const selectedCount = selected.size;
@@ -212,6 +237,7 @@ export function TrainingEditor({ data }: TrainingEditorProps) {
             id="note"
             value={note}
             onChange={(e) => onNoteChange(e.target.value)}
+            onBlur={() => editable && void flushNote()}
             disabled={!editable}
             rows={3}
             maxLength={1000}
