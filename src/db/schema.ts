@@ -396,6 +396,8 @@ export const swapRequests = pgTable(
     decidedBy: uuid("decided_by").references(() => profiles.id, {
       onDelete: "set null",
     }),
+    /** 教室長の判断コメント (却下理由など) */
+    decisionNote: text("decision_note"),
     decidedAt: timestamp("decided_at", { withTimezone: true }),
     createdAt: timestamp("created_at", { withTimezone: true })
       .notNull()
@@ -407,6 +409,10 @@ export const swapRequests = pgTable(
   (t) => ({
     statusIdx: index("swap_requests_status_idx").on(t.status),
     dateIdx: index("swap_requests_date_idx").on(t.date, t.slotNumber),
+    // 同一講師が同一コマに有効な交代申請を重複させない
+    activeUniq: uniqueIndex("swap_requests_active_uniq")
+      .on(t.requesterId, t.date, t.slotNumber)
+      .where(sql`${t.status} = 'pending'`),
   }),
 );
 
