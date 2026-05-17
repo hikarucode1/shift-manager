@@ -118,6 +118,11 @@ export function WeeklyGrid({ schedule }: { schedule: AdminWeekSchedule }) {
               {tutorFilter
                 ? `表示中 ${shownCount} 件 / 全 ${schedule.totalShiftCount} 件`
                 : `出勤 ${schedule.totalShiftCount} 件`}
+              {schedule.absentShiftCount > 0 && (
+                <span className="ml-2 text-destructive">
+                  欠勤 {schedule.absentShiftCount} 件
+                </span>
+              )}
             </span>
           </CardContent>
         </Card>

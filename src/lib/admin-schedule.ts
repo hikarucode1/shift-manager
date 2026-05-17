@@ -67,6 +67,8 @@ export type AdminWeekSchedule = {
   published: boolean;
   upload: AdminUploadInfo | null;
   totalShiftCount: number;
+  /** うち承認済み欠勤のコマ数 */
+  absentShiftCount: number;
 };
 
 type UploadRow = {
@@ -275,6 +277,11 @@ export async function getAdminWeekSchedule(
     .map(([id, name]) => ({ id, name }))
     .sort((a, b) => a.name.localeCompare(b.name, "ja"));
 
+  let absentShiftCount = 0;
+  for (const e of cellByShift.values()) {
+    if (e.cell.isAbsent) absentShiftCount++;
+  }
+
   return {
     range,
     days,
@@ -283,5 +290,6 @@ export async function getAdminWeekSchedule(
     published: upload !== null,
     upload,
     totalShiftCount: cellByShift.size,
+    absentShiftCount,
   };
 }
