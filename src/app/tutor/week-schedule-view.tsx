@@ -160,6 +160,11 @@ function DayCard({ day }: { day: WeekSchedule["days"][number] }) {
                     代講・差替
                   </Badge>
                 )}
+                {slot.isAbsent && (
+                  <Badge variant="destructive" className="font-normal">
+                    欠勤（承認済）
+                  </Badge>
+                )}
               </div>
               {slot.students.length > 0 ? (
                 <ul className="mt-2 space-y-1">

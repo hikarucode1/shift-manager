@@ -1,0 +1,1 @@
+CREATE UNIQUE INDEX "absence_requests_active_uniq" ON "absence_requests" USING btree ("tutor_id","date","slot_number") WHERE "absence_requests"."status" in ('pending','approved');

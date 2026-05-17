@@ -11,6 +11,7 @@ import {
   text,
   timestamp,
   unique,
+  uniqueIndex,
   uuid,
 } from "drizzle-orm/pg-core";
 
@@ -343,6 +344,8 @@ export const absenceRequests = pgTable(
     decidedBy: uuid("decided_by").references(() => profiles.id, {
       onDelete: "set null",
     }),
+    /** 教室長の判断コメント (却下理由など)。承認時は任意 */
+    decisionNote: text("decision_note"),
     decidedAt: timestamp("decided_at", { withTimezone: true }),
     createdAt: timestamp("created_at", { withTimezone: true })
       .notNull()
@@ -357,6 +360,11 @@ export const absenceRequests = pgTable(
       t.tutorId,
       t.date,
     ),
+    // 同一コマに有効な申請 (pending/approved) は1件まで。
+    // 重複チェックと INSERT の TOCTOU を DB レベルで根治。
+    activeUniq: uniqueIndex("absence_requests_active_uniq")
+      .on(t.tutorId, t.date, t.slotNumber)
+      .where(sql`${t.status} in ('pending','approved')`),
   }),
 );
 

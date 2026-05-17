@@ -1,0 +1,1 @@
+ALTER TABLE "absence_requests" ADD COLUMN "decision_note" text;

@@ -7,6 +7,7 @@ import {
   students,
   weeklyShifts,
 } from "@/db/schema";
+import { getApprovedAbsenceKeys } from "@/lib/absences";
 import { getSlotMeta } from "@/lib/slot-meta";
 import { daysOfWeek, weekdayOf, type WeekRange } from "@/lib/week";
 
@@ -20,6 +21,8 @@ export type ScheduleSlot = {
   seatNumber: string | null;
   isOverride: boolean;
   note: string | null;
+  /** 承認済みの欠勤申請があるコマ */
+  isAbsent: boolean;
   students: ScheduleStudent[];
 };
 
@@ -67,9 +70,10 @@ export async function getTutorWeekSchedule(
   tutorId: string,
   range: WeekRange,
 ): Promise<WeekSchedule> {
-  const [slotMeta, published, rows] = await Promise.all([
+  const [slotMeta, published, absentKeys, rows] = await Promise.all([
     getSlotMeta(),
     isWeekPublished(range),
+    getApprovedAbsenceKeys(tutorId, range.start, range.end),
     db
       .select({
         shiftId: weeklyShifts.id,
@@ -118,6 +122,7 @@ export async function getTutorWeekSchedule(
           seatNumber: r.seatNumber,
           isOverride: r.isOverride,
           note: r.note,
+          isAbsent: absentKeys.has(`${r.date}|${r.slotNumber}`),
           students: [],
         },
       };
