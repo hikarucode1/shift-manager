@@ -301,6 +301,11 @@ function PreviewStage({
     }
     return s;
   }, [parsed.uniqueTeacherNames, tutorCountByName]);
+  /** 同名複数のうち「まだ手動選択されていない」もの (警告カード用) */
+  const unresolvedAmbiguous = useMemo(
+    () => [...ambiguousCsvNames].filter((n) => !mappings[n]),
+    [ambiguousCsvNames, mappings],
+  );
   /** 重複に巻き込まれている CSV 名の集合 (行ハイライト用) */
   const conflictingCsvNames = useMemo(() => {
     const s = new Set<string>();
@@ -450,7 +455,7 @@ function PreviewStage({
         </Card>
       )}
 
-      {ambiguousCsvNames.size > 0 && (
+      {unresolvedAmbiguous.length > 0 && (
         <Card className="border-destructive/40">
           <CardHeader>
             <CardTitle className="flex items-center gap-2 text-base text-destructive">
@@ -464,7 +469,7 @@ function PreviewStage({
           </CardHeader>
           <CardContent>
             <ul className="space-y-1 text-sm">
-              {[...ambiguousCsvNames].map((n) => (
+              {unresolvedAmbiguous.map((n) => (
                 <li
                   key={n}
                   className="rounded-md bg-destructive/10 px-3 py-2"
