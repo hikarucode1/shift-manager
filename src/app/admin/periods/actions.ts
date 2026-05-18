@@ -14,6 +14,15 @@ type PeriodKind = (typeof periodKindEnum.enumValues)[number];
  * 同種別・未アーカイブの他期間と「日付レンジ重複」または「同名」が無いか検証。
  * 重複講習期間があると #7（講習希望提出）で日付がどの期間か一意に決まらない。
  * @returns 問題が無ければ null、あればユーザー向けメッセージ
+ *
+ * ⚠️ 残存リスク (#26 レビュー PR1, 受容済み):
+ * これは SELECT→INSERT/UPDATE の TOCTOU で、DB レベルの制約ではない。
+ * 2 管理者が同時に重なる期間を作るとすり抜けうる。期間作成は
+ * 「管理者のみ・年数回」の低頻度操作で、当たる確率は実質ゼロ、かつ
+ * 一覧で目視検知・後から修正可能なため比例的に受容している。
+ * 昇格条件: 期間作成を一般ユーザーへ開放 / 自動生成 / 高頻度化 した場合は
+ * Postgres EXCLUDE 制約 (btree_gist + daterange, is_archived 条件付き) で
+ * DB レベルに厳密化すること。
  */
 async function findPeriodConflict(args: {
   excludeId?: string;
