@@ -166,6 +166,17 @@ src/
 > ⚠️ **新規 public テーブルを追加したら同様に RLS 有効化 + REVOKE すること**
 > （Supabase の default privileges で anon に再付与され得るため）。
 
+### auth.users 削除との整合（migration 0009 / Issue #23）
+
+`profiles.auth_user_id` は `auth.users` への FK を貼らない方針のため、
+auth user を削除すると参照が宙に浮く。migration `0009` の
+`AFTER DELETE ON auth.users` トリガが該当 profile の `auth_user_id` を
+NULL に戻し、**「未連携(stub)」状態へ正規化**する。これにより教室長は
+`/admin/tutors` で「未連携」として把握でき、「招待」から再連携（復旧）できる。
+
+トリガ導入前に削除された legacy 孤児は
+`tsx scripts/check-auth-orphans.ts [--fix]` で検出・復旧する。
+
 ### 確定シフト Excel
 
 既存 Excel フォーマットに合わせて `exceljs` でパーサーを書きます。

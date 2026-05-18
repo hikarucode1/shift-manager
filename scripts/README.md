@@ -20,6 +20,7 @@ npx tsx scripts/<filename>.ts [args]
 | `test-parser.ts <csv-path>` | 座席表 CSV パーサーの単体動作確認 |
 | `check-rls-migrations.ts` | **静的 RLS ガード（CI）**: drizzle/*.sql を解析し、CREATE TABLE した全 public テーブルに RLS+REVOKE 宣言があるか検証（DB 非接続）。`npm run check:rls` |
 | `check-rls.ts` | **ライブ RLS チェック**: 実 DB の `rowsecurity` と anon/authenticated 残存権限を検査（要 DB 接続）|
+| `check-auth-orphans.ts [--fix]` | `auth_user_id` が `auth.users` に無い孤児 profile を検出（`--fix` で NULL 化＝未連携へ戻す）。0009 トリガ導入後は新規発生なし、legacy 用 |
 
 ## 注意
 
