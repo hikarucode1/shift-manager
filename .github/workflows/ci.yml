@@ -33,6 +33,10 @@ jobs:
       - name: Lint
         run: npm run lint
 
+      - name: RLS guard (static, no DB)
+        # 新規 public テーブルに RLS+REVOKE が無ければ落とす (#38)
+        run: npm run check:rls
+
       - name: Build
         # DB/Supabase へは接続しない (全ページ動的)。
         # モジュール読み込み時の eager 参照対策にダミー値を渡すだけ。

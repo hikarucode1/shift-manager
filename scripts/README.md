@@ -18,6 +18,8 @@ npx tsx scripts/<filename>.ts [args]
 | `reset-password.ts <email> <new-pw>` | パスワードを直接リセット (pgcrypto bcrypt cost 10) |
 | `seed-stub-tutors.ts <csv-path>` | CSV から一意な講師名を抽出し、未登録の名前を `profiles` に追加（テスト用、auth は無し） |
 | `test-parser.ts <csv-path>` | 座席表 CSV パーサーの単体動作確認 |
+| `check-rls-migrations.ts` | **静的 RLS ガード（CI）**: drizzle/*.sql を解析し、CREATE TABLE した全 public テーブルに RLS+REVOKE 宣言があるか検証（DB 非接続）。`npm run check:rls` |
+| `check-rls.ts` | **ライブ RLS チェック**: 実 DB の `rowsecurity` と anon/authenticated 残存権限を検査（要 DB 接続）|
 
 ## 注意
 
