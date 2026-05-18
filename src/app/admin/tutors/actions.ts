@@ -6,27 +6,10 @@ import { and, eq, isNull, ne } from "drizzle-orm";
 import { requireRole } from "@/lib/auth";
 import { db } from "@/db/client";
 import { profiles } from "@/db/schema";
+import { isUniqueViolation } from "@/lib/db-errors";
 import { createAdminClient } from "@/lib/supabase/admin";
 
 type ActionResult = { ok: true } | { ok: false; error: string };
-
-/**
- * Postgres unique 制約違反か判定。
- * drizzle(postgres-js) はエラーを "Failed query: ..." でラップし、実 PG エラー
- * (code 23505 / 制約名) は cause 側にあるため、message と cause を再帰確認する。
- */
-function isUniqueViolation(e: unknown, constraint?: string): boolean {
-  let cur: unknown = e;
-  for (let i = 0; i < 5 && cur; i++) {
-    const o = cur as { code?: unknown; message?: unknown; cause?: unknown };
-    if (o.code === "23505") return true;
-    const msg = typeof o.message === "string" ? o.message : "";
-    if (/unique constraint|duplicate key|23505/i.test(msg)) return true;
-    if (constraint && msg.includes(constraint)) return true;
-    cur = o.cause;
-  }
-  return false;
-}
 
 /** 招待: 新規講師 (displayName) または 既存 stub への紐付け (profileId) */
 const InviteSchema = z.union([

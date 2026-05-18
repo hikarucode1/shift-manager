@@ -6,6 +6,7 @@ import { and, eq, inArray } from "drizzle-orm";
 import { requireRole } from "@/lib/auth";
 import { db } from "@/db/client";
 import { absenceRequests, swapRequests, weeklyShifts } from "@/db/schema";
+import { isUniqueViolation } from "@/lib/db-errors";
 import { isValidIsoDate, jstToday } from "@/lib/week";
 
 type ActionResult = { ok: true } | { ok: false; error: string };
@@ -110,10 +111,7 @@ export async function createAbsenceRequest(
     });
   } catch (e) {
     // 同時送信などで部分ユニーク制約に当たった場合
-    if (
-      e instanceof Error &&
-      /absence_requests_active_uniq|unique/i.test(e.message)
-    ) {
+    if (isUniqueViolation(e, "absence_requests_active_uniq")) {
       return { ok: false, error: "このコマには既に申請があります。" };
     }
     console.error("createAbsenceRequest insert failed", e);

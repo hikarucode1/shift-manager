@@ -12,6 +12,7 @@ import {
   swapRequests,
   weeklyShifts,
 } from "@/db/schema";
+import { isUniqueViolation } from "@/lib/db-errors";
 import { isValidIsoDate, jstToday } from "@/lib/week";
 
 type ActionResult = { ok: true } | { ok: false; error: string };
@@ -127,7 +128,7 @@ export async function createSwapRequest(
       reason,
     });
   } catch (e) {
-    if (e instanceof Error && /active_uniq|unique/i.test(e.message)) {
+    if (isUniqueViolation(e, "swap_requests_active_uniq")) {
       return { ok: false, error: "このコマには既に交代申請があります。" };
     }
     console.error("createSwapRequest failed", e);
