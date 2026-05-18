@@ -215,6 +215,7 @@ export async function fetchActiveTutors() {
     .select({
       id: profiles.id,
       displayName: profiles.displayName,
+      email: profiles.email,
     })
     .from(profiles)
     .where(and(eq(profiles.role, "tutor"), eq(profiles.isActive, true)))

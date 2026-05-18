@@ -20,7 +20,7 @@ import { findMappingDuplicates } from "@/lib/mapping-validation";
 import { cn } from "@/lib/utils";
 import { commitUploadedCsv, parseUploadedCsv } from "./actions";
 
-type Tutor = { id: string; displayName: string };
+type Tutor = { id: string; displayName: string; email: string };
 type Mappings = Record<string, string>; // teacherName -> tutorId or ""
 
 type Stage = "idle" | "parsed" | "done";
@@ -74,11 +74,20 @@ export function UploadWizard({ tutors }: { tutors: Tutor[] }) {
         setError(res.error);
         return;
       }
-      // Auto-map by exact display_name match
+      // Auto-map by exact display_name match.
+      // 同名講師が複数いる場合 (#21) は順序依存の誤割当を避けるため
+      // 自動選択せず未対応のまま残す (教室長が手動で選ぶ)。
+      const byName = new Map<string, number>();
+      for (const t of tutors) {
+        byName.set(t.displayName, (byName.get(t.displayName) ?? 0) + 1);
+      }
       const auto: Mappings = {};
       for (const name of res.parsed.uniqueTeacherNames) {
-        const found = tutors.find((t) => t.displayName === name);
-        auto[name] = found?.id ?? "";
+        const count = byName.get(name) ?? 0;
+        auto[name] =
+          count === 1
+            ? (tutors.find((t) => t.displayName === name)?.id ?? "")
+            : "";
       }
       setBundle({
         parsed: res.parsed,
@@ -278,6 +287,25 @@ function PreviewStage({
     () => new Map(tutors.map((t) => [t.id, t.displayName])),
     [tutors],
   );
+  /** displayName ごとの講師アカウント数 (同名検出用) */
+  const tutorCountByName = useMemo(() => {
+    const m = new Map<string, number>();
+    for (const t of tutors) m.set(t.displayName, (m.get(t.displayName) ?? 0) + 1);
+    return m;
+  }, [tutors]);
+  /** CSV 名が「同名アカウント複数」で自動割当できない集合 (#21) */
+  const ambiguousCsvNames = useMemo(() => {
+    const s = new Set<string>();
+    for (const n of parsed.uniqueTeacherNames) {
+      if ((tutorCountByName.get(n) ?? 0) > 1) s.add(n);
+    }
+    return s;
+  }, [parsed.uniqueTeacherNames, tutorCountByName]);
+  /** 同名複数のうち「まだ手動選択されていない」もの (警告カード用) */
+  const unresolvedAmbiguous = useMemo(
+    () => [...ambiguousCsvNames].filter((n) => !mappings[n]),
+    [ambiguousCsvNames, mappings],
+  );
   /** 重複に巻き込まれている CSV 名の集合 (行ハイライト用) */
   const conflictingCsvNames = useMemo(() => {
     const s = new Set<string>();
@@ -357,7 +385,11 @@ function PreviewStage({
                     <div className="flex items-center gap-2">
                       <span className="text-sm font-medium">{name}</span>
                       {!matched ? (
-                        <Badge variant="destructive">未対応</Badge>
+                        ambiguousCsvNames.has(name) ? (
+                          <Badge variant="destructive">要手動選択</Badge>
+                        ) : (
+                          <Badge variant="destructive">未対応</Badge>
+                        )
                       ) : conflictingCsvNames.has(name) ? (
                         <Badge variant="destructive">重複</Badge>
                       ) : (
@@ -375,7 +407,10 @@ function PreviewStage({
                       <option value="">— 未選択 —</option>
                       {tutors.map((t) => (
                         <option key={t.id} value={t.id}>
-                          {t.displayName}
+                          {/* 同名が複数いる時はメール併記で判別可能に (#21) */}
+                          {(tutorCountByName.get(t.displayName) ?? 0) > 1
+                            ? `${t.displayName}（${t.email}）`
+                            : t.displayName}
                         </option>
                       ))}
                     </select>
@@ -412,6 +447,37 @@ function PreviewStage({
                   <span className="text-muted-foreground">
                     {" "}
                     ← CSV「{d.csvNames.join("」「")}」
+                  </span>
+                </li>
+              ))}
+            </ul>
+          </CardContent>
+        </Card>
+      )}
+
+      {unresolvedAmbiguous.length > 0 && (
+        <Card className="border-destructive/40">
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2 text-base text-destructive">
+              <AlertCircle className="size-4" />
+              同名の講師アカウントが複数あります
+            </CardTitle>
+            <CardDescription>
+              以下の名前は同名アカウントが複数あるため自動割当していません。
+              ドロップダウン（メール併記）から正しい講師を手動で選択してください。
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            <ul className="space-y-1 text-sm">
+              {unresolvedAmbiguous.map((n) => (
+                <li
+                  key={n}
+                  className="rounded-md bg-destructive/10 px-3 py-2"
+                >
+                  <span className="font-medium">{n}</span>
+                  <span className="text-muted-foreground">
+                    {" "}
+                    （該当アカウント{tutorCountByName.get(n)}件）
                   </span>
                 </li>
               ))}
