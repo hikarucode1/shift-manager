@@ -64,6 +64,20 @@
       "when": 1779107451605,
       "tag": "0008_black_ultragirl",
       "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "7",
+      "when": 1779107451606,
+      "tag": "0009_auth_orphan_trigger",
+      "breakpoints": true
+    },
+    {
+      "idx": 10,
+      "version": "7",
+      "when": 1779107451607,
+      "tag": "0010_auth_orphan_trigger_failopen",
+      "breakpoints": true
     }
   ]
 }
