@@ -68,6 +68,37 @@ const isoDate = z
   .refine((v) => isValidIsoDate(v), "日付の形式が正しくありません。");
 
 /**
+ * 期間長 (開始・終了を含む日数) の運用上限。
+ * training は #7 で eachDate により 1 日ずつ展開され、その安全弁が 366 日で
+ * 頭打ちになる (src/lib/training.ts)。上限を設けないと 1 年超の誤設定で
+ * 日付が無言で切り捨てられる (#29)。90 日は講習の運用上の最長。
+ * normal は日次展開しないが、年単位の誤入力 (西暦打ち間違い等) を弾くため緩い上限。
+ */
+const MAX_PERIOD_DAYS: Record<PeriodKind, number> = {
+  training: 90,
+  normal: 400,
+};
+
+/** 開始・終了を含む日数。ISO 日付前提 (UTC 正午基準で DST 無関係)。 */
+function periodLengthDays(startIso: string, endIso: string): number {
+  const s = Date.parse(`${startIso}T12:00:00.000Z`);
+  const e = Date.parse(`${endIso}T12:00:00.000Z`);
+  return Math.round((e - s) / 86_400_000) + 1;
+}
+
+function periodLengthError(
+  kind: PeriodKind,
+  startDate: string,
+  endDate: string,
+): string | null {
+  const max = MAX_PERIOD_DAYS[kind];
+  if (periodLengthDays(startDate, endDate) > max) {
+    return `${kind === "training" ? "講習" : "通常"}期間が長すぎます（最長 ${max} 日）。日付を見直してください。`;
+  }
+  return null;
+}
+
+/**
  * 講習期間の締切は「その日の終わり (JST 23:59:59.999)」として timestamp 化。
  * 締切当日いっぱい (ミリ秒末まで) を提出可能にするため .999 を含める。
  */
@@ -125,6 +156,9 @@ export async function createPeriod(input: unknown): Promise<ActionResult> {
   }
   const v = parsed.data;
 
+  const lengthError = periodLengthError(v.kind, v.startDate, v.endDate);
+  if (lengthError) return { ok: false, error: lengthError };
+
   const conflict = await findPeriodConflict({
     kind: v.kind,
     name: v.name,
@@ -181,6 +215,9 @@ export async function updatePeriod(input: unknown): Promise<ActionResult> {
     return { ok: false, error: "対象の期間が見つかりません。" };
   }
   const kind = rows[0].kind;
+
+  const lengthError = periodLengthError(kind, v.startDate, v.endDate);
+  if (lengthError) return { ok: false, error: lengthError };
 
   if (kind === "training") {
     if (!(typeof v.submissionDeadline === "string" && v.submissionDeadline)) {
