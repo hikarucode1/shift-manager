@@ -2,7 +2,7 @@ import { and, asc, eq, gte } from "drizzle-orm";
 import { requireRole } from "@/lib/auth";
 import { db } from "@/db/client";
 import { fixedShifts, slotDefinitions } from "@/db/schema";
-import { DEFAULT_SLOTS } from "@/lib/shift-constants";
+import { DEFAULT_SLOTS, type InputWeekday } from "@/lib/shift-constants";
 import { FixedShiftEditor } from "./fixed-shift-editor";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 
@@ -56,10 +56,14 @@ export default async function FixedShiftPage() {
         )
       : null;
 
+  // Issue #56: 過去に sun で保存された行があっても、入力UIには出さない。
   const currentEntries = latestEffectiveFrom
     ? existing
-        .filter((r) => r.effectiveFrom === latestEffectiveFrom)
-        .map((r) => ({ weekday: r.weekday, slotNumber: r.slotNumber }))
+        .filter((r) => r.effectiveFrom === latestEffectiveFrom && r.weekday !== "sun")
+        .map((r) => ({
+          weekday: r.weekday as InputWeekday,
+          slotNumber: r.slotNumber,
+        }))
     : [];
 
   return (

@@ -10,6 +10,18 @@ export const WEEKDAYS = [
 
 export type Weekday = (typeof WEEKDAYS)[number]["key"];
 
+export type InputWeekday = Exclude<Weekday, "sun">;
+
+// 講師レギュラー入力用 (日曜は教室休校のため除外)。Issue #56
+export const INPUT_WEEKDAYS = [
+  { key: "mon", label: "月" },
+  { key: "tue", label: "火" },
+  { key: "wed", label: "水" },
+  { key: "thu", label: "木" },
+  { key: "fri", label: "金" },
+  { key: "sat", label: "土" },
+] as const satisfies ReadonlyArray<{ key: InputWeekday; label: string }>;
+
 /** 英才個別学院 東武練馬校 の実運用コマ定義 (1限〜8限) */
 export const DEFAULT_SLOTS = [
   { slotNumber: 1, label: "1限", startTime: "09:30", endTime: "10:55" },

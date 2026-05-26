@@ -5,7 +5,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { cn } from "@/lib/utils";
-import { WEEKDAYS, type Weekday } from "@/lib/shift-constants";
+import { INPUT_WEEKDAYS, type InputWeekday } from "@/lib/shift-constants";
 import { saveFixedShifts } from "./actions";
 
 type Slot = {
@@ -15,9 +15,9 @@ type Slot = {
   endTime: string;
 };
 
-type Entry = { weekday: Weekday; slotNumber: number };
+type Entry = { weekday: InputWeekday; slotNumber: number };
 
-function cellKey(weekday: Weekday, slotNumber: number) {
+function cellKey(weekday: InputWeekday, slotNumber: number) {
   return `${weekday}:${slotNumber}`;
 }
 
@@ -45,13 +45,13 @@ export function FixedShiftEditor({
   const entries = useMemo<Entry[]>(
     () =>
       [...selected].map((k) => {
-        const [weekday, slotNumber] = k.split(":") as [Weekday, string];
+        const [weekday, slotNumber] = k.split(":") as [InputWeekday, string];
         return { weekday, slotNumber: Number(slotNumber) };
       }),
     [selected],
   );
 
-  function toggle(weekday: Weekday, slotNumber: number) {
+  function toggle(weekday: InputWeekday, slotNumber: number) {
     const key = cellKey(weekday, slotNumber);
     setSelected((prev) => {
       const next = new Set(prev);
@@ -80,7 +80,7 @@ export function FixedShiftEditor({
           <thead>
             <tr>
               <th className="w-16 text-xs font-medium text-muted-foreground"></th>
-              {WEEKDAYS.map((w) => (
+              {INPUT_WEEKDAYS.map((w) => (
                 <th
                   key={w.key}
                   className="text-xs font-medium text-muted-foreground"
@@ -99,7 +99,7 @@ export function FixedShiftEditor({
                     {slot.startTime}–{slot.endTime}
                   </div>
                 </th>
-                {WEEKDAYS.map((w) => {
+                {INPUT_WEEKDAYS.map((w) => {
                   const active = selected.has(cellKey(w.key, slot.slotNumber));
                   return (
                     <td key={w.key} className="p-0">

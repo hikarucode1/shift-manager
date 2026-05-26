@@ -7,8 +7,9 @@ import { requireRole } from "@/lib/auth";
 import { db } from "@/db/client";
 import { fixedShifts } from "@/db/schema";
 
+// 日曜は教室休校 (Issue #56) のため入力対象外。サーバ側でも拒否する。
 const EntrySchema = z.object({
-  weekday: z.enum(["mon", "tue", "wed", "thu", "fri", "sat", "sun"]),
+  weekday: z.enum(["mon", "tue", "wed", "thu", "fri", "sat"]),
   slotNumber: z.number().int().min(1).max(20),
 });
 
