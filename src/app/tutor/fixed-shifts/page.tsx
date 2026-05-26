@@ -34,7 +34,6 @@ export default async function FixedShiftPage() {
         weekday: fixedShifts.weekday,
         slotNumber: fixedShifts.slotNumber,
         effectiveFrom: fixedShifts.effectiveFrom,
-        effectiveTo: fixedShifts.effectiveTo,
         availability: fixedShifts.availability,
       })
       .from(fixedShifts)
@@ -47,6 +46,7 @@ export default async function FixedShiftPage() {
     db
       .select({
         effectiveFrom: fixedShiftSubmissions.effectiveFrom,
+        effectiveTo: fixedShiftSubmissions.effectiveTo,
         desiredDays: fixedShiftSubmissions.desiredDays,
         desiredSlots: fixedShiftSubmissions.desiredSlots,
         note: fixedShiftSubmissions.note,
@@ -98,19 +98,14 @@ export default async function FixedShiftPage() {
         }))
     : [];
 
-  // 提出単位メタ。fixed_shifts に effective_to を持たせる設計 (Issue #58)
-  // なので、メタの effective_to は当該 effective_from のシフト行から拾う。
+  // 提出単位メタ (Issue #57/#58/#59) は fixed_shift_submissions 側に全て寄せている。
+  // 当初 effective_to は fixed_shifts 側だったが、entries 空 (全コマ不可) のとき
+  // shifts 行が消えて終了日が復元できなくなる PR #65 レビュー指摘で submissions に移管。
   const submissionRow = latestEffectiveFrom
     ? submissionRows.find((r) => r.effectiveFrom === latestEffectiveFrom)
     : undefined;
-  const effectiveToFromShifts = latestEffectiveFrom
-    ? existing.find(
-        (r) =>
-          r.effectiveFrom === latestEffectiveFrom && r.effectiveTo != null,
-      )?.effectiveTo ?? null
-    : null;
   const initialMeta: FixedShiftSubmissionMeta = {
-    effectiveTo: effectiveToFromShifts,
+    effectiveTo: submissionRow?.effectiveTo ?? null,
     desiredDays: submissionRow?.desiredDays ?? null,
     desiredSlots: submissionRow?.desiredSlots ?? null,
     note: submissionRow?.note ?? null,

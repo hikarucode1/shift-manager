@@ -1,5 +1,5 @@
 {
-  "id": "f1b5e6d2-e2a5-468a-a432-de5a66b70257",
+  "id": "ac5fa964-da0b-4506-b615-40fe6edd7aeb",
   "prevId": "c4fecc19-0274-42e0-9c95-34e2dabb90ae",
   "version": "7",
   "dialect": "postgresql",
@@ -196,6 +196,12 @@
           "primaryKey": false,
           "notNull": true
         },
+        "effective_to": {
+          "name": "effective_to",
+          "type": "date",
+          "primaryKey": false,
+          "notNull": false
+        },
         "desired_days": {
           "name": "desired_days",
           "type": "smallint",
@@ -287,12 +293,6 @@
           "type": "date",
           "primaryKey": false,
           "notNull": true
-        },
-        "effective_to": {
-          "name": "effective_to",
-          "type": "date",
-          "primaryKey": false,
-          "notNull": false
         },
         "availability": {
           "name": "availability",

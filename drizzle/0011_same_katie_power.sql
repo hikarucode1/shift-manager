@@ -2,6 +2,7 @@ CREATE TYPE "public"."shift_availability" AS ENUM('yes', 'maybe', 'no');--> stat
 CREATE TABLE "fixed_shift_submissions" (
 	"tutor_id" uuid NOT NULL,
 	"effective_from" date NOT NULL,
+	"effective_to" date,
 	"desired_days" smallint,
 	"desired_slots" smallint,
 	"note" text,
@@ -10,7 +11,6 @@ CREATE TABLE "fixed_shift_submissions" (
 	CONSTRAINT "fixed_shift_submissions_tutor_id_effective_from_pk" PRIMARY KEY("tutor_id","effective_from")
 );
 --> statement-breakpoint
-ALTER TABLE "fixed_shifts" ADD COLUMN "effective_to" date;--> statement-breakpoint
 ALTER TABLE "fixed_shifts" ADD COLUMN "availability" "shift_availability" DEFAULT 'yes' NOT NULL;--> statement-breakpoint
 ALTER TABLE "fixed_shift_submissions" ADD CONSTRAINT "fixed_shift_submissions_tutor_id_profiles_id_fk" FOREIGN KEY ("tutor_id") REFERENCES "public"."profiles"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
 

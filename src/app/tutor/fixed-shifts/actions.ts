@@ -85,17 +85,18 @@ export async function saveFixedShifts(
             weekday: e.weekday,
             slotNumber: e.slotNumber,
             effectiveFrom,
-            effectiveTo,
             availability: e.availability,
           })),
         );
       }
 
-      // 提出単位メタ (Issue #57/#58/#59) を insert (直前に同スコープを delete 済)
+      // 提出単位メタ (Issue #57/#58/#59) を insert (直前に同スコープを delete 済)。
+      // effective_to は entries が空でも保持されるよう submissions 側に寄せている。
       const trimmedNote = note?.trim() ? note.trim() : null;
       await tx.insert(fixedShiftSubmissions).values({
         tutorId: profile.id,
         effectiveFrom,
+        effectiveTo,
         desiredDays,
         desiredSlots,
         note: trimmedNote,

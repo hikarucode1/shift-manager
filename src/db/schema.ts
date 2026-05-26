@@ -154,8 +154,6 @@ export const fixedShifts = pgTable(
     slotNumber: smallint("slot_number").notNull(),
     /** この設定の適用開始日 */
     effectiveFrom: date("effective_from").notNull(),
-    /** 適用終了日 (Issue #58)。null = 無期限 */
-    effectiveTo: date("effective_to"),
     /** Issue #55: 3値希望。既存行は yes でバックフィル */
     availability: shiftAvailabilityEnum("availability").notNull().default("yes"),
     createdAt: timestamp("created_at", { withTimezone: true })
@@ -184,6 +182,10 @@ export const fixedShiftSubmissions = pgTable(
       .notNull()
       .references(() => profiles.id, { onDelete: "cascade" }),
     effectiveFrom: date("effective_from").notNull(),
+    /** Issue #58: 適用終了日 (任意, null = 無期限)。提出単位のメタとして保持。
+     *  当初は fixed_shifts に置く設計だったが、entries 空 (全コマ不可) のとき
+     *  fixed_shifts に行が 1 件もなくなり終了日が消える PR #65 のレビュー指摘で移管。 */
+    effectiveTo: date("effective_to"),
     /** Issue #57: 希望出勤日数 (整数, 任意) */
     desiredDays: smallint("desired_days"),
     /** Issue #57: 希望出勤コマ数 (整数, 任意) */
