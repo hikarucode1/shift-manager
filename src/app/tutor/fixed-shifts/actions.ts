@@ -59,13 +59,22 @@ export async function saveFixedShifts(
 
   try {
     await db.transaction(async (tx) => {
-      // 今後分 (effectiveFrom 以降) の既存レコードを削除し、今回の内容で置換
+      // 今後分 (effectiveFrom 以降) の既存レコードを削除し、今回の内容で置換。
+      // shifts とメタを同じスコープで揃えないと、将来分の古いメタが孤立する (#65 P2)。
       await tx
         .delete(fixedShifts)
         .where(
           and(
             eq(fixedShifts.tutorId, profile.id),
             gte(fixedShifts.effectiveFrom, effectiveFrom),
+          ),
+        );
+      await tx
+        .delete(fixedShiftSubmissions)
+        .where(
+          and(
+            eq(fixedShiftSubmissions.tutorId, profile.id),
+            gte(fixedShiftSubmissions.effectiveFrom, effectiveFrom),
           ),
         );
 
@@ -82,29 +91,15 @@ export async function saveFixedShifts(
         );
       }
 
-      // 提出単位メタ (Issue #57/#58/#59) を upsert
+      // 提出単位メタ (Issue #57/#58/#59) を insert (直前に同スコープを delete 済)
       const trimmedNote = note?.trim() ? note.trim() : null;
-      await tx
-        .insert(fixedShiftSubmissions)
-        .values({
-          tutorId: profile.id,
-          effectiveFrom,
-          desiredDays,
-          desiredSlots,
-          note: trimmedNote,
-        })
-        .onConflictDoUpdate({
-          target: [
-            fixedShiftSubmissions.tutorId,
-            fixedShiftSubmissions.effectiveFrom,
-          ],
-          set: {
-            desiredDays,
-            desiredSlots,
-            note: trimmedNote,
-            updatedAt: new Date(),
-          },
-        });
+      await tx.insert(fixedShiftSubmissions).values({
+        tutorId: profile.id,
+        effectiveFrom,
+        desiredDays,
+        desiredSlots,
+        note: trimmedNote,
+      });
     });
   } catch (err) {
     console.error("saveFixedShifts failed", err);

@@ -70,13 +70,16 @@ export default async function FixedShiftPage() {
         }))
       : DEFAULT_SLOTS.map((s) => ({ ...s }));
 
-  // 既存の設定があれば最新の effectiveFrom を取り出す
+  // 既存の設定があれば最新の effectiveFrom を取り出す。
+  // shifts とメタ両方を見ないと、entries 空 (全コマ不可) でメタだけ提出した
+  // ケースが復元されない (#65 P1)。
+  const allEffectiveFromDates: string[] = [
+    ...existing.map((r) => r.effectiveFrom),
+    ...submissionRows.map((r) => r.effectiveFrom),
+  ];
   const latestEffectiveFrom =
-    existing.length > 0
-      ? existing.reduce(
-          (acc, row) => (row.effectiveFrom > acc ? row.effectiveFrom : acc),
-          existing[0].effectiveFrom,
-        )
+    allEffectiveFromDates.length > 0
+      ? allEffectiveFromDates.reduce((acc, d) => (d > acc ? d : acc))
       : null;
 
   // Issue #55/#56: sun は入力対象外、no は行不在で表現するため除外
