@@ -1,9 +1,16 @@
 import { and, asc, eq, gte } from "drizzle-orm";
 import { requireRole } from "@/lib/auth";
 import { db } from "@/db/client";
-import { fixedShifts, slotDefinitions } from "@/db/schema";
+import {
+  fixedShifts,
+  fixedShiftSubmissions,
+  slotDefinitions,
+} from "@/db/schema";
 import { DEFAULT_SLOTS, type InputWeekday } from "@/lib/shift-constants";
-import { FixedShiftEditor } from "./fixed-shift-editor";
+import {
+  FixedShiftEditor,
+  type FixedShiftSubmissionMeta,
+} from "./fixed-shift-editor";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 
 function todayIso() {
@@ -16,7 +23,7 @@ export default async function FixedShiftPage() {
   const { profile } = await requireRole("tutor");
   const today = todayIso();
 
-  const [slotRows, existing] = await Promise.all([
+  const [slotRows, existing, submissionRows] = await Promise.all([
     db
       .select()
       .from(slotDefinitions)
@@ -27,12 +34,28 @@ export default async function FixedShiftPage() {
         weekday: fixedShifts.weekday,
         slotNumber: fixedShifts.slotNumber,
         effectiveFrom: fixedShifts.effectiveFrom,
+        availability: fixedShifts.availability,
       })
       .from(fixedShifts)
       .where(
         and(
           eq(fixedShifts.tutorId, profile.id),
           gte(fixedShifts.effectiveFrom, today),
+        ),
+      ),
+    db
+      .select({
+        effectiveFrom: fixedShiftSubmissions.effectiveFrom,
+        effectiveTo: fixedShiftSubmissions.effectiveTo,
+        desiredDays: fixedShiftSubmissions.desiredDays,
+        desiredSlots: fixedShiftSubmissions.desiredSlots,
+        note: fixedShiftSubmissions.note,
+      })
+      .from(fixedShiftSubmissions)
+      .where(
+        and(
+          eq(fixedShiftSubmissions.tutorId, profile.id),
+          gte(fixedShiftSubmissions.effectiveFrom, today),
         ),
       ),
   ]);
@@ -47,24 +70,46 @@ export default async function FixedShiftPage() {
         }))
       : DEFAULT_SLOTS.map((s) => ({ ...s }));
 
-  // 既存の設定があれば最新の effectiveFrom を取り出す
+  // 既存の設定があれば最新の effectiveFrom を取り出す。
+  // shifts とメタ両方を見ないと、entries 空 (全コマ不可) でメタだけ提出した
+  // ケースが復元されない (#65 P1)。
+  const allEffectiveFromDates: string[] = [
+    ...existing.map((r) => r.effectiveFrom),
+    ...submissionRows.map((r) => r.effectiveFrom),
+  ];
   const latestEffectiveFrom =
-    existing.length > 0
-      ? existing.reduce(
-          (acc, row) => (row.effectiveFrom > acc ? row.effectiveFrom : acc),
-          existing[0].effectiveFrom,
-        )
+    allEffectiveFromDates.length > 0
+      ? allEffectiveFromDates.reduce((acc, d) => (d > acc ? d : acc))
       : null;
 
-  // Issue #56: 過去に sun で保存された行があっても、入力UIには出さない。
+  // Issue #55/#56: sun は入力対象外、no は行不在で表現するため除外
   const currentEntries = latestEffectiveFrom
     ? existing
-        .filter((r) => r.effectiveFrom === latestEffectiveFrom && r.weekday !== "sun")
+        .filter(
+          (r) =>
+            r.effectiveFrom === latestEffectiveFrom &&
+            r.weekday !== "sun" &&
+            r.availability !== "no",
+        )
         .map((r) => ({
           weekday: r.weekday as InputWeekday,
           slotNumber: r.slotNumber,
+          availability: r.availability as "yes" | "maybe",
         }))
     : [];
+
+  // 提出単位メタ (Issue #57/#58/#59) は fixed_shift_submissions 側に全て寄せている。
+  // 当初 effective_to は fixed_shifts 側だったが、entries 空 (全コマ不可) のとき
+  // shifts 行が消えて終了日が復元できなくなる PR #65 レビュー指摘で submissions に移管。
+  const submissionRow = latestEffectiveFrom
+    ? submissionRows.find((r) => r.effectiveFrom === latestEffectiveFrom)
+    : undefined;
+  const initialMeta: FixedShiftSubmissionMeta = {
+    effectiveTo: submissionRow?.effectiveTo ?? null,
+    desiredDays: submissionRow?.desiredDays ?? null,
+    desiredSlots: submissionRow?.desiredSlots ?? null,
+    note: submissionRow?.note ?? null,
+  };
 
   return (
     <div className="space-y-6">
@@ -79,7 +124,7 @@ export default async function FixedShiftPage() {
         <CardHeader>
           <CardTitle className="text-base">曜日 × コマ</CardTitle>
           <CardDescription>
-            チェックを付けた枠が「勤務可能」として扱われます。
+            ○ = 出勤可、△ = 出勤可だが避けたい、空欄 = 不可。
           </CardDescription>
         </CardHeader>
         <CardContent>
@@ -87,6 +132,7 @@ export default async function FixedShiftPage() {
             slots={slots}
             initialEntries={currentEntries}
             initialEffectiveFrom={latestEffectiveFrom ?? today}
+            initialMeta={initialMeta}
           />
         </CardContent>
       </Card>

@@ -45,6 +45,14 @@ export const weekdayEnum = pgEnum("weekday", [
   "sun",
 ]);
 
+// レギュラー固定シフトの3値希望 (Issue #55)。yes=〇 出勤可、maybe=△ 可だが避けたい、no=× 不可
+// 行不在は「未回答」を意味し、UI 側で "no" として扱う (互換性のため)
+export const shiftAvailabilityEnum = pgEnum("shift_availability", [
+  "yes",
+  "maybe",
+  "no",
+]);
+
 /* ------------------------------------------------------------------ */
 /*  profiles — Supabase auth.users を 1:1 で拡張                        */
 /* ------------------------------------------------------------------ */
@@ -146,6 +154,8 @@ export const fixedShifts = pgTable(
     slotNumber: smallint("slot_number").notNull(),
     /** この設定の適用開始日 */
     effectiveFrom: date("effective_from").notNull(),
+    /** Issue #55: 3値希望。既存行は yes でバックフィル */
+    availability: shiftAvailabilityEnum("availability").notNull().default("yes"),
     createdAt: timestamp("created_at", { withTimezone: true })
       .notNull()
       .defaultNow(),
@@ -155,6 +165,42 @@ export const fixedShifts = pgTable(
       columns: [t.tutorId, t.weekday, t.slotNumber, t.effectiveFrom],
     }),
     tutorIdx: index("fixed_shifts_tutor_idx").on(t.tutorId),
+  }),
+);
+
+/* ------------------------------------------------------------------ */
+/*  fixed_shift_submissions — レギュラー提出単位のメタ (Issue #57/#59)  */
+/* ------------------------------------------------------------------ */
+/*  fixed_shifts 1行 = 1セル (講師×曜日×コマ×effective_from) なので、    */
+/*  講師×提出単位 (= effective_from) で 1 行のメタを別テーブルに分離。    */
+/*  B1 (#60 月別提出期間) 導入時に period_id FK を追加する想定。          */
+
+export const fixedShiftSubmissions = pgTable(
+  "fixed_shift_submissions",
+  {
+    tutorId: uuid("tutor_id")
+      .notNull()
+      .references(() => profiles.id, { onDelete: "cascade" }),
+    effectiveFrom: date("effective_from").notNull(),
+    /** Issue #58: 適用終了日 (任意, null = 無期限)。提出単位のメタとして保持。
+     *  当初は fixed_shifts に置く設計だったが、entries 空 (全コマ不可) のとき
+     *  fixed_shifts に行が 1 件もなくなり終了日が消える PR #65 のレビュー指摘で移管。 */
+    effectiveTo: date("effective_to"),
+    /** Issue #57: 希望出勤日数 (整数, 任意) */
+    desiredDays: smallint("desired_days"),
+    /** Issue #57: 希望出勤コマ数 (整数, 任意) */
+    desiredSlots: smallint("desired_slots"),
+    /** Issue #59: フリースペース */
+    note: text("note"),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (t) => ({
+    pk: primaryKey({ columns: [t.tutorId, t.effectiveFrom] }),
   }),
 );
 
@@ -477,6 +523,16 @@ export const fixedShiftsRelations = relations(fixedShifts, ({ one }) => ({
     references: [profiles.id],
   }),
 }));
+
+export const fixedShiftSubmissionsRelations = relations(
+  fixedShiftSubmissions,
+  ({ one }) => ({
+    tutor: one(profiles, {
+      fields: [fixedShiftSubmissions.tutorId],
+      references: [profiles.id],
+    }),
+  }),
+);
 
 export const trainingPreferencesRelations = relations(
   trainingPreferences,
