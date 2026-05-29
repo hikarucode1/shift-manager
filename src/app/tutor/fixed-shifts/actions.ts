@@ -1,7 +1,7 @@
 "use server";
 
 import { z } from "zod";
-import { and, desc, eq, gte, inArray, sql } from "drizzle-orm";
+import { and, desc, eq, gte, sql } from "drizzle-orm";
 import { revalidatePath } from "next/cache";
 import { requireRole } from "@/lib/auth";
 import { db } from "@/db/client";
@@ -115,36 +115,9 @@ export async function saveFixedShifts(
   const { profile } = await requireRole("tutor");
   const now = new Date();
 
-  // Issue #61: 保存は effectiveFrom 以降の行を delete→insert で置換するため、
-  // 状態チェックも同じ gte スコープで行う。eq(effectiveFrom) だけだと
-  // tutor が UI の effectiveFrom を過去日に変えて保存することで、未来の
-  // submitted/frozen 行を回避して削除できてしまう (PR #67 P1 #1)。
-  const blockingRows = await db
-    .select({ status: fixedShiftSubmissions.status })
-    .from(fixedShiftSubmissions)
-    .where(
-      and(
-        eq(fixedShiftSubmissions.tutorId, profile.id),
-        gte(fixedShiftSubmissions.effectiveFrom, effectiveFrom),
-        inArray(fixedShiftSubmissions.status, ["submitted", "frozen"]),
-      ),
-    )
-    .limit(1);
-  const blockingStatus = blockingRows[0]?.status;
-  if (blockingStatus === "submitted") {
-    return {
-      ok: false,
-      error: "既に提出済みです。修正するには「下書きに戻す」を押してください。",
-    };
-  }
-  if (blockingStatus === "frozen") {
-    return {
-      ok: false,
-      error: "この提出は凍結されています。教室長に解除を依頼してください。",
-    };
-  }
-
-  // Issue #61 / R-1: 紐付き period の開始前・締切後は保存も拒否
+  // Issue #61 / R-1: 紐付き period の開始前・締切後は保存も拒否。これは period 側の
+  // 確認なので transaction の外でやって問題ない (period の状態を保存中にロックする
+  // 必要はなく、変わったら次の save で再チェックされる)。
   const { periodId, isBeforeOpen, isOverDue } = await fetchPeriodWindow(
     effectiveFrom,
     now,
@@ -162,8 +135,38 @@ export async function saveFixedShifts(
     };
   }
 
+  // PR #67 Round 3 P1-1: 状態チェックと delete を 1 transaction にまとめ、
+  // SELECT ... FOR UPDATE で対象範囲の行をロックする。これにより、
+  // 「state check 通過 → 別リクエストが draft を submitted/frozen に遷移
+  //  → 本 save が delete でその行を消す」競合を遮断する。submit/revert 側は
+  // 同じ行に対する UPDATE で行ロック待ちになり、本 transaction が commit して
+  // delete 済みになった行への UPDATE は WHERE で 0 件となり安全に弾かれる。
+  type SaveOutcome = { kind: "ok" } | { kind: "blocked"; status: "submitted" | "frozen" };
+  let outcome: SaveOutcome;
   try {
-    await db.transaction(async (tx) => {
+    outcome = await db.transaction(async (tx) => {
+      // gte スコープの既存提出行をロック。draft 以外があれば save 不可。
+      const existing = await tx
+        .select({ status: fixedShiftSubmissions.status })
+        .from(fixedShiftSubmissions)
+        .where(
+          and(
+            eq(fixedShiftSubmissions.tutorId, profile.id),
+            gte(fixedShiftSubmissions.effectiveFrom, effectiveFrom),
+          ),
+        )
+        .for("update");
+      const blocker = existing.find(
+        (r) => r.status === "submitted" || r.status === "frozen",
+      );
+      if (blocker) {
+        // SELECT のみで return すれば transaction は commit (no-op) し、ロックも解放
+        return {
+          kind: "blocked" as const,
+          status: blocker.status as "submitted" | "frozen",
+        };
+      }
+
       // 今後分 (effectiveFrom 以降) の既存レコードを削除し、今回の内容で置換。
       // shifts とメタを同じスコープで揃えないと、将来分の古いメタが孤立する (#65 P2)。
       await tx
@@ -211,10 +214,24 @@ export async function saveFixedShifts(
         lastStatusChangedBy: profile.id,
         // status は default 'draft'
       });
+      return { kind: "ok" as const };
     });
   } catch (err) {
     console.error("saveFixedShifts failed", err);
     return { ok: false, error: "保存に失敗しました。時間をおいて再度お試しください。" };
+  }
+
+  if (outcome.kind === "blocked") {
+    if (outcome.status === "submitted") {
+      return {
+        ok: false,
+        error: "既に提出済みです。修正するには「下書きに戻す」を押してください。",
+      };
+    }
+    return {
+      ok: false,
+      error: "この提出は凍結されています。教室長に解除を依頼してください。",
+    };
   }
 
   revalidatePath("/tutor/fixed-shifts");
