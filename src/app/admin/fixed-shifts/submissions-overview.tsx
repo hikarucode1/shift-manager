@@ -486,12 +486,7 @@ export function AdminSubmissionsOverview({
                             assignKey(t.id, w.key, slot.slotNumber),
                           );
                           return (
-                            <td
-                              key={t.id}
-                              className={cn(
-                                "p-0",
-                              )}
-                            >
+                            <td key={t.id} className="p-0">
                               <button
                                 type="button"
                                 onClick={() =>

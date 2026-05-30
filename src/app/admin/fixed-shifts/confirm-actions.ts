@@ -85,6 +85,25 @@ export async function saveMonthlyConfirmation(
     });
   } catch (err) {
     console.error("saveMonthlyConfirmation failed", err);
+    // postgres-js は err.code に SQLSTATE を載せるので、admin の自己解決に
+    // つながる粒度で識別する (23503 FK 違反 / 23514 CHECK 違反)。
+    const code =
+      typeof err === "object" && err !== null && "code" in err
+        ? String((err as { code: unknown }).code)
+        : null;
+    if (code === "23503") {
+      return {
+        ok: false,
+        error: "確定保存に失敗しました: 講師または教室長 ID が見つかりません。",
+      };
+    }
+    if (code === "23514") {
+      return {
+        ok: false,
+        error:
+          "確定保存に失敗しました: 対象月・曜日・コマ番号が制約に違反しています (月初/sun 禁止/slot 1〜20)。",
+      };
+    }
     return { ok: false, error: "確定保存に失敗しました。" };
   }
 
