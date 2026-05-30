@@ -297,6 +297,60 @@ export const fixedShiftSubmissions = pgTable(
 );
 
 /* ------------------------------------------------------------------ */
+/*  monthly_regular_assignments — 教室長が確定した月固定レギュラー枠   */
+/* ------------------------------------------------------------------ */
+/*  C2 (Issue #63): 講師の希望提出 (fixed_shifts) を踏まえて教室長が     */
+/*  「この月、この講師、この曜日コマを確定」と保存する単位。              */
+/*  席番号・生徒割当は別Issueで段階追加するため本テーブルは「枠」のみ。     */
+/*  PK は (target_month, tutor_id, weekday, slot_number) の複合。       */
+
+export const monthlyRegularAssignments = pgTable(
+  "monthly_regular_assignments",
+  {
+    /** 対象月の 1 日 (例: 2026-07-01)。CHECK で月初強制 */
+    targetMonth: date("target_month").notNull(),
+    tutorId: uuid("tutor_id")
+      .notNull()
+      .references(() => profiles.id, { onDelete: "cascade" }),
+    /** 曜日。sun (日曜) は校休のため運用上は使わない (CHECK で sun を禁止) */
+    weekday: weekdayEnum("weekday").notNull(),
+    slotNumber: smallint("slot_number").notNull(),
+    /** 確定操作した admin。確定状態の責任所在を残すため null 不可 */
+    confirmedBy: uuid("confirmed_by")
+      .notNull()
+      .references(() => profiles.id, { onDelete: "restrict" }),
+    /** 確定時刻。bulk save の transaction 内で同じ now() を打つ */
+    confirmedAt: timestamp("confirmed_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (t) => ({
+    pk: primaryKey({
+      columns: [t.targetMonth, t.tutorId, t.weekday, t.slotNumber],
+    }),
+    tutorMonthIdx: index("monthly_regular_assignments_tutor_month_idx").on(
+      t.tutorId,
+      t.targetMonth,
+    ),
+    targetMonthFirstOfMonth: check(
+      "monthly_regular_assignments_target_month_first_of_month_chk",
+      sql`${t.targetMonth} = date_trunc('month', ${t.targetMonth})::date`,
+    ),
+    weekdayNotSun: check(
+      "monthly_regular_assignments_weekday_not_sun_chk",
+      sql`${t.weekday} <> 'sun'`,
+    ),
+    slotRange: check(
+      "monthly_regular_assignments_slot_range_chk",
+      sql`${t.slotNumber} BETWEEN 1 AND 20`,
+    ),
+  }),
+);
+
+/* ------------------------------------------------------------------ */
 /*  training_preferences — 講習期間の日別希望                           */
 /* ------------------------------------------------------------------ */
 

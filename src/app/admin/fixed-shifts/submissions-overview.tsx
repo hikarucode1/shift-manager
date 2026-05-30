@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
-import { Snowflake, ThermometerSnowflake } from "lucide-react";
+import { Check, Snowflake, ThermometerSnowflake } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -17,6 +17,13 @@ import {
 import { cn } from "@/lib/utils";
 import { INPUT_WEEKDAYS, type InputWeekday } from "@/lib/shift-constants";
 import { setSubmissionFrozen } from "./actions";
+import { saveMonthlyConfirmation } from "./confirm-actions";
+
+type Assignment = {
+  tutorId: string;
+  weekday: string;
+  slotNumber: number;
+};
 
 type Slot = {
   slotNumber: number;
@@ -93,15 +100,22 @@ function symbolFor(a: "yes" | "maybe" | "no" | undefined): string {
   return "";
 }
 
+/** (tutorId, weekday, slot) を 1 つの文字列 key にする */
+function assignKey(tutorId: string, weekday: string, slot: number): string {
+  return `${tutorId}:${weekday}:${slot}`;
+}
+
 export function AdminSubmissionsOverview({
   targetMonth,
   slots,
   tutors,
+  initialConfirmed,
   period,
 }: {
   targetMonth: string;
   slots: Slot[];
   tutors: TutorView[];
+  initialConfirmed: Assignment[];
   period: PeriodView | null;
 }) {
   const router = useRouter();
@@ -109,6 +123,19 @@ export function AdminSubmissionsOverview({
   const [notice, setNotice] = useState<
     { type: "ok" | "error"; text: string } | null
   >(null);
+
+  // C2 #63: 確定枠 set (key = "tutorId:weekday:slot")。クリックでトグル。
+  // 「確定保存」ボタンで bulk saveMonthlyConfirmation に渡し replace 保存。
+  const [confirmedSet, setConfirmedSet] = useState<Set<string>>(
+    () =>
+      new Set(
+        initialConfirmed.map((a) =>
+          assignKey(a.tutorId, a.weekday, a.slotNumber),
+        ),
+      ),
+  );
+  // 初期確定セットからの変更検知 (未保存変更がある時 ボタン強調)
+  const [confirmDirty, setConfirmDirty] = useState(false);
 
   useEffect(() => {
     if (!notice) return;
@@ -178,6 +205,60 @@ export function AdminSubmissionsOverview({
         setNotice({ type: "error", text: result.error });
       }
     });
+  }
+
+  // C2 #63: 確定セルのトグル
+  function toggleConfirmed(tutorId: string, weekday: string, slot: number) {
+    const key = assignKey(tutorId, weekday, slot);
+    setConfirmedSet((prev) => {
+      const next = new Set(prev);
+      if (next.has(key)) next.delete(key);
+      else next.add(key);
+      return next;
+    });
+    setConfirmDirty(true);
+  }
+
+  // C2 #63: bulk 確定保存
+  function handleSaveConfirmation() {
+    setNotice(null);
+    const assignments: Assignment[] = Array.from(confirmedSet).map((key) => {
+      const [tutorId, weekday, slotStr] = key.split(":");
+      return { tutorId, weekday, slotNumber: Number(slotStr) };
+    });
+    startTransition(async () => {
+      const result = await saveMonthlyConfirmation({
+        targetMonth,
+        assignments,
+      });
+      if (result.ok) {
+        setConfirmDirty(false);
+        setNotice({
+          type: "ok",
+          text: `確定 ${result.inserted} 枠を保存しました。`,
+        });
+        router.refresh();
+      } else {
+        setNotice({ type: "error", text: result.error });
+      }
+    });
+  }
+
+  // C2 #63: 提出済み (submitted) の ○ をすべて確定セットに取り込む補助操作
+  function bulkConfirmAllSubmittedYes() {
+    setConfirmedSet((prev) => {
+      const next = new Set(prev);
+      for (const t of tutors) {
+        if (t.submission?.status !== "submitted") continue;
+        for (const e of t.entries) {
+          if (e.availability === "yes") {
+            next.add(assignKey(t.id, e.weekday, e.slotNumber));
+          }
+        }
+      }
+      return next;
+    });
+    setConfirmDirty(true);
   }
 
   return (
@@ -325,77 +406,124 @@ export function AdminSubmissionsOverview({
         </CardContent>
       </Card>
 
-      {/* 集計マトリクス (曜日×コマ × 各講師の○/△) */}
+      {/* 集計マトリクス (曜日×コマ × 各講師の○/△) + C2 確定操作 */}
       <Card>
         <CardHeader>
           <CardTitle className="text-base">
-            可用性マトリクス ({formatMonth(targetMonth)})
+            可用性マトリクス + 確定操作 ({formatMonth(targetMonth)})
           </CardTitle>
           <CardDescription>
             日曜は教室休校のため除外。○ = 出勤可、△ = 可だが避けたい、空 = 不可
             (または未提出)。括弧内は ○ / △ の人数集計。
+            <br />
+            <strong>セルをクリックで確定枠をトグル</strong>。✓ = 確定済み。
+            「提出済 ○ を一括取込」で初期値を作り、必要な微調整をしてから「確定保存」してください。
           </CardDescription>
         </CardHeader>
-        <CardContent className="overflow-x-auto">
-          <table className="min-w-full border-separate border-spacing-1 text-xs">
-            <thead>
-              <tr>
-                <th className="sticky left-0 z-10 bg-card text-left text-muted-foreground">
-                  コマ
-                </th>
-                <th className="text-left text-muted-foreground">曜日</th>
-                {tutors.map((t) => (
-                  <th
-                    key={t.id}
-                    className="min-w-[3.5rem] text-center font-medium"
-                  >
-                    {t.displayName}
+        <CardContent className="space-y-3">
+          <div className="flex flex-wrap items-center gap-2">
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={bulkConfirmAllSubmittedYes}
+              disabled={isPending || tutors.length === 0}
+            >
+              提出済 ○ を一括取込
+            </Button>
+            <Button
+              onClick={handleSaveConfirmation}
+              disabled={isPending}
+              className={cn(confirmDirty && "ring-2 ring-primary/40")}
+            >
+              <Check className="mr-1 h-4 w-4" />
+              確定保存 ({confirmedSet.size} 枠)
+            </Button>
+            {confirmDirty && (
+              <span className="text-xs text-amber-700 dark:text-amber-300">
+                未保存の変更があります
+              </span>
+            )}
+          </div>
+          <div className="overflow-x-auto">
+            <table className="min-w-full border-separate border-spacing-1 text-xs">
+              <thead>
+                <tr>
+                  <th className="sticky left-0 z-10 bg-card text-left text-muted-foreground">
+                    コマ
                   </th>
-                ))}
-                <th className="text-center text-muted-foreground">
-                  集計 ○ / △
-                </th>
-              </tr>
-            </thead>
-            <tbody>
-              {slots.flatMap((slot) =>
-                INPUT_WEEKDAYS.map((w) => {
-                  const key = `${w.key as InputWeekday}:${slot.slotNumber}`;
-                  const counts = cellCounts.get(key);
-                  return (
-                    <tr key={key}>
-                      <th className="sticky left-0 z-10 bg-card text-left text-muted-foreground">
-                        {slot.label}
-                      </th>
-                      <th className="text-left text-muted-foreground">
-                        {w.label}
-                      </th>
-                      {tutors.map((t) => {
-                        const a = entryMaps.get(t.id)?.get(key);
-                        const isYes = a === "yes";
-                        const isMaybe = a === "maybe";
-                        return (
-                          <td
-                            key={t.id}
-                            className={cn(
-                              "text-center",
-                              isYes && "bg-primary/15 font-medium",
-                              isMaybe && "bg-amber-100 dark:bg-amber-950",
-                            )}
-                          >
-                            {symbolFor(a)}
-                          </td>
-                        );
-                      })}
-                      <td className="text-center text-muted-foreground">
-                        {counts?.yes ?? 0} / {counts?.maybe ?? 0}
-                      </td>
-                    </tr>
-                  );
-                }),
-              )}
-            </tbody>
-          </table>
+                  <th className="text-left text-muted-foreground">曜日</th>
+                  {tutors.map((t) => (
+                    <th
+                      key={t.id}
+                      className="min-w-[3.5rem] text-center font-medium"
+                    >
+                      {t.displayName}
+                    </th>
+                  ))}
+                  <th className="text-center text-muted-foreground">
+                    集計 ○ / △
+                  </th>
+                </tr>
+              </thead>
+              <tbody>
+                {slots.flatMap((slot) =>
+                  INPUT_WEEKDAYS.map((w) => {
+                    const cellKey = `${w.key as InputWeekday}:${slot.slotNumber}`;
+                    const counts = cellCounts.get(cellKey);
+                    return (
+                      <tr key={cellKey}>
+                        <th className="sticky left-0 z-10 bg-card text-left text-muted-foreground">
+                          {slot.label}
+                        </th>
+                        <th className="text-left text-muted-foreground">
+                          {w.label}
+                        </th>
+                        {tutors.map((t) => {
+                          const a = entryMaps.get(t.id)?.get(cellKey);
+                          const isYes = a === "yes";
+                          const isMaybe = a === "maybe";
+                          const isConfirmed = confirmedSet.has(
+                            assignKey(t.id, w.key, slot.slotNumber),
+                          );
+                          return (
+                            <td key={t.id} className="p-0">
+                              <button
+                                type="button"
+                                onClick={() =>
+                                  toggleConfirmed(
+                                    t.id,
+                                    w.key,
+                                    slot.slotNumber,
+                                  )
+                                }
+                                aria-label={`${t.displayName} ${w.label} ${slot.label} を確定${isConfirmed ? "解除" : ""}`}
+                                disabled={isPending}
+                                className={cn(
+                                  "flex h-7 w-full items-center justify-center rounded border text-xs transition-colors disabled:cursor-not-allowed disabled:opacity-60",
+                                  isConfirmed
+                                    ? "border-primary bg-primary text-primary-foreground"
+                                    : isYes
+                                      ? "border-input bg-primary/15 font-medium hover:bg-primary/25"
+                                      : isMaybe
+                                        ? "border-input bg-amber-100 hover:bg-amber-200 dark:bg-amber-950 dark:hover:bg-amber-900"
+                                        : "border-input bg-background hover:bg-muted",
+                                )}
+                              >
+                                {isConfirmed ? "✓" : symbolFor(a)}
+                              </button>
+                            </td>
+                          );
+                        })}
+                        <td className="text-center text-muted-foreground">
+                          {counts?.yes ?? 0} / {counts?.maybe ?? 0}
+                        </td>
+                      </tr>
+                    );
+                  }),
+                )}
+              </tbody>
+            </table>
+          </div>
           {tutors.length === 0 && (
             <p className="mt-2 text-sm text-muted-foreground">
               講師がいないためマトリクスは空です。

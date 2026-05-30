@@ -4,6 +4,7 @@ import { db } from "@/db/client";
 import {
   fixedShifts,
   fixedShiftSubmissions,
+  monthlyRegularAssignments,
   monthlySubmissionPeriods,
   profiles,
   slotDefinitions,
@@ -45,8 +46,14 @@ export default async function AdminFixedShiftsOverviewPage({
     sp.month && isValidMonthIso(sp.month) ? sp.month : thisMonthIso();
   const monthEnd = nextMonthIso(targetMonth);
 
-  const [tutorRows, slotRows, periodRows, submissionRows, entryRows] =
-    await Promise.all([
+  const [
+    tutorRows,
+    slotRows,
+    periodRows,
+    submissionRows,
+    entryRows,
+    assignmentRows,
+  ] = await Promise.all([
       // 対象月の集計対象になる active tutor (CSV 由来 stub 含む)
       db
         .select({
@@ -116,6 +123,15 @@ export default async function AdminFixedShiftsOverviewPage({
             lt(fixedShifts.effectiveFrom, monthEnd),
           ),
         ),
+      // C2 #63: 対象月の確定済み枠 (確定 UI の初期状態に使用)
+      db
+        .select({
+          tutorId: monthlyRegularAssignments.tutorId,
+          weekday: monthlyRegularAssignments.weekday,
+          slotNumber: monthlyRegularAssignments.slotNumber,
+        })
+        .from(monthlyRegularAssignments)
+        .where(eq(monthlyRegularAssignments.targetMonth, targetMonth)),
     ]);
 
   const slots =
@@ -199,6 +215,11 @@ export default async function AdminFixedShiftsOverviewPage({
         targetMonth={targetMonth}
         slots={slots}
         tutors={tutorViews}
+        initialConfirmed={assignmentRows.map((a) => ({
+          tutorId: a.tutorId,
+          weekday: a.weekday,
+          slotNumber: a.slotNumber,
+        }))}
         period={
           period
             ? {
