@@ -22,6 +22,11 @@ function todayIso() {
   return jst.toISOString().slice(0, 10);
 }
 
+/** 当月の 1 日 (JST) を "YYYY-MM-DD" で返す。target_month (月初固定) との比較用 */
+function thisMonthIso(): string {
+  return `${todayIso().slice(0, 7)}-01`;
+}
+
 /** "2026-07-01" → "2026年7月" */
 function formatTargetMonth(iso: string): string {
   const [y, m] = iso.split("-");
@@ -31,6 +36,7 @@ function formatTargetMonth(iso: string): string {
 export default async function FixedShiftPage() {
   const { profile } = await requireRole("tutor");
   const today = todayIso();
+  const thisMonth = thisMonthIso();
   const now = new Date();
 
   const [slotRows, existing, submissionRows, activePeriodRows, confirmedRows] = await Promise.all([
@@ -88,8 +94,10 @@ export default async function FixedShiftPage() {
       )
       .orderBy(desc(monthlySubmissionPeriods.targetMonth))
       .limit(1),
-    // C2 #63: 自分の確定済みレギュラー枠 (今日以降の対象月分)。editor で
-    // 「確定済み」表示 (read-only バッジ) するために渡す。
+    // C2 #63: 自分の確定済みレギュラー枠 (当月以降の対象月分)。editor で
+    // 「確定済み」表示 (read-only バッジ) するために渡す。targetMonth は月初
+    // 固定 (DB CHECK) なので、当月の 2 日目以降に当月分が漏れないよう、比較は
+    // today ではなく当月初 (thisMonth) を使う。
     db
       .select({
         targetMonth: monthlyRegularAssignments.targetMonth,
@@ -100,7 +108,7 @@ export default async function FixedShiftPage() {
       .where(
         and(
           eq(monthlyRegularAssignments.tutorId, profile.id),
-          gte(monthlyRegularAssignments.targetMonth, today),
+          gte(monthlyRegularAssignments.targetMonth, thisMonth),
         ),
       ),
   ]);
