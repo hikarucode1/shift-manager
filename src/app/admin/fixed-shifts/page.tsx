@@ -195,6 +195,7 @@ export default async function AdminFixedShiftsOverviewPage({
       </div>
 
       <AdminSubmissionsOverview
+        key={targetMonth}
         targetMonth={targetMonth}
         slots={slots}
         tutors={tutorViews}
