@@ -31,6 +31,71 @@ export function lastDayOfMonth(monthFirstIso: string): string {
   return `${m[1]}-${m[2]}-${dd}`;
 }
 
+/**
+ * Issue #74 follow-up: ISO 日付 "YYYY-MM-DD" の前日 / 翌日。
+ * regular_assignments の overlap 分割で「monthStart の前日」「monthEnd の翌日」
+ * を算出するのに使う。
+ */
+export function prevDay(iso: string): string {
+  const [y, m, d] = iso.split("-").map(Number);
+  const dt = new Date(Date.UTC(y, m - 1, d));
+  dt.setUTCDate(dt.getUTCDate() - 1);
+  return dt.toISOString().slice(0, 10);
+}
+
+export function nextDay(iso: string): string {
+  const [y, m, d] = iso.split("-").map(Number);
+  const dt = new Date(Date.UTC(y, m - 1, d));
+  dt.setUTCDate(dt.getUTCDate() + 1);
+  return dt.toISOString().slice(0, 10);
+}
+
+export type DateRange = {
+  effectiveFrom: string;
+  effectiveTo: string;
+};
+
+/**
+ * Issue #74 follow-up: 既存の有効範囲から「対象月 [monthStart, monthEnd] と
+ * 重なる部分」を除いた残りを返す pure 関数。
+ *
+ * 例:
+ *   - 既存 (4/1-6/30) を 5月 で削ると → (4/1-4/30) と (6/1-6/30)
+ *   - 既存 (5/10-5/20) を 5月 で削ると → []
+ *   - 既存 (3/1-3/31) を 5月 で削ると → (3/1-3/31)
+ *
+ * 入力は inclusive。effective_to NULL のケースは呼び出し側で
+ * period.end_date 等に解決してから渡す前提 (本関数は実日付のみ扱う)。
+ *
+ * 既存行に対し saveMonthlyConfirmation の DELETE が触る境界条件と整合させる:
+ * 「対象月の effective_from を含む行のみ DELETE」では取りこぼす期一括行を
+ * このヘルパで「月の外側の残り部分」に分割し直して保存する。
+ */
+export function splitRangeRemovingMonth(
+  existing: DateRange,
+  monthStart: string,
+  monthEnd: string,
+): DateRange[] {
+  // overlap なし (既存が月の前 or 月の後)
+  if (existing.effectiveTo < monthStart || existing.effectiveFrom > monthEnd) {
+    return [existing];
+  }
+  const result: DateRange[] = [];
+  if (existing.effectiveFrom < monthStart) {
+    result.push({
+      effectiveFrom: existing.effectiveFrom,
+      effectiveTo: prevDay(monthStart),
+    });
+  }
+  if (existing.effectiveTo > monthEnd) {
+    result.push({
+      effectiveFrom: nextDay(monthEnd),
+      effectiveTo: existing.effectiveTo,
+    });
+  }
+  return result;
+}
+
 export function monthsInPeriod(
   startDate: string,
   endDate: string,

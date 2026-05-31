@@ -1,5 +1,116 @@
 import { describe, it, expect } from "vitest";
-import { lastDayOfMonth, monthsInPeriod } from "./shift-period";
+import {
+  lastDayOfMonth,
+  monthsInPeriod,
+  nextDay,
+  prevDay,
+  splitRangeRemovingMonth,
+} from "./shift-period";
+
+describe("prevDay / nextDay", () => {
+  it("prevDay subtracts one calendar day across month boundary", () => {
+    expect(prevDay("2026-05-01")).toBe("2026-04-30");
+    expect(prevDay("2026-03-01")).toBe("2026-02-28");
+    expect(prevDay("2024-03-01")).toBe("2024-02-29");
+    expect(prevDay("2027-01-01")).toBe("2026-12-31");
+  });
+
+  it("nextDay adds one calendar day across month boundary", () => {
+    expect(nextDay("2026-04-30")).toBe("2026-05-01");
+    expect(nextDay("2026-02-28")).toBe("2026-03-01");
+    expect(nextDay("2024-02-29")).toBe("2024-03-01");
+    expect(nextDay("2026-12-31")).toBe("2027-01-01");
+  });
+});
+
+describe("splitRangeRemovingMonth", () => {
+  const targetStart = "2026-05-01";
+  const targetEnd = "2026-05-31";
+
+  it("splits a term-wide range into two when the month sits inside", () => {
+    expect(
+      splitRangeRemovingMonth(
+        { effectiveFrom: "2026-04-01", effectiveTo: "2026-06-30" },
+        targetStart,
+        targetEnd,
+      ),
+    ).toEqual([
+      { effectiveFrom: "2026-04-01", effectiveTo: "2026-04-30" },
+      { effectiveFrom: "2026-06-01", effectiveTo: "2026-06-30" },
+    ]);
+  });
+
+  it("trims to the left when the range ends inside the month", () => {
+    expect(
+      splitRangeRemovingMonth(
+        { effectiveFrom: "2026-04-01", effectiveTo: "2026-05-15" },
+        targetStart,
+        targetEnd,
+      ),
+    ).toEqual([{ effectiveFrom: "2026-04-01", effectiveTo: "2026-04-30" }]);
+  });
+
+  it("trims to the right when the range starts inside the month", () => {
+    expect(
+      splitRangeRemovingMonth(
+        { effectiveFrom: "2026-05-15", effectiveTo: "2026-06-30" },
+        targetStart,
+        targetEnd,
+      ),
+    ).toEqual([{ effectiveFrom: "2026-06-01", effectiveTo: "2026-06-30" }]);
+  });
+
+  it("returns empty when the range sits fully inside the month", () => {
+    expect(
+      splitRangeRemovingMonth(
+        { effectiveFrom: "2026-05-10", effectiveTo: "2026-05-20" },
+        targetStart,
+        targetEnd,
+      ),
+    ).toEqual([]);
+  });
+
+  it("returns the original range when it is entirely before the month", () => {
+    expect(
+      splitRangeRemovingMonth(
+        { effectiveFrom: "2026-03-01", effectiveTo: "2026-03-31" },
+        targetStart,
+        targetEnd,
+      ),
+    ).toEqual([{ effectiveFrom: "2026-03-01", effectiveTo: "2026-03-31" }]);
+  });
+
+  it("returns the original range when it is entirely after the month", () => {
+    expect(
+      splitRangeRemovingMonth(
+        { effectiveFrom: "2026-07-01", effectiveTo: "2026-07-31" },
+        targetStart,
+        targetEnd,
+      ),
+    ).toEqual([{ effectiveFrom: "2026-07-01", effectiveTo: "2026-07-31" }]);
+  });
+
+  it("treats a range that ends exactly on monthStart as overlapping (touching counts)", () => {
+    // existing: ...4/1 - 5/1, removing May → 残り (4/1 - 4/30)
+    expect(
+      splitRangeRemovingMonth(
+        { effectiveFrom: "2026-04-01", effectiveTo: "2026-05-01" },
+        targetStart,
+        targetEnd,
+      ),
+    ).toEqual([{ effectiveFrom: "2026-04-01", effectiveTo: "2026-04-30" }]);
+  });
+
+  it("treats a range that starts exactly on monthEnd as overlapping", () => {
+    expect(
+      splitRangeRemovingMonth(
+        { effectiveFrom: "2026-05-31", effectiveTo: "2026-06-30" },
+        targetStart,
+        targetEnd,
+      ),
+    ).toEqual([{ effectiveFrom: "2026-06-01", effectiveTo: "2026-06-30" }]);
+  });
+});
 
 describe("lastDayOfMonth", () => {
   it("returns the 30th for April (30-day month)", () => {

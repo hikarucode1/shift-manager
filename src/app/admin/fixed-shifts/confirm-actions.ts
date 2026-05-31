@@ -1,13 +1,13 @@
 "use server";
 
 import { z } from "zod";
-import { and, eq, gte, lte } from "drizzle-orm";
+import { and, eq, gte, isNull, lte, or } from "drizzle-orm";
 import { revalidatePath } from "next/cache";
 import { requireRole } from "@/lib/auth";
 import { db } from "@/db/client";
 import { regularAssignments, regularShiftPeriods } from "@/db/schema";
 import { dedupeAssignments } from "@/lib/shift-confirmation";
-import { lastDayOfMonth } from "@/lib/shift-period";
+import { lastDayOfMonth, splitRangeRemovingMonth } from "@/lib/shift-period";
 
 const IsoFirstOfMonth = z
   .string()
@@ -32,12 +32,18 @@ export type SaveMonthlyConfirmationResult =
   | { ok: false; error: string };
 
 /**
- * Issue #74 (δ): 単月の確定を effective_from = 月初、effective_to = 月末 で保存。
+ * Issue #74 (δ) + post-merge review fixes: 単月の確定を
+ * effective_from = 月初、effective_to = 月末 で保存。
  *
- * - 既存の「同 period_id × effective_from が当月内に始まる行」を全削除して再 INSERT
- * - 他月 (例: 期内の別月) や手動編集された期途中の行 (effective_from=月途中) には触らない
- * - assignments 空 = 当月の確定を全解除 (削除のみ)
- * - 1 transaction 内
+ * - period を SELECT して targetMonth が start/end と overlap するか検証 (range check)
+ * - 同 period の **当月と重なる** 全ての既存行を取得し、それぞれ
+ *   splitRangeRemovingMonth で「対象月の外側」に分割して再 INSERT
+ *   → 期一括行 (4/1〜6/30) と単月行 (5/1〜5/31) の重複行が共存しない
+ * - assignments 空 = 当月の確定を全解除 (= overlap 行を split のみ)
+ * - すべて 1 transaction 内
+ *
+ * effective_to NULL の既存行は overlap select で取れるが、split 時に
+ * 「NULL = 期末まで」を period.endDate に解決してから分割する。
  *
  * 期途中の日単位 effective_from 編集 UI は別 Issue で後追い。
  */
@@ -57,22 +63,117 @@ export async function saveMonthlyConfirmation(
 
   const monthStart = targetMonth; // YYYY-MM-01
   const monthEnd = lastDayOfMonth(targetMonth); // YYYY-MM-LL
+  if (!monthEnd) {
+    return { ok: false, error: "対象月の形式が不正です。" };
+  }
   const deduped = dedupeAssignments(assignments);
+
+  // 期マスタを取得して targetMonth が範囲に重なるか検証 (stale tab / 直接 POST 防御)
+  const periodRows = await db
+    .select({
+      id: regularShiftPeriods.id,
+      startDate: regularShiftPeriods.startDate,
+      endDate: regularShiftPeriods.endDate,
+      isArchived: regularShiftPeriods.isArchived,
+    })
+    .from(regularShiftPeriods)
+    .where(eq(regularShiftPeriods.id, periodId))
+    .limit(1);
+  const period = periodRows[0];
+  if (!period) {
+    return { ok: false, error: "対象の期が見つかりません。" };
+  }
+  if (period.isArchived) {
+    return { ok: false, error: "対象の期はアーカイブ済みです。" };
+  }
+  // 月範囲 [monthStart, monthEnd] と 期範囲 [startDate, endDate] が overlap するか
+  if (monthEnd < period.startDate || monthStart > period.endDate) {
+    return {
+      ok: false,
+      error: `対象月 ${monthStart} は期 (${period.startDate} 〜 ${period.endDate}) の範囲外です。`,
+    };
+  }
 
   try {
     await db.transaction(async (tx) => {
-      // 「effective_from が当月内に始まる行」だけを置換対象とする。
-      // 他月の行や期途中の例外 (effective_from が他月) は無傷。
-      await tx
-        .delete(regularAssignments)
+      // 同 period で当月と effective range が重なる既存行を全て取得
+      const overlapping = await tx
+        .select({
+          id: regularAssignments.id,
+          tutorId: regularAssignments.tutorId,
+          weekday: regularAssignments.weekday,
+          slotNumber: regularAssignments.slotNumber,
+          effectiveFrom: regularAssignments.effectiveFrom,
+          effectiveTo: regularAssignments.effectiveTo,
+        })
+        .from(regularAssignments)
         .where(
           and(
             eq(regularAssignments.periodId, periodId),
-            gte(regularAssignments.effectiveFrom, monthStart),
             lte(regularAssignments.effectiveFrom, monthEnd),
+            or(
+              isNull(regularAssignments.effectiveTo),
+              gte(regularAssignments.effectiveTo, monthStart),
+            ),
           ),
         );
 
+      if (overlapping.length > 0) {
+        // 既存重なり行を全削除
+        const ids = overlapping.map((r) => r.id);
+        // drizzle inArray helper を使うため、複数 OR でも素朴に書ける
+        for (const id of ids) {
+          await tx
+            .delete(regularAssignments)
+            .where(eq(regularAssignments.id, id));
+        }
+
+        // 各既存行を「対象月の外側」だけ残して再 INSERT (split)
+        const splitInserts: Array<{
+          periodId: string;
+          tutorId: string;
+          weekday: "mon" | "tue" | "wed" | "thu" | "fri" | "sat";
+          slotNumber: number;
+          effectiveFrom: string;
+          effectiveTo: string;
+          confirmedBy: string;
+          confirmedAt: Date;
+        }> = [];
+        for (const r of overlapping) {
+          // effective_to NULL は period.endDate に coalesce
+          const effectiveTo = r.effectiveTo ?? period.endDate;
+          const remainder = splitRangeRemovingMonth(
+            { effectiveFrom: r.effectiveFrom, effectiveTo },
+            monthStart,
+            monthEnd,
+          );
+          for (const seg of remainder) {
+            splitInserts.push({
+              periodId,
+              tutorId: r.tutorId,
+              weekday: r.weekday as
+                | "mon"
+                | "tue"
+                | "wed"
+                | "thu"
+                | "fri"
+                | "sat",
+              slotNumber: r.slotNumber,
+              effectiveFrom: seg.effectiveFrom,
+              effectiveTo: seg.effectiveTo,
+              // 既存の confirmedBy/At は失うが、split は admin の意図的な
+              // 上書き操作の副作用なので "今 admin" の責任で再記録する。
+              confirmedBy: profile.id,
+              confirmedAt: now,
+            });
+          }
+        }
+        if (splitInserts.length > 0) {
+          await tx.insert(regularAssignments).values(splitInserts);
+        }
+      }
+
+      // 当月の新確定行
       if (deduped.length > 0) {
         await tx.insert(regularAssignments).values(
           deduped.map((a) => ({
