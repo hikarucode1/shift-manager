@@ -1,7 +1,12 @@
 import "server-only";
 import { and, asc, count, eq } from "drizzle-orm";
 import { db } from "@/db/client";
-import { periods, profiles, trainingPreferences } from "@/db/schema";
+import {
+  courseConfirmations,
+  periods,
+  profiles,
+  trainingPreferences,
+} from "@/db/schema";
 import { getSlotMeta, slotNumbers } from "@/lib/slot-meta";
 import { weekdayOf } from "@/lib/week";
 
@@ -25,14 +30,18 @@ export type HeatmapDay = {
   isWeekend: boolean;
 };
 
+export type HeatmapTutor = { id: string; name: string };
+
 export type HeatmapData = {
   period: HeatmapPeriod;
   slots: HeatmapSlot[];
   days: HeatmapDay[];
   /** "date|slot" → 希望講師数 */
   counts: Record<string, number>;
-  /** "date|slot" → 希望講師名 (モーダル用) */
-  tutorsByCell: Record<string, string[]>;
+  /** "date|slot" → 希望講師 (モーダル用、id 付き) */
+  tutorsByCell: Record<string, HeatmapTutor[]>;
+  /** Issue #75 (ε): "date|slot" → 確定済み講師 id の集合 */
+  confirmedByCell: Record<string, string[]>;
   /** 最大希望者数 (色スケール用) */
   maxCount: number;
   submittedTutorCount: number;
@@ -102,7 +111,7 @@ export async function getHeatmapData(
   }
   const p = prow[0];
 
-  const [slotMeta, prefRows, totalRow] = await Promise.all([
+  const [slotMeta, prefRows, totalRow, confirmedRows] = await Promise.all([
     getSlotMeta(),
     db
       .select({
@@ -126,20 +135,36 @@ export async function getHeatmapData(
       .select({ c: count() })
       .from(profiles)
       .where(and(eq(profiles.role, "tutor"), eq(profiles.isActive, true))),
+    // Issue #75 (ε): 期内の確定済み tutor を取得
+    db
+      .select({
+        date: courseConfirmations.date,
+        slotNumber: courseConfirmations.slotNumber,
+        tutorId: courseConfirmations.tutorId,
+      })
+      .from(courseConfirmations)
+      .where(eq(courseConfirmations.periodId, periodId)),
   ]);
 
   const counts: Record<string, number> = {};
-  const tutorsByCell: Record<string, string[]> = {};
+  const tutorsByCell: Record<string, HeatmapTutor[]> = {};
   const submitted = new Set<string>();
   let maxCount = 0;
 
   for (const r of prefRows) {
     const key = `${r.date}|${r.slotNumber}`;
     const list = tutorsByCell[key] ?? (tutorsByCell[key] = []);
-    list.push(r.tutorName);
+    list.push({ id: r.tutorId, name: r.tutorName });
     const c = (counts[key] = (counts[key] ?? 0) + 1);
     if (c > maxCount) maxCount = c;
     submitted.add(r.tutorId);
+  }
+
+  const confirmedByCell: Record<string, string[]> = {};
+  for (const r of confirmedRows) {
+    const key = `${r.date}|${r.slotNumber}`;
+    const list = confirmedByCell[key] ?? (confirmedByCell[key] = []);
+    list.push(r.tutorId);
   }
 
   const slots: HeatmapSlot[] = slotNumbers(slotMeta).map((n) => {
@@ -172,6 +197,7 @@ export async function getHeatmapData(
     days,
     counts,
     tutorsByCell,
+    confirmedByCell,
     maxCount,
     submittedTutorCount: submitted.size,
     totalTutorCount: totalRow[0]?.c ?? 0,
