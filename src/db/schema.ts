@@ -232,6 +232,63 @@ export const monthlySubmissionPeriods = pgTable(
 );
 
 /* ------------------------------------------------------------------ */
+/*  regular_shift_periods — 期 (可変長) マスタ (Issue #71)            */
+/* ------------------------------------------------------------------ */
+/*  業務実態: 4月頭に提出 → 6月末まで持つ = 期 (3ヶ月程度、可変長)。     */
+/*  monthly_submission_periods (月単位) を置換する第 2 段階の起点。     */
+/*  日付単位 (月初制約なし) で期中始動 (例: 4/16 〜) も許容。            */
+/*  label は admin 手動 ("2026年春期 (4-6月)" 等)、業務ラベルに揃える。   */
+/*  旧 monthly_submission_periods は β/γ 完了後に別 PR で廃止予定。       */
+
+export const regularShiftPeriods = pgTable(
+  "regular_shift_periods",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    /** admin 手動入力 (例: "2026年春期 (4-6月)") */
+    label: text("label").notNull(),
+    /** 期の開始日 (日付単位、月初制約なし — 4/16 始動も可) */
+    startDate: date("start_date").notNull(),
+    /** 期の終了日 (start_date 以降) */
+    endDate: date("end_date").notNull(),
+    /** 講師の提出可能開始日時 */
+    submissionOpensAt: timestamp("submission_opens_at", {
+      withTimezone: true,
+    }).notNull(),
+    /** 講師の提出締切日時。締切後は強制凍結 */
+    submissionDueAt: timestamp("submission_due_at", {
+      withTimezone: true,
+    }).notNull(),
+    /** アーカイブ (論理削除)。一覧から隠すが履歴は保持 */
+    isArchived: boolean("is_archived").notNull().default(false),
+    createdBy: uuid("created_by")
+      .notNull()
+      .references(() => profiles.id, { onDelete: "restrict" }),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (t) => ({
+    // DB 層で日付順序を強制 (アプリ層 zod を bypass する経路への防御)
+    dateRangeChk: check(
+      "regular_shift_periods_date_range_chk",
+      sql`${t.startDate} <= ${t.endDate}`,
+    ),
+    opensBeforeDueChk: check(
+      "regular_shift_periods_opens_before_due_chk",
+      sql`${t.submissionOpensAt} < ${t.submissionDueAt}`,
+    ),
+    // 一覧の主ソート用 (is_archived asc → start_date desc 想定)
+    activeStartIdx: index("regular_shift_periods_active_start_idx").on(
+      t.isArchived,
+      t.startDate,
+    ),
+  }),
+);
+
+/* ------------------------------------------------------------------ */
 /*  fixed_shift_submissions — レギュラー提出単位のメタ (Issue #57/#59)  */
 /* ------------------------------------------------------------------ */
 /*  fixed_shifts 1行 = 1セル (講師×曜日×コマ×effective_from) なので、    */
@@ -692,6 +749,16 @@ export const monthlySubmissionPeriodsRelations = relations(
       references: [profiles.id],
     }),
     submissions: many(fixedShiftSubmissions),
+  }),
+);
+
+export const regularShiftPeriodsRelations = relations(
+  regularShiftPeriods,
+  ({ one }) => ({
+    creator: one(profiles, {
+      fields: [regularShiftPeriods.createdBy],
+      references: [profiles.id],
+    }),
   }),
 );
 
