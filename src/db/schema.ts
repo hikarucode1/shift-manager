@@ -466,6 +466,59 @@ export const regularAssignments = pgTable(
 );
 
 /* ------------------------------------------------------------------ */
+/*  course_confirmations — 教室長が確定した講習シフト枠 (Issue #75 ε)    */
+/* ------------------------------------------------------------------ */
+/*  講習 (periods.kind = "training") に対して、教室長が「この日、このコマ */
+/*  にこの講師を出勤させる」と確定する単位。training_preferences の希望  */
+/*  から admin が複数選択して bulk save する想定。                     */
+/*  1 コマに複数講師許可 (アシスタント・複数セクション運用)、PK は         */
+/*  (period_id, date, slot_number, tutor_id) 複合。                  */
+
+export const courseConfirmations = pgTable(
+  "course_confirmations",
+  {
+    periodId: uuid("period_id")
+      .notNull()
+      .references(() => periods.id, { onDelete: "cascade" }),
+    /** 講習日 (period の start_date 〜 end_date 内、アプリ層で検証) */
+    date: date("date").notNull(),
+    slotNumber: smallint("slot_number").notNull(),
+    tutorId: uuid("tutor_id")
+      .notNull()
+      .references(() => profiles.id, { onDelete: "cascade" }),
+    confirmedBy: uuid("confirmed_by")
+      .notNull()
+      .references(() => profiles.id, { onDelete: "restrict" }),
+    confirmedAt: timestamp("confirmed_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (t) => ({
+    pk: primaryKey({
+      columns: [t.periodId, t.date, t.slotNumber, t.tutorId],
+    }),
+    slotRange: check(
+      "course_confirmations_slot_range_chk",
+      sql`${t.slotNumber} BETWEEN 1 AND 20`,
+    ),
+    // admin 俯瞰: 期内の日×コマで誰が確定しているか
+    periodDateIdx: index("course_confirmations_period_date_idx").on(
+      t.periodId,
+      t.date,
+      t.slotNumber,
+    ),
+    // 講師 view: 自分の確定シフトを期で取得
+    tutorPeriodIdx: index("course_confirmations_tutor_period_idx").on(
+      t.tutorId,
+      t.periodId,
+    ),
+  }),
+);
+
+/* ------------------------------------------------------------------ */
 /*  training_preferences — 講習期間の日別希望                           */
 /* ------------------------------------------------------------------ */
 

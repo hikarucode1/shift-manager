@@ -141,6 +141,13 @@
       "when": 1780243702377,
       "tag": "0019_real_cyclops",
       "breakpoints": true
+    },
+    {
+      "idx": 20,
+      "version": "7",
+      "when": 1780244359945,
+      "tag": "0020_low_apocalypse",
+      "breakpoints": true
     }
   ]
 }

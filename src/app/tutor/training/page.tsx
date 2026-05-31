@@ -1,6 +1,9 @@
 import Link from "next/link";
+import { and, asc, eq, gte } from "drizzle-orm";
 import { ChevronRight } from "lucide-react";
 import { requireRole } from "@/lib/auth";
+import { db } from "@/db/client";
+import { courseConfirmations, periods } from "@/db/schema";
 import {
   getActiveTrainingPeriods,
   getTrainingEditorData,
@@ -15,6 +18,11 @@ import {
 } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { TrainingEditor } from "./training-editor";
+
+function todayIsoJst(): string {
+  const jst = new Date(new Date().getTime() + 9 * 60 * 60 * 1000);
+  return jst.toISOString().slice(0, 10);
+}
 
 function deadlineLabel(iso: string): string {
   return new Date(iso).toLocaleDateString("ja-JP", {
@@ -54,7 +62,47 @@ export default async function TutorTrainingPage({
     }
   }
 
-  const periods = await getActiveTrainingPeriods();
+  const today = todayIsoJst();
+  const [activePeriods, confirmedRows] = await Promise.all([
+    getActiveTrainingPeriods(),
+    // Issue #75 (ε): 自分の確定済み講習シフト (今日以降の日付のみ)。
+    // period_name も併せて取得して期ごとにグループ化表示。
+    db
+      .select({
+        periodId: courseConfirmations.periodId,
+        periodName: periods.name,
+        date: courseConfirmations.date,
+        slotNumber: courseConfirmations.slotNumber,
+      })
+      .from(courseConfirmations)
+      .innerJoin(periods, eq(periods.id, courseConfirmations.periodId))
+      .where(
+        and(
+          eq(courseConfirmations.tutorId, profile.id),
+          gte(courseConfirmations.date, today),
+        ),
+      )
+      .orderBy(
+        asc(courseConfirmations.date),
+        asc(courseConfirmations.slotNumber),
+      ),
+  ]);
+
+  // 期ごとに { date → slot番号配列 } にグループ化
+  const confirmedByPeriod = new Map<
+    string,
+    { name: string; daySlots: Map<string, number[]> }
+  >();
+  for (const r of confirmedRows) {
+    const bucket = confirmedByPeriod.get(r.periodId) ?? {
+      name: r.periodName,
+      daySlots: new Map<string, number[]>(),
+    };
+    const slots = bucket.daySlots.get(r.date) ?? [];
+    slots.push(r.slotNumber);
+    bucket.daySlots.set(r.date, slots);
+    confirmedByPeriod.set(r.periodId, bucket);
+  }
 
   return (
     <div className="space-y-6">
@@ -65,7 +113,35 @@ export default async function TutorTrainingPage({
         </p>
       </div>
 
-      {periods.length === 0 ? (
+      {/* Issue #75 (ε): 自分の確定済み講習シフト (read-only) */}
+      {confirmedByPeriod.size > 0 && (
+        <Card className="border-emerald-300 bg-emerald-50/60 dark:bg-emerald-950/30">
+          <CardHeader>
+            <CardTitle className="text-base">確定済み講習シフト</CardTitle>
+            <CardDescription>
+              教室長が確定した出勤日です (今日以降)。希望提出と異なる場合があります。
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-3 text-xs">
+            {Array.from(confirmedByPeriod.entries()).map(
+              ([periodId, { name, daySlots }]) => (
+                <div key={periodId}>
+                  <div className="font-medium">{name}</div>
+                  <ul className="ml-4 text-muted-foreground">
+                    {Array.from(daySlots.entries()).map(([date, slots]) => (
+                      <li key={date}>
+                        {date}: {slots.map((s) => `${s}限`).join(", ")}
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              ),
+            )}
+          </CardContent>
+        </Card>
+      )}
+
+      {activePeriods.length === 0 ? (
         <Card>
           <CardContent className="py-12 text-center text-sm text-muted-foreground">
             現在、提出できる講習期間はありません。
@@ -73,7 +149,7 @@ export default async function TutorTrainingPage({
         </Card>
       ) : (
         <div className="grid gap-3">
-          {periods.map((p) => (
+          {activePeriods.map((p) => (
             <Link key={p.id} href={`/tutor/training?period=${p.id}`}>
               <Card className="transition-colors hover:bg-muted/50">
                 <CardHeader className="flex-row items-center justify-between space-y-0">
