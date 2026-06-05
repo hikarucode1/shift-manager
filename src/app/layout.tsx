@@ -2,8 +2,8 @@ import type { Metadata } from "next";
 import "./globals.css";
 
 export const metadata: Metadata = {
-  title: "eisai-manager | シフト管理",
-  description: "英才個別学院 東武練馬校 シフト管理システム",
+  title: "Shift Manager | シフト管理",
+  description: "個別指導塾向けのシフト管理システム",
 };
 
 export default function RootLayout({

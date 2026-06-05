@@ -1,9 +1,9 @@
-# eisai-manager
+# shift-manager
 
-英才個別学院 東武練馬校 シフト管理システム。
+個別指導塾向けのシフト管理システム。
 講師・教室長がスマホ / PC から使える Web アプリです。
 
-UI 仕様書は [`docs/eisai-manager_UI仕様書.pdf`](./docs/) にあります。
+UI 仕様書は [`docs/shift-manager_UI仕様書.pdf`](./docs/) にあります。
 
 ---
 
@@ -221,7 +221,7 @@ GitHub 連携で main を本番、PR を Preview Deploy にする。
 
 ### 1. Vercel プロジェクト作成
 
-1. [Vercel](https://vercel.com) で GitHub リポジトリ `eisai-manager` を Import
+1. [Vercel](https://vercel.com) で GitHub リポジトリ `shift-manager` を Import
 2. Framework は Next.js が自動検出（`vercel.json` で明示済み）
 3. Functions のリージョンは `vercel.json` で **`hnd1`（東京）** 固定
    — Supabase が ap-northeast-1 のため DB レイテンシ最小化
@@ -249,9 +249,9 @@ GitHub 連携で main を本番、PR を Preview Deploy にする。
 
 招待 / パスワード再設定リンクとリダイレクトのため:
 
-- **Site URL**: 本番 URL（例 `https://eisai-manager.vercel.app`）
+- **Site URL**: 本番 URL（例 `https://shift-manager.vercel.app`）
 - **Redirect URLs**: 本番 URL と Preview ワイルドカード
-  （例 `https://eisai-manager-*.vercel.app/**`）を追加
+  （例 `https://shift-manager-*.vercel.app/**`）を追加
 
 ### 4. デプロイ後の確認
 

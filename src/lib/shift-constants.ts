@@ -22,7 +22,7 @@ export const INPUT_WEEKDAYS = [
   { key: "sat", label: "土" },
 ] as const satisfies ReadonlyArray<{ key: InputWeekday; label: string }>;
 
-/** 英才個別学院 東武練馬校 の実運用コマ定義 (1限〜8限) */
+/** 個別指導塾の実運用コマ定義 (1限〜8限) */
 export const DEFAULT_SLOTS = [
   { slotNumber: 1, label: "1限", startTime: "09:30", endTime: "10:55" },
   { slotNumber: 2, label: "2限", startTime: "11:00", endTime: "12:25" },
