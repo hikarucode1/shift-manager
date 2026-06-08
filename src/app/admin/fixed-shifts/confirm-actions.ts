@@ -88,12 +88,14 @@ export async function saveMonthlyConfirmation(
 
   try {
     await db.transaction(async (tx) => {
-      // PR #81 Codex P1: pg_advisory_xact_lock で (periodId × targetMonth) の保存を直列化。
-      // hashtext は int4 を返すので bigint 1 引数版を使用 (上位 32bit を 0)。
-      // 同じ key で同時に来た 2 番目以降の tx はここで待たされ、1 番目の DELETE/INSERT 完了後に
-      // 改めて overlapping を SELECT するため、重複 range の再生成を防止。
+      // PR #81 Codex P1 (再): periodId 単位で advisory lock を取得。
+      // (periodId × targetMonth) 単位の lock では、同 period 内の異なる月保存どうしが
+      // 並行で同じ既存 range を overlap 取得 → split & INSERT し、重複 range を再生成し得る。
+      // 同 period の単月保存と期一括保存はすべてこの lock で直列化する
+      // (saveRegularConfirmation も同じ key を取得)。
+      // hashtext は int4 を返すので bigint 1 引数版に流し込み (上位 32bit を 0)。
       await tx.execute(
-        sql`SELECT pg_advisory_xact_lock(hashtext(${periodId} || '|' || ${targetMonth}))`,
+        sql`SELECT pg_advisory_xact_lock(hashtext(${periodId}))`,
       );
 
       // PR #81 Codex P2-1: period の archived / range 検証を tx 内で再実行 (TOCTOU 対策)。
@@ -296,6 +298,13 @@ export async function saveRegularConfirmation(
 
   try {
     await db.transaction(async (tx) => {
+      // PR #81 Codex P1 (再): saveMonthlyConfirmation と同じ periodId 単位の lock を取得。
+      // 期一括保存と単月保存の並行実行で、既存 range の delete/split が交錯して
+      // 重複 / lost update が起き得るため、同 period 内の確定保存はすべて直列化する。
+      await tx.execute(
+        sql`SELECT pg_advisory_xact_lock(hashtext(${periodId}))`,
+      );
+
       await tx
         .delete(regularAssignments)
         .where(eq(regularAssignments.periodId, periodId));
