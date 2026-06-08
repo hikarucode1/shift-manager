@@ -33,8 +33,8 @@ export default async function LoginPage({
     <main className="flex flex-1 items-center justify-center p-6">
       <Card className="w-full max-w-md">
         <CardHeader className="text-center">
-          <CardTitle className="text-2xl">eisai-manager</CardTitle>
-          <CardDescription>英才個別学院 東武練馬校 シフト管理</CardDescription>
+          <CardTitle className="text-2xl">Shift Manager</CardTitle>
+          <CardDescription>シフト管理</CardDescription>
         </CardHeader>
         <CardContent>
           {message && (

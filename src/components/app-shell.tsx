@@ -22,7 +22,7 @@ export function AppShell({
       <header className="sticky top-0 z-20 border-b bg-primary text-primary-foreground">
         <div className="mx-auto flex max-w-6xl items-center justify-between px-4 py-3">
           <Link href="/" className="flex items-baseline gap-2">
-            <span className="text-lg font-semibold">eisai-manager</span>
+            <span className="text-lg font-semibold">Shift Manager</span>
             <span className="text-xs text-primary-foreground/70">
               {profile.role === "admin" ? "管理者" : "講師"}
             </span>

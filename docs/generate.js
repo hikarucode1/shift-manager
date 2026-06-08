@@ -1,10 +1,11 @@
-// シフト管理システム eisai-manager UI仕様書 生成スクリプト
+// シフト管理システム Shift Manager UI仕様書 生成スクリプト
+const path = require("path");
 const pptxgen = require("pptxgenjs");
 
 const pres = new pptxgen();
 pres.layout = "LAYOUT_16x9"; // 10" x 5.625"
-pres.author = "eisai-manager 開発チーム";
-pres.title = "シフト管理システム eisai-manager UI仕様書";
+pres.author = "Shift Manager 開発チーム";
+pres.title = "シフト管理システム Shift Manager UI仕様書";
 
 // ─── カラーパレット（Midnight Executive + オレンジアクセント） ───
 const C = {
@@ -53,7 +54,7 @@ function addHeader(slide, title, pageNo, total) {
     valign: "middle", align: "right", margin: 0,
   });
   // フッター
-  slide.addText("eisai-manager  UI仕様書  v0.1", {
+  slide.addText("Shift Manager  UI仕様書  v0.1", {
     x: 0.4, y: H - 0.35, w: 6, h: 0.25,
     fontFace: FONT_B, fontSize: 9, color: C.muted,
     valign: "middle", margin: 0,
@@ -82,7 +83,7 @@ function addHeader(slide, title, pageNo, total) {
     x: 0.9, y: 1.4, w: 8, h: 0.6,
     fontFace: FONT_B, fontSize: 20, color: C.ice, margin: 0,
   });
-  s.addText("eisai-manager", {
+  s.addText("Shift Manager", {
     x: 0.9, y: 1.9, w: 8, h: 1.1,
     fontFace: FONT_H, fontSize: 56, bold: true, color: C.white, margin: 0,
   });
@@ -1246,5 +1247,5 @@ function addMockup(s, x, y, w, h, title, content, opts = {}) {
 }
 
 // ─── 保存 ────────────────────────────────
-pres.writeFile({ fileName: "/Users/hikaru/dev/personal/eisai-manager/docs/eisai-manager_UI仕様書.pptx" })
+pres.writeFile({ fileName: path.join(__dirname, "shift-manager_UI仕様書.pptx") })
   .then(fn => console.log("Generated:", fn));
