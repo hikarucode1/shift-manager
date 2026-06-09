@@ -2,7 +2,7 @@
 
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
-import { eq } from "drizzle-orm";
+import { eq, sql } from "drizzle-orm";
 import { requireRole } from "@/lib/auth";
 import { db } from "@/db/client";
 import { regularShiftPeriods } from "@/db/schema";
@@ -112,19 +112,33 @@ export async function updateRegularPeriod(
   }
   const v = parsed.data;
 
-  // submission-periods と同じく stale tab 対策で .returning() 件数確認
-  const updated = await db
-    .update(regularShiftPeriods)
-    .set({
-      label: v.label,
-      startDate: v.startDate,
-      endDate: v.endDate,
-      submissionOpensAt: new Date(v.submissionOpensAt),
-      submissionDueAt: new Date(v.submissionDueAt),
-      updatedAt: new Date(),
-    })
-    .where(eq(regularShiftPeriods.id, v.id))
-    .returning({ id: regularShiftPeriods.id });
+  // Issue #89: saveMonthlyConfirmation / saveRegularConfirmation と同じ
+  // periodId 単位の advisory lock を取得。確定保存 tx が同 period を持っている
+  // 場合、本 update 完了まで待たされ、保存側は tx 内 再 SELECT で最新の
+  // startDate/endDate/isArchived を読める。
+  let updated: { id: string }[] = [];
+  try {
+    await db.transaction(async (tx) => {
+      await tx.execute(
+        sql`SELECT pg_advisory_xact_lock(hashtext(${v.id}))`,
+      );
+      updated = await tx
+        .update(regularShiftPeriods)
+        .set({
+          label: v.label,
+          startDate: v.startDate,
+          endDate: v.endDate,
+          submissionOpensAt: new Date(v.submissionOpensAt),
+          submissionDueAt: new Date(v.submissionDueAt),
+          updatedAt: new Date(),
+        })
+        .where(eq(regularShiftPeriods.id, v.id))
+        .returning({ id: regularShiftPeriods.id });
+    });
+  } catch (err) {
+    console.error("updateRegularPeriod failed", err);
+    return { ok: false, error: "更新に失敗しました。" };
+  }
   if (updated.length === 0) {
     return { ok: false, error: "対象の期が見つかりません。" };
   }
@@ -145,11 +159,23 @@ export async function setRegularPeriodArchived(
   const parsed = ArchiveInput.safeParse(input);
   if (!parsed.success) return { ok: false, error: "入力が不正です。" };
 
-  const updated = await db
-    .update(regularShiftPeriods)
-    .set({ isArchived: parsed.data.value, updatedAt: new Date() })
-    .where(eq(regularShiftPeriods.id, parsed.data.id))
-    .returning({ id: regularShiftPeriods.id });
+  // Issue #89: updateRegularPeriod と同じ periodId 単位の advisory lock。
+  let updated: { id: string }[] = [];
+  try {
+    await db.transaction(async (tx) => {
+      await tx.execute(
+        sql`SELECT pg_advisory_xact_lock(hashtext(${parsed.data.id}))`,
+      );
+      updated = await tx
+        .update(regularShiftPeriods)
+        .set({ isArchived: parsed.data.value, updatedAt: new Date() })
+        .where(eq(regularShiftPeriods.id, parsed.data.id))
+        .returning({ id: regularShiftPeriods.id });
+    });
+  } catch (err) {
+    console.error("setRegularPeriodArchived failed", err);
+    return { ok: false, error: "更新に失敗しました。" };
+  }
   if (updated.length === 0) {
     return { ok: false, error: "対象の期が見つかりません。" };
   }

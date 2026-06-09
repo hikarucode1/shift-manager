@@ -266,14 +266,20 @@ export function AdminSubmissionsOverview({
     });
   }
 
-  // γ #73: 期内の全月に同じ確定を一括保存。期 (period) が紐付いている時のみ可。
+  // γ #73 + #84 (1): 期内の全月に同じ確定を一括保存。期 (period) が紐付いている時のみ可。
+  // 確認モーダルでは「適用元 = 現在閲覧中の月の確定セット」を明示する。閲覧中の月以外で
+  // saveMonthlyConfirmation 経由の月単位調整が入っていると、その調整が一括上書きで消える
+  // ため、admin が「気付かずに別月の調整を消した」事故を起こしにくくする。
   function handleSaveRegularConfirmation() {
     if (!period) return;
     const assignments = currentAssignments();
     const confirmed = window.confirm(
       `期「${period.label}」(${period.startDate} 〜 ${period.endDate}) ` +
-        `の全月に同じ ${assignments.length} 枠を一括確定します。` +
-        `\n各月の既存確定はこの内容で上書きされます。続行しますか?`,
+        `の全月に同じ ${assignments.length} 枠を一括確定します。\n\n` +
+        `※ 適用される ${assignments.length} 枠は ${formatMonth(targetMonth)} の確定セットです。\n` +
+        `他の月で月単位の調整 (月選択 → 当月確定) を入れていた場合、その調整は\n` +
+        `この内容で上書きされます。\n\n` +
+        `続行しますか?`,
     );
     if (!confirmed) return;
     setNotice(null);

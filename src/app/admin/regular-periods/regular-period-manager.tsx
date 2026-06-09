@@ -89,6 +89,18 @@ export function RegularPeriodManager({
     { type: "ok" | "error"; text: string } | null
   >(null);
 
+  // Issue #82 (2): SSR で焼き付けた `now` を 1 分ごとにクライアント側で更新する。
+  // admin が画面を開きっぱなしでも submissionStatus バッジ (開始前 / 受付中 / 締切後)
+  // が境界跨ぎでリアルタイムに切り替わる。router.refresh まで待たせない。
+  const [nowClient, setNowClient] = useState(now);
+  useEffect(() => {
+    const id = setInterval(
+      () => setNowClient(new Date().toISOString()),
+      60_000,
+    );
+    return () => clearInterval(id);
+  }, []);
+
   useEffect(() => {
     if (!notice) return;
     const id = setTimeout(() => setNotice(null), 5000);
@@ -277,7 +289,7 @@ export function RegularPeriodManager({
       <PeriodList
         title="期一覧"
         rows={active}
-        now={now}
+        now={nowClient}
         emptyText="期がまだ登録されていません。"
         isPending={isPending}
         editId={editId}
@@ -306,7 +318,7 @@ export function RegularPeriodManager({
         <PeriodList
           title="アーカイブ済み"
           rows={archived}
-          now={now}
+          now={nowClient}
           emptyText=""
           isPending={isPending}
           editId={null}
