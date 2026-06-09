@@ -1,0 +1,1 @@
+ALTER TABLE "regular_shift_periods" ADD CONSTRAINT "regular_shift_periods_due_within_period_chk" CHECK ("regular_shift_periods"."submission_due_at"::date <= "regular_shift_periods"."end_date");

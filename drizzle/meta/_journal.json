@@ -148,6 +148,13 @@
       "when": 1780244359945,
       "tag": "0020_low_apocalypse",
       "breakpoints": true
+    },
+    {
+      "idx": 21,
+      "version": "7",
+      "when": 1781016777901,
+      "tag": "0021_young_jubilee",
+      "breakpoints": true
     }
   ]
 }
