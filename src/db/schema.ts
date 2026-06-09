@@ -354,55 +354,6 @@ export const fixedShiftSubmissions = pgTable(
 );
 
 /* ------------------------------------------------------------------ */
-/*  monthly_regular_assignments — Issue #74 (δ) で DROP 済              */
-/* ------------------------------------------------------------------ */
-/*  migration 0019 で DROP TABLE 済。新確定は regular_assignments を    */
-/*  使う。本 export は drizzle-kit snapshot 整合のため残置 (=参照禁止)、 */
-/*  schema 整理 PR で安全に削除する。                                  */
-
-export const monthlyRegularAssignments = pgTable(
-  "monthly_regular_assignments",
-  {
-    targetMonth: date("target_month").notNull(),
-    tutorId: uuid("tutor_id")
-      .notNull()
-      .references(() => profiles.id, { onDelete: "cascade" }),
-    weekday: weekdayEnum("weekday").notNull(),
-    slotNumber: smallint("slot_number").notNull(),
-    confirmedBy: uuid("confirmed_by")
-      .notNull()
-      .references(() => profiles.id, { onDelete: "restrict" }),
-    confirmedAt: timestamp("confirmed_at", { withTimezone: true })
-      .notNull()
-      .defaultNow(),
-    createdAt: timestamp("created_at", { withTimezone: true })
-      .notNull()
-      .defaultNow(),
-  },
-  (t) => ({
-    pk: primaryKey({
-      columns: [t.targetMonth, t.tutorId, t.weekday, t.slotNumber],
-    }),
-    tutorMonthIdx: index("monthly_regular_assignments_tutor_month_idx").on(
-      t.tutorId,
-      t.targetMonth,
-    ),
-    targetMonthFirstOfMonth: check(
-      "monthly_regular_assignments_target_month_first_of_month_chk",
-      sql`${t.targetMonth} = date_trunc('month', ${t.targetMonth})::date`,
-    ),
-    weekdayNotSun: check(
-      "monthly_regular_assignments_weekday_not_sun_chk",
-      sql`${t.weekday} <> 'sun'`,
-    ),
-    slotRange: check(
-      "monthly_regular_assignments_slot_range_chk",
-      sql`${t.slotNumber} BETWEEN 1 AND 20`,
-    ),
-  }),
-);
-
-/* ------------------------------------------------------------------ */
 /*  regular_assignments — 教室長が確定したレギュラー枠 (期間ベース)     */
 /* ------------------------------------------------------------------ */
 /*  Issue #74 (δ): 旧 monthly_regular_assignments (月単位) を effective_*/
