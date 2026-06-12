@@ -162,6 +162,13 @@
       "when": 1781016877901,
       "tag": "0022_date_range_triggers",
       "breakpoints": true
+    },
+    {
+      "idx": 23,
+      "version": "7",
+      "when": 1781200000000,
+      "tag": "0023_trigger_hardening",
+      "breakpoints": true
     }
   ]
 }
