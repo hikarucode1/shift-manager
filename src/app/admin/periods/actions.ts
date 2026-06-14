@@ -2,7 +2,7 @@
 
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
-import { and, eq, ne } from "drizzle-orm";
+import { and, eq, ne, sql } from "drizzle-orm";
 import { requireRole } from "@/lib/auth";
 import { db } from "@/db/client";
 import { periods, type periodKindEnum } from "@/db/schema";
@@ -241,19 +241,26 @@ export async function updatePeriod(input: unknown): Promise<ActionResult> {
   if (conflict) return { ok: false, error: conflict };
 
   try {
-    await db
-      .update(periods)
-      .set({
-        name: v.name,
-        startDate: v.startDate,
-        endDate: v.endDate,
-        submissionDeadline:
-          kind === "training" && v.submissionDeadline
-            ? deadlineToTimestamp(v.submissionDeadline)
-            : null,
-        updatedAt: new Date(),
-      })
-      .where(eq(periods.id, v.id));
+    // Issue #104: saveCourseConfirmations と同じ periodId 単位の advisory lock
+    // を取得。確定保存 tx が同 period を持っている場合、本 update 完了まで
+    // 待たされ、保存側は tx 内 再 SELECT で最新の startDate/endDate/isArchived を
+    // 読める。regular_shift_periods 側 (updateRegularPeriod) と同パターン (#89)。
+    await db.transaction(async (tx) => {
+      await tx.execute(sql`SELECT pg_advisory_xact_lock(hashtext(${v.id}))`);
+      await tx
+        .update(periods)
+        .set({
+          name: v.name,
+          startDate: v.startDate,
+          endDate: v.endDate,
+          submissionDeadline:
+            kind === "training" && v.submissionDeadline
+              ? deadlineToTimestamp(v.submissionDeadline)
+              : null,
+          updatedAt: new Date(),
+        })
+        .where(eq(periods.id, v.id));
+    });
   } catch (err) {
     console.error("updatePeriod failed", err);
     const code =
