@@ -240,6 +240,7 @@ export async function updatePeriod(input: unknown): Promise<ActionResult> {
   });
   if (conflict) return { ok: false, error: conflict };
 
+  let updated: { id: string }[] = [];
   try {
     // Issue #104: saveCourseConfirmations と同じ periodId 単位の advisory lock
     // を取得。確定保存 tx が同 period を持っている場合、本 update 完了まで
@@ -247,7 +248,7 @@ export async function updatePeriod(input: unknown): Promise<ActionResult> {
     // 読める。regular_shift_periods 側 (updateRegularPeriod) と同パターン (#89)。
     await db.transaction(async (tx) => {
       await tx.execute(sql`SELECT pg_advisory_xact_lock(hashtext(${v.id}))`);
-      await tx
+      updated = await tx
         .update(periods)
         .set({
           name: v.name,
@@ -259,7 +260,8 @@ export async function updatePeriod(input: unknown): Promise<ActionResult> {
               : null,
           updatedAt: new Date(),
         })
-        .where(eq(periods.id, v.id));
+        .where(eq(periods.id, v.id))
+        .returning({ id: periods.id });
     });
   } catch (err) {
     console.error("updatePeriod failed", err);
@@ -276,6 +278,9 @@ export async function updatePeriod(input: unknown): Promise<ActionResult> {
       };
     }
     return { ok: false, error: "更新に失敗しました。" };
+  }
+  if (updated.length === 0) {
+    return { ok: false, error: "対象の期間が見つかりません。" };
   }
 
   revalidatePath("/admin/periods");
