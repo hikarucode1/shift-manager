@@ -183,6 +183,13 @@
       "when": 1781548436298,
       "tag": "0025_trigger_post_not_null",
       "breakpoints": true
+    },
+    {
+      "idx": 26,
+      "version": "7",
+      "when": 1781648436298,
+      "tag": "0026_parent_period_range_triggers",
+      "breakpoints": true
     }
   ]
 }

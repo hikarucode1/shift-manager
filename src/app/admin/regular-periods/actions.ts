@@ -137,6 +137,18 @@ export async function updateRegularPeriod(
     });
   } catch (err) {
     console.error("updateRegularPeriod failed", err);
+    const code =
+      typeof err === "object" && err !== null && "code" in err
+        ? String((err as { code: unknown }).code)
+        : null;
+    // 0026 trigger: 範囲外 child (regular_assignments.effective_from/to) が残っているケース。
+    if (code === "23514") {
+      return {
+        ok: false,
+        error:
+          "期間内に範囲外のレギュラー確定枠が存在します。先に該当枠を削除してから期間を変更してください。",
+      };
+    }
     return { ok: false, error: "更新に失敗しました。" };
   }
   if (updated.length === 0) {
