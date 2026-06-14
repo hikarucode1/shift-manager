@@ -64,8 +64,7 @@ export type DateRange = {
  *   - 既存 (5/10-5/20) を 5月 で削ると → []
  *   - 既存 (3/1-3/31) を 5月 で削ると → (3/1-3/31)
  *
- * 入力は inclusive。effective_to NULL のケースは呼び出し側で
- * period.end_date 等に解決してから渡す前提 (本関数は実日付のみ扱う)。
+ * 入力は inclusive。
  *
  * 既存行に対し saveMonthlyConfirmation の DELETE が触る境界条件と整合させる:
  * 「対象月の effective_from を含む行のみ DELETE」では取りこぼす期一括行を

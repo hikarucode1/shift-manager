@@ -42,9 +42,6 @@ export type SaveMonthlyConfirmationResult =
  * - assignments 空 = 当月の確定を全解除 (= overlap 行を split のみ)
  * - すべて 1 transaction 内
  *
- * effective_to NULL の既存行は overlap select で取れるが、split 時に
- * 「NULL = 期末まで」を period.endDate に解決してから分割する。
- *
  * 期途中の日単位 effective_from 編集 UI は別 Issue で後追い。
  */
 export async function saveMonthlyConfirmation(

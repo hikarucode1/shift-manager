@@ -3,6 +3,11 @@
 -- ALTER 前に period.end_date で backfill して意味を保存する。
 -- 本番では事前に違反検出 (`SELECT count(*) FROM regular_assignments WHERE effective_to IS NULL`)
 -- で件数を確認してから適用すること。
+--
+-- TOCTOU 防止: UPDATE と ALTER の間に別 tx が INSERT (effective_to = NULL) を
+-- すり込む経路を構造的に塞ぐため、tx 冒頭で ACCESS EXCLUSIVE LOCK を取得する。
+-- regular_assignments は規模が小さく (校舎単位)、ロック保持時間は秒未満想定。
+LOCK TABLE "regular_assignments" IN ACCESS EXCLUSIVE MODE;--> statement-breakpoint
 UPDATE "regular_assignments" AS ra
 SET "effective_to" = rsp."end_date"
 FROM "regular_shift_periods" AS rsp
