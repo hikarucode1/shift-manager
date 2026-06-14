@@ -1,7 +1,7 @@
 "use server";
 
 import { z } from "zod";
-import { and, eq } from "drizzle-orm";
+import { and, eq, sql } from "drizzle-orm";
 import { revalidatePath } from "next/cache";
 import { requireRole } from "@/lib/auth";
 import { db } from "@/db/client";
@@ -85,6 +85,13 @@ export async function saveCourseConfirmations(
 
   try {
     await db.transaction(async (tx) => {
+      // Issue #104: updatePeriod と同じ periodId 単位の advisory lock。
+      // 期マスタ更新 tx が走っているとここで待たされ、commit 後の startDate/
+      // endDate/isArchived を踏まえて 0022 child trigger が判定する。
+      // regular_assignments 側 (saveMonthlyConfirmation) と同パターン (#89, PR #81)。
+      await tx.execute(
+        sql`SELECT pg_advisory_xact_lock(hashtext(${periodId}))`,
+      );
       await tx
         .delete(courseConfirmations)
         .where(
