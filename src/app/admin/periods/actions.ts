@@ -240,19 +240,36 @@ export async function updatePeriod(input: unknown): Promise<ActionResult> {
   });
   if (conflict) return { ok: false, error: conflict };
 
-  await db
-    .update(periods)
-    .set({
-      name: v.name,
-      startDate: v.startDate,
-      endDate: v.endDate,
-      submissionDeadline:
-        kind === "training" && v.submissionDeadline
-          ? deadlineToTimestamp(v.submissionDeadline)
-          : null,
-      updatedAt: new Date(),
-    })
-    .where(eq(periods.id, v.id));
+  try {
+    await db
+      .update(periods)
+      .set({
+        name: v.name,
+        startDate: v.startDate,
+        endDate: v.endDate,
+        submissionDeadline:
+          kind === "training" && v.submissionDeadline
+            ? deadlineToTimestamp(v.submissionDeadline)
+            : null,
+        updatedAt: new Date(),
+      })
+      .where(eq(periods.id, v.id));
+  } catch (err) {
+    console.error("updatePeriod failed", err);
+    const code =
+      typeof err === "object" && err !== null && "code" in err
+        ? String((err as { code: unknown }).code)
+        : null;
+    // 0026 trigger: 範囲外 child (course_confirmations.date) が残っているケース。
+    if (code === "23514") {
+      return {
+        ok: false,
+        error:
+          "期間内に範囲外の確定枠が存在します。先に該当枠を削除してから期間を変更してください。",
+      };
+    }
+    return { ok: false, error: "更新に失敗しました。" };
+  }
 
   revalidatePath("/admin/periods");
   return { ok: true };
