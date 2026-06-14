@@ -1,7 +1,7 @@
 "use server";
 
 import { z } from "zod";
-import { and, eq, gte, isNull, lte, or, sql } from "drizzle-orm";
+import { and, eq, gte, lte, sql } from "drizzle-orm";
 import { revalidatePath } from "next/cache";
 import { requireRole } from "@/lib/auth";
 import { db } from "@/db/client";
@@ -138,10 +138,7 @@ export async function saveMonthlyConfirmation(
           and(
             eq(regularAssignments.periodId, periodId),
             lte(regularAssignments.effectiveFrom, monthEnd),
-            or(
-              isNull(regularAssignments.effectiveTo),
-              gte(regularAssignments.effectiveTo, monthStart),
-            ),
+            gte(regularAssignments.effectiveTo, monthStart),
           ),
         );
 
@@ -167,10 +164,8 @@ export async function saveMonthlyConfirmation(
           confirmedAt: Date;
         }> = [];
         for (const r of overlapping) {
-          // effective_to NULL は period.endDate に coalesce
-          const effectiveTo = r.effectiveTo ?? period.endDate;
           const remainder = splitRangeRemovingMonth(
-            { effectiveFrom: r.effectiveFrom, effectiveTo },
+            { effectiveFrom: r.effectiveFrom, effectiveTo: r.effectiveTo },
             monthStart,
             monthEnd,
           );

@@ -1,4 +1,4 @@
-import { and, asc, desc, eq, gte, isNull, lt, lte, or } from "drizzle-orm";
+import { and, asc, desc, eq, gte, lt, lte } from "drizzle-orm";
 import { requireRole } from "@/lib/auth";
 import { db } from "@/db/client";
 import {
@@ -151,10 +151,7 @@ export default async function AdminFixedShiftsOverviewPage({
           and(
             eq(regularAssignments.periodId, period.id),
             lte(regularAssignments.effectiveFrom, monthEndIso),
-            or(
-              isNull(regularAssignments.effectiveTo),
-              gte(regularAssignments.effectiveTo, targetMonth),
-            ),
+            gte(regularAssignments.effectiveTo, targetMonth),
           ),
         )
     : [];

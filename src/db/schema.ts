@@ -386,8 +386,8 @@ export const regularAssignments = pgTable(
     slotNumber: smallint("slot_number").notNull(),
     /** 適用開始日 (inclusive)。期途中変更は新しい effective_from の行を INSERT */
     effectiveFrom: date("effective_from").notNull(),
-    /** 適用終了日 (inclusive)。null = 期末まで (期 end_date が事実上の上限) */
-    effectiveTo: date("effective_to"),
+    /** 適用終了日 (inclusive)。NULL は許容しない (#87): admin 確定行は必ず period.end_date を入れる。 */
+    effectiveTo: date("effective_to").notNull(),
     /** 確定操作した admin。確定状態の責任所在を残すため null 不可 */
     confirmedBy: uuid("confirmed_by")
       .notNull()
@@ -409,10 +409,9 @@ export const regularAssignments = pgTable(
       "regular_assignments_slot_range_chk",
       sql`${t.slotNumber} BETWEEN 1 AND 20`,
     ),
-    // effective_to が NULL のときは無制限 (期末まで)、それ以外は from <= to
     dateRange: check(
       "regular_assignments_date_range_chk",
-      sql`${t.effectiveTo} IS NULL OR ${t.effectiveFrom} <= ${t.effectiveTo}`,
+      sql`${t.effectiveFrom} <= ${t.effectiveTo}`,
     ),
     // 講師ページ (自分の有効な確定を取得) 用
     tutorPeriodIdx: index("regular_assignments_tutor_period_idx").on(
