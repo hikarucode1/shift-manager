@@ -1,4 +1,4 @@
-import { and, asc, desc, eq, gte, isNull, lte, or } from "drizzle-orm";
+import { and, asc, desc, eq, gte, lte } from "drizzle-orm";
 import { requireRole } from "@/lib/auth";
 import { db } from "@/db/client";
 import {
@@ -87,8 +87,7 @@ export default async function FixedShiftPage() {
       .orderBy(desc(regularShiftPeriods.startDate))
       .limit(1),
     // Issue #74 (δ): 自分の確定済みレギュラー枠 (今日以降に有効な行のみ)。
-    // effective_to が NULL = 期末まで or NOT NULL かつ today 以降。effective_from
-    // の早い順 + weekday 順で取り、UI で「期間ごとにグループ化して表示」する。
+    // effective_from の早い順 + weekday 順で取り、UI で「期間ごとにグループ化して表示」する。
     db
       .select({
         effectiveFrom: regularAssignments.effectiveFrom,
@@ -100,10 +99,7 @@ export default async function FixedShiftPage() {
       .where(
         and(
           eq(regularAssignments.tutorId, profile.id),
-          or(
-            isNull(regularAssignments.effectiveTo),
-            gte(regularAssignments.effectiveTo, today),
-          ),
+          gte(regularAssignments.effectiveTo, today),
         ),
       )
       .orderBy(
@@ -240,18 +236,17 @@ export default async function FixedShiftPage() {
           <CardContent className="space-y-2 text-xs">
             {Array.from(
               confirmedRows.reduce((acc, r) => {
-                const key = `${r.effectiveFrom}__${r.effectiveTo ?? ""}`;
+                const key = `${r.effectiveFrom}__${r.effectiveTo}`;
                 if (!acc.has(key)) acc.set(key, []);
                 acc.get(key)!.push(r);
                 return acc;
               }, new Map<string, typeof confirmedRows>()),
             ).map(([key, rows]) => {
-              const [from, toRaw] = key.split("__");
-              const to = toRaw === "" ? null : toRaw;
+              const [from, to] = key.split("__");
               return (
                 <div key={key}>
                   <div className="font-medium">
-                    {from} 〜 {to ?? "期末まで"}: {rows.length} 枠
+                    {from} 〜 {to}: {rows.length} 枠
                   </div>
                   <ul className="ml-4 text-muted-foreground">
                     {rows.map((r) => (

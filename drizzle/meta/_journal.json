@@ -169,6 +169,20 @@
       "when": 1781200000000,
       "tag": "0023_trigger_hardening",
       "breakpoints": true
+    },
+    {
+      "idx": 24,
+      "version": "7",
+      "when": 1781448436298,
+      "tag": "0024_same_santa_claus",
+      "breakpoints": true
+    },
+    {
+      "idx": 25,
+      "version": "7",
+      "when": 1781548436298,
+      "tag": "0025_trigger_post_not_null",
+      "breakpoints": true
     }
   ]
 }

@@ -1,7 +1,7 @@
 "use server";
 
 import { z } from "zod";
-import { and, eq, gte, isNull, lte, or, sql } from "drizzle-orm";
+import { and, eq, gte, lte, sql } from "drizzle-orm";
 import { revalidatePath } from "next/cache";
 import { requireRole } from "@/lib/auth";
 import { db } from "@/db/client";
@@ -41,9 +41,6 @@ export type SaveMonthlyConfirmationResult =
  *   → 期一括行 (4/1〜6/30) と単月行 (5/1〜5/31) の重複行が共存しない
  * - assignments 空 = 当月の確定を全解除 (= overlap 行を split のみ)
  * - すべて 1 transaction 内
- *
- * effective_to NULL の既存行は overlap select で取れるが、split 時に
- * 「NULL = 期末まで」を period.endDate に解決してから分割する。
  *
  * 期途中の日単位 effective_from 編集 UI は別 Issue で後追い。
  */
@@ -138,10 +135,7 @@ export async function saveMonthlyConfirmation(
           and(
             eq(regularAssignments.periodId, periodId),
             lte(regularAssignments.effectiveFrom, monthEnd),
-            or(
-              isNull(regularAssignments.effectiveTo),
-              gte(regularAssignments.effectiveTo, monthStart),
-            ),
+            gte(regularAssignments.effectiveTo, monthStart),
           ),
         );
 
@@ -167,10 +161,8 @@ export async function saveMonthlyConfirmation(
           confirmedAt: Date;
         }> = [];
         for (const r of overlapping) {
-          // effective_to NULL は period.endDate に coalesce
-          const effectiveTo = r.effectiveTo ?? period.endDate;
           const remainder = splitRangeRemovingMonth(
-            { effectiveFrom: r.effectiveFrom, effectiveTo },
+            { effectiveFrom: r.effectiveFrom, effectiveTo: r.effectiveTo },
             monthStart,
             monthEnd,
           );
