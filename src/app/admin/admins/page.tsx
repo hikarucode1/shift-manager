@@ -35,6 +35,8 @@ export default async function AdminAdminsPage() {
         <p className="mt-1 text-sm text-muted-foreground">
           教室長の有効/無効を切り替えます。退職者は無効化で運用し、削除はできません
           (確定枠の責任所在を残すため)。最後の有効な教室長は無効化できません。
+          教室長の新規追加は本 UI からは行えません — 既存の教室長 (DB 管理者)
+          にお問い合わせください。
         </p>
       </div>
       <AdminManager
