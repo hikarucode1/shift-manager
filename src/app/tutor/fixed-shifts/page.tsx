@@ -271,7 +271,7 @@ export default async function FixedShiftPage() {
         <CardHeader>
           <CardTitle className="text-base">曜日 × コマ</CardTitle>
           <CardDescription>
-            ○ = 出勤可、△ = 出勤可だが避けたい、空欄 = 不可。
+            ○ = 出勤可、△ = 出勤可だが避けたい、空欄 = 不可。タップごとに ○ → △ → 空 → ○ … と循環します（△ は空セルから 2 回、○ セルから 1 回）。
           </CardDescription>
         </CardHeader>
         <CardContent>
