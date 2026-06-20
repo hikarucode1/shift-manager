@@ -287,7 +287,7 @@ export function FixedShiftEditor({
         </table>
         {isEditable && (
           <p className="mt-2 text-xs text-muted-foreground">
-            タップで ○ (出勤可) → △ (可だが避けたい) → 空 (不可) を切り替えます。
+            タップごとに ○ (出勤可) → △ (可だが避けたい) → 空 (不可) → ○ … と循環します。△ にするには空セルから 2 回、○ セルから 1 回タップしてください。
           </p>
         )}
       </div>

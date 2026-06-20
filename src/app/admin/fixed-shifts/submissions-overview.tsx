@@ -524,9 +524,9 @@ export function AdminSubmissionsOverview({
               <thead>
                 <tr>
                   <th className="sticky left-0 z-10 bg-card text-left text-muted-foreground">
-                    コマ
+                    曜日
                   </th>
-                  <th className="text-left text-muted-foreground">曜日</th>
+                  <th className="text-left text-muted-foreground">コマ</th>
                   {tutors.map((t) => (
                     <th
                       key={t.id}
@@ -541,17 +541,17 @@ export function AdminSubmissionsOverview({
                 </tr>
               </thead>
               <tbody>
-                {slots.flatMap((slot) =>
-                  INPUT_WEEKDAYS.map((w) => {
+                {INPUT_WEEKDAYS.flatMap((w) =>
+                  slots.map((slot) => {
                     const cellKey = `${w.key as InputWeekday}:${slot.slotNumber}`;
                     const counts = cellCounts.get(cellKey);
                     return (
                       <tr key={cellKey}>
                         <th className="sticky left-0 z-10 bg-card text-left text-muted-foreground">
-                          {slot.label}
+                          {w.label}
                         </th>
                         <th className="text-left text-muted-foreground">
-                          {w.label}
+                          {slot.label}
                         </th>
                         {tutors.map((t) => {
                           const a = entryMaps.get(t.id)?.get(cellKey);
