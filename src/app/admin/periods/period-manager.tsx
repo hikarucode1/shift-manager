@@ -77,7 +77,9 @@ export function PeriodManager({
   }, [notice]);
 
   // 新規作成フォーム
-  const [kind, setKind] = useState<Kind>("training");
+  // 通常期間 (normal) は廃止予定のため、新規作成は講習期間に固定 (#110)。
+  // 既存の normal 行の表示・編集・アーカイブは引き続き可能。
+  const kind: Kind = "training";
   const [name, setName] = useState("");
   const [start, setStart] = useState("");
   const [end, setEnd] = useState("");
@@ -182,7 +184,7 @@ export function PeriodManager({
             期間を作成
           </CardTitle>
           <CardDescription>
-            講習期間は提出締切日が必須です。通常期間に締切はありません。
+            講習期間と提出締切日を設定します。提出締切日は必須です。
           </CardDescription>
         </CardHeader>
         <CardContent>
@@ -190,18 +192,6 @@ export function PeriodManager({
             className="grid gap-3 sm:grid-cols-2 lg:grid-cols-5 lg:items-end"
             onSubmit={handleCreate}
           >
-            <div className="space-y-1">
-              <Label htmlFor="p-kind">種別</Label>
-              <select
-                id="p-kind"
-                value={kind}
-                onChange={(e) => setKind(e.target.value as Kind)}
-                className="h-9 w-full rounded-md border bg-background px-2 text-sm focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
-              >
-                <option value="training">講習期間</option>
-                <option value="normal">通常期間</option>
-              </select>
-            </div>
             <div className="space-y-1 sm:col-span-2 lg:col-span-1">
               <Label htmlFor="p-name">名称</Label>
               <Input

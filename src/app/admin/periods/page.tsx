@@ -38,9 +38,11 @@ export default async function AdminPeriodsPage() {
   return (
     <div className="space-y-6">
       <div>
-        <h1 className="text-2xl font-semibold">期間管理</h1>
+        <h1 className="text-2xl font-semibold">講習期間管理</h1>
         <p className="mt-1 text-sm text-muted-foreground">
-          通常期間・講習期間と、講習の希望提出締切日を設定します。削除はできません（アーカイブのみ）。
+          講習期間と、講習の希望提出締切日を設定します。削除はできません（アーカイブのみ）。
+          講師のレギュラーシフト提出期は「レギュラー期間」で設定します。
+          通常期間（normal）は廃止予定のため新規作成できません（既存分の表示・編集・アーカイブは可能）。
         </p>
       </div>
       <PeriodManager periods={periodRows} today={jstToday()} />
