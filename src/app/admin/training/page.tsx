@@ -57,7 +57,7 @@ export default async function AdminTrainingPage({
       {periods.length === 0 ? (
         <Card>
           <CardContent className="py-12 text-center text-sm text-muted-foreground">
-            講習期間がありません。「期間管理」から作成してください。
+            講習期間がありません。「講習期間管理」から作成してください。
           </CardContent>
         </Card>
       ) : (

@@ -6,7 +6,7 @@ const nav = [
   { href: "/admin", label: "ダッシュボード" },
   { href: "/admin/tutors", label: "講師管理" },
   { href: "/admin/admins", label: "教室長管理" },
-  { href: "/admin/periods", label: "期間管理" },
+  { href: "/admin/periods", label: "講習期間" },
   { href: "/admin/submission-periods", label: "月別提出期間" },
   { href: "/admin/regular-periods", label: "レギュラー期間" },
   { href: "/admin/fixed-shifts", label: "固定シフト俯瞰" },
