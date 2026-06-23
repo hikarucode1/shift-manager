@@ -292,20 +292,22 @@ export function RegularPeriodManager({
         now={nowClient}
         emptyText="期がまだ登録されていません。"
         isPending={isPending}
-        editId={editId}
-        eLabel={eLabel}
-        eStart={eStart}
-        eEnd={eEnd}
-        eOpens={eOpens}
-        eDue={eDue}
-        setELabel={setELabel}
-        setEStart={setEStart}
-        setEEnd={setEEnd}
-        setEOpens={setEOpens}
-        setEDue={setEDue}
-        onStartEdit={startEdit}
-        onCancelEdit={() => setEditId(null)}
-        onUpdate={handleUpdate}
+        editing={{
+          editId,
+          eLabel,
+          eStart,
+          eEnd,
+          eOpens,
+          eDue,
+          setELabel,
+          setEStart,
+          setEEnd,
+          setEOpens,
+          setEDue,
+          onStartEdit: startEdit,
+          onCancelEdit: () => setEditId(null),
+          onUpdate: handleUpdate,
+        }}
         onArchive={(id, value) =>
           run(
             () => setRegularPeriodArchived({ id, value }),
@@ -321,20 +323,6 @@ export function RegularPeriodManager({
           now={nowClient}
           emptyText=""
           isPending={isPending}
-          editId={null}
-          eLabel=""
-          eStart=""
-          eEnd=""
-          eOpens=""
-          eDue=""
-          setELabel={() => {}}
-          setEStart={() => {}}
-          setEEnd={() => {}}
-          setEOpens={() => {}}
-          setEDue={() => {}}
-          onStartEdit={() => {}}
-          onCancelEdit={() => {}}
-          onUpdate={() => {}}
           onArchive={(id, value) =>
             run(
               () => setRegularPeriodArchived({ id, value }),
@@ -348,34 +336,8 @@ export function RegularPeriodManager({
   );
 }
 
-function PeriodList({
-  title,
-  rows,
-  now,
-  emptyText,
-  isPending,
-  editId,
-  eLabel,
-  eStart,
-  eEnd,
-  eOpens,
-  eDue,
-  setELabel,
-  setEStart,
-  setEEnd,
-  setEOpens,
-  setEDue,
-  onStartEdit,
-  onCancelEdit,
-  onUpdate,
-  onArchive,
-  archivedView = false,
-}: {
-  title: string;
-  rows: RegularPeriodRow[];
-  now: string;
-  emptyText: string;
-  isPending: boolean;
+/** 行内編集 UI 一式。read-only な一覧 (アーカイブ済み) では渡さない。 */
+type PeriodEditing = {
   editId: string | null;
   eLabel: string;
   eStart: string;
@@ -390,6 +352,24 @@ function PeriodList({
   onStartEdit: (p: RegularPeriodRow) => void;
   onCancelEdit: () => void;
   onUpdate: (p: RegularPeriodRow) => void;
+};
+
+function PeriodList({
+  title,
+  rows,
+  now,
+  emptyText,
+  isPending,
+  editing,
+  onArchive,
+  archivedView = false,
+}: {
+  title: string;
+  rows: RegularPeriodRow[];
+  now: string;
+  emptyText: string;
+  isPending: boolean;
+  editing?: PeriodEditing;
   onArchive: (id: string, value: boolean) => void;
   archivedView?: boolean;
 }) {
@@ -411,7 +391,8 @@ function PeriodList({
         ) : (
           <div className="divide-y">
             {rows.map((p) => {
-              const editing = editId === p.id;
+              const rowEditing =
+                editing && editing.editId === p.id ? editing : null;
               return (
                 <div
                   key={p.id}
@@ -420,13 +401,13 @@ function PeriodList({
                     archivedView && "opacity-60",
                   )}
                 >
-                  {editing ? (
+                  {rowEditing ? (
                     <div className="flex flex-1 flex-col gap-2">
                       <div className="space-y-1">
                         <Label className="text-xs">ラベル</Label>
                         <Input
-                          value={eLabel}
-                          onChange={(e) => setELabel(e.target.value)}
+                          value={rowEditing.eLabel}
+                          onChange={(e) => rowEditing.setELabel(e.target.value)}
                           maxLength={100}
                           className="h-8"
                         />
@@ -436,8 +417,10 @@ function PeriodList({
                           <Label className="text-xs">開始日</Label>
                           <Input
                             type="date"
-                            value={eStart}
-                            onChange={(e) => setEStart(e.target.value)}
+                            value={rowEditing.eStart}
+                            onChange={(e) =>
+                              rowEditing.setEStart(e.target.value)
+                            }
                             className="h-8"
                           />
                         </div>
@@ -445,8 +428,8 @@ function PeriodList({
                           <Label className="text-xs">終了日</Label>
                           <Input
                             type="date"
-                            value={eEnd}
-                            onChange={(e) => setEEnd(e.target.value)}
+                            value={rowEditing.eEnd}
+                            onChange={(e) => rowEditing.setEEnd(e.target.value)}
                             className="h-8"
                           />
                         </div>
@@ -454,8 +437,10 @@ function PeriodList({
                           <Label className="text-xs">提出開始</Label>
                           <Input
                             type="datetime-local"
-                            value={eOpens}
-                            onChange={(e) => setEOpens(e.target.value)}
+                            value={rowEditing.eOpens}
+                            onChange={(e) =>
+                              rowEditing.setEOpens(e.target.value)
+                            }
                             className="h-8"
                           />
                         </div>
@@ -463,15 +448,15 @@ function PeriodList({
                           <Label className="text-xs">提出締切</Label>
                           <Input
                             type="datetime-local"
-                            value={eDue}
-                            onChange={(e) => setEDue(e.target.value)}
+                            value={rowEditing.eDue}
+                            onChange={(e) => rowEditing.setEDue(e.target.value)}
                             className="h-8"
                           />
                         </div>
                         <Button
                           size="sm"
                           disabled={isPending}
-                          onClick={() => onUpdate(p)}
+                          onClick={() => rowEditing.onUpdate(p)}
                         >
                           保存
                         </Button>
@@ -480,7 +465,7 @@ function PeriodList({
                           variant="ghost"
                           className="size-8"
                           aria-label="キャンセル"
-                          onClick={onCancelEdit}
+                          onClick={rowEditing.onCancelEdit}
                         >
                           <X />
                         </Button>
@@ -509,16 +494,16 @@ function PeriodList({
                     </div>
                   )}
 
-                  {!editing && (
+                  {!rowEditing && (
                     <div className="flex flex-wrap items-center gap-2">
-                      {!archivedView && (
+                      {editing && !archivedView && (
                         <Button
                           size="icon"
                           variant="ghost"
                           className="size-8"
                           aria-label="編集"
                           disabled={isPending}
-                          onClick={() => onStartEdit(p)}
+                          onClick={() => editing.onStartEdit(p)}
                         >
                           <Pencil className="size-3.5" />
                         </Button>

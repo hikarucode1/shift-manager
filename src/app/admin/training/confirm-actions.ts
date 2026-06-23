@@ -124,7 +124,8 @@ export async function saveCourseConfirmations(
     if (code === "23503") {
       return {
         ok: false,
-        error: "確定保存に失敗しました: 講師または教室長 ID が見つかりません。",
+        error:
+          "確定保存に失敗しました: 講師・教室長・期 ID のいずれかが見つかりません。",
       };
     }
     if (code === "23514") {
