@@ -94,7 +94,7 @@ function eachDate(startIso: string, endIso: string): string[] {
 /** 終了からこの日数を超えた講習は一覧から隠す (締切後の見直し猶予) */
 const ENDED_VISIBLE_DAYS = 30;
 
-/** 講師に出す講習期間 (kind=training, 未アーカイブ, 直近) を新しい順で */
+/** 講師に出す講習期間 (未アーカイブ, 直近) を新しい順で。#110 で全期間=講習期間 */
 export async function getActiveTrainingPeriods(): Promise<
   TrainingPeriodSummary[]
 > {
@@ -108,7 +108,7 @@ export async function getActiveTrainingPeriods(): Promise<
       isReopened: periods.isReopened,
     })
     .from(periods)
-    .where(and(eq(periods.kind, "training"), eq(periods.isArchived, false)))
+    .where(eq(periods.isArchived, false))
     .orderBy(desc(periods.startDate));
 
   const cutoff = addDaysIso(jstStartOfToday().toISOString().slice(0, 10), -ENDED_VISIBLE_DAYS);
@@ -141,7 +141,6 @@ export async function getTrainingEditorData(
   const prow = await db
     .select({
       id: periods.id,
-      kind: periods.kind,
       name: periods.name,
       startDate: periods.startDate,
       endDate: periods.endDate,
@@ -155,7 +154,6 @@ export async function getTrainingEditorData(
 
   if (
     prow.length === 0 ||
-    prow[0].kind !== "training" ||
     prow[0].isArchived ||
     prow[0].submissionDeadline === null
   ) {
@@ -244,7 +242,6 @@ export async function assertTrainingEditable(
 > {
   const rows = await db
     .select({
-      kind: periods.kind,
       startDate: periods.startDate,
       endDate: periods.endDate,
       submissionDeadline: periods.submissionDeadline,
@@ -257,7 +254,7 @@ export async function assertTrainingEditable(
 
   if (rows.length === 0) return { ok: false, reason: "期間が存在しません。" };
   const r = rows[0];
-  if (r.kind !== "training" || r.isArchived || r.submissionDeadline === null) {
+  if (r.isArchived || r.submissionDeadline === null) {
     return { ok: false, reason: "対象の講習期間ではありません。" };
   }
   const { editable } = computeEditable(

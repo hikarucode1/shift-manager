@@ -190,6 +190,13 @@
       "when": 1781648436298,
       "tag": "0026_parent_period_range_triggers",
       "breakpoints": true
+    },
+    {
+      "idx": 27,
+      "version": "7",
+      "when": 1782204619907,
+      "tag": "0027_rare_madame_hydra",
+      "breakpoints": true
     }
   ]
 }

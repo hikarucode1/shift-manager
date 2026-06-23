@@ -11,7 +11,6 @@ export default async function AdminPeriodsPage() {
   const rows = await db
     .select({
       id: periods.id,
-      kind: periods.kind,
       name: periods.name,
       startDate: periods.startDate,
       endDate: periods.endDate,
@@ -24,7 +23,6 @@ export default async function AdminPeriodsPage() {
 
   const periodRows = rows.map((p) => ({
     id: p.id,
-    kind: p.kind,
     name: p.name,
     startDate: p.startDate,
     endDate: p.endDate,
@@ -42,7 +40,6 @@ export default async function AdminPeriodsPage() {
         <p className="mt-1 text-sm text-muted-foreground">
           講習期間と、講習の希望提出締切日を設定します。削除はできません（アーカイブのみ）。
           講師のレギュラーシフト提出期は「レギュラー期間」で設定します。
-          通常期間（normal）は廃止予定のため新規作成できません（既存分の表示・編集・アーカイブは可能）。
         </p>
       </div>
       <PeriodManager periods={periodRows} today={jstToday()} />

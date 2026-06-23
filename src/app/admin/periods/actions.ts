@@ -5,14 +5,13 @@ import { z } from "zod";
 import { and, eq, ne, sql } from "drizzle-orm";
 import { requireRole } from "@/lib/auth";
 import { db } from "@/db/client";
-import { periods, type periodKindEnum } from "@/db/schema";
+import { periods } from "@/db/schema";
 import { isValidIsoDate } from "@/lib/week";
 
-type PeriodKind = (typeof periodKindEnum.enumValues)[number];
-
 /**
- * 同種別・未アーカイブの他期間と「日付レンジ重複」または「同名」が無いか検証。
- * 重複講習期間があると #7（講習希望提出）で日付がどの期間か一意に決まらない。
+ * 未アーカイブの他期間と「日付レンジ重複」または「同名」が無いか検証。
+ * #110 で kind を撤廃し、全期間が講習期間。重複講習期間があると #7（講習希望
+ * 提出）で日付がどの期間か一意に決まらない。
  * @returns 問題が無ければ null、あればユーザー向けメッセージ
  *
  * ⚠️ 残存リスク (#26 レビュー PR1, 受容済み):
@@ -26,7 +25,6 @@ type PeriodKind = (typeof periodKindEnum.enumValues)[number];
  */
 async function findPeriodConflict(args: {
   excludeId?: string;
-  kind: PeriodKind;
   name: string;
   startDate: string;
   endDate: string;
@@ -41,7 +39,6 @@ async function findPeriodConflict(args: {
     .from(periods)
     .where(
       and(
-        eq(periods.kind, args.kind),
         eq(periods.isArchived, false),
         args.excludeId ? ne(periods.id, args.excludeId) : undefined,
       ),
@@ -49,7 +46,7 @@ async function findPeriodConflict(args: {
 
   const sameName = rows.find((r) => r.name === args.name.trim());
   if (sameName) {
-    return `同名の${args.kind === "training" ? "講習" : "通常"}期間が既にあります（「${sameName.name}」）。名称を変えてください。`;
+    return `同名の講習期間が既にあります（「${sameName.name}」）。名称を変えてください。`;
   }
   // 日付レンジ重複: s1 <= e2 && s2 <= e1
   const overlap = rows.find(
@@ -68,16 +65,12 @@ const isoDate = z
   .refine((v) => isValidIsoDate(v), "日付の形式が正しくありません。");
 
 /**
- * 期間長 (開始・終了を含む日数) の運用上限。
- * training は #7 で eachDate により 1 日ずつ展開され、その安全弁が 366 日で
- * 頭打ちになる (src/lib/training.ts)。上限を設けないと 1 年超の誤設定で
- * 日付が無言で切り捨てられる (#29)。90 日は講習の運用上の最長。
- * normal は日次展開しないが、年単位の誤入力 (西暦打ち間違い等) を弾くため緩い上限。
+ * 講習期間長 (開始・終了を含む日数) の運用上限。
+ * #7 で eachDate により 1 日ずつ展開され、その安全弁が 366 日で頭打ちになる
+ * (src/lib/training.ts)。上限を設けないと 1 年超の誤設定で日付が無言で切り捨て
+ * られる (#29)。90 日は講習の運用上の最長。
  */
-const MAX_PERIOD_DAYS: Record<PeriodKind, number> = {
-  training: 90,
-  normal: 400,
-};
+const MAX_PERIOD_DAYS = 90;
 
 /** 開始・終了を含む日数。ISO 日付前提 (UTC 正午基準で DST 無関係)。 */
 function periodLengthDays(startIso: string, endIso: string): number {
@@ -86,14 +79,9 @@ function periodLengthDays(startIso: string, endIso: string): number {
   return Math.round((e - s) / 86_400_000) + 1;
 }
 
-function periodLengthError(
-  kind: PeriodKind,
-  startDate: string,
-  endDate: string,
-): string | null {
-  const max = MAX_PERIOD_DAYS[kind];
-  if (periodLengthDays(startDate, endDate) > max) {
-    return `${kind === "training" ? "講習" : "通常"}期間が長すぎます（最長 ${max} 日）。日付を見直してください。`;
+function periodLengthError(startDate: string, endDate: string): string | null {
+  if (periodLengthDays(startDate, endDate) > MAX_PERIOD_DAYS) {
+    return `講習期間が長すぎます（最長 ${MAX_PERIOD_DAYS} 日）。日付を見直してください。`;
   }
   return null;
 }
@@ -108,41 +96,19 @@ function deadlineToTimestamp(dateIso: string): Date {
 
 const PeriodInput = z
   .object({
-    kind: z.enum(["normal", "training"]),
     name: z.string().trim().min(1, "名称を入力してください。").max(80),
     startDate: isoDate,
     endDate: isoDate,
-    /** 講習のみ。normal では無視 */
-    submissionDeadline: isoDate.optional().nullable(),
+    submissionDeadline: isoDate,
   })
   .refine((v) => v.startDate <= v.endDate, {
     message: "開始日は終了日以前にしてください。",
     path: ["endDate"],
   })
-  .refine(
-    (v) =>
-      v.kind === "normal" ||
-      (typeof v.submissionDeadline === "string" &&
-        v.submissionDeadline.length > 0),
-    { message: "講習期間は提出締切日が必須です。", path: ["submissionDeadline"] },
-  )
-  .refine(
-    (v) =>
-      v.kind === "training" ||
-      v.submissionDeadline == null ||
-      v.submissionDeadline === "",
-    { message: "通常期間に締切日は設定できません。", path: ["submissionDeadline"] },
-  )
-  .refine(
-    (v) =>
-      v.kind !== "training" ||
-      !v.submissionDeadline ||
-      v.submissionDeadline <= v.startDate,
-    {
-      message: "提出締切日は講習開始日以前にしてください。",
-      path: ["submissionDeadline"],
-    },
-  );
+  .refine((v) => v.submissionDeadline <= v.startDate, {
+    message: "提出締切日は講習開始日以前にしてください。",
+    path: ["submissionDeadline"],
+  });
 
 export async function createPeriod(input: unknown): Promise<ActionResult> {
   const { profile } = await requireRole("admin");
@@ -156,11 +122,10 @@ export async function createPeriod(input: unknown): Promise<ActionResult> {
   }
   const v = parsed.data;
 
-  const lengthError = periodLengthError(v.kind, v.startDate, v.endDate);
+  const lengthError = periodLengthError(v.startDate, v.endDate);
   if (lengthError) return { ok: false, error: lengthError };
 
   const conflict = await findPeriodConflict({
-    kind: v.kind,
     name: v.name,
     startDate: v.startDate,
     endDate: v.endDate,
@@ -168,14 +133,10 @@ export async function createPeriod(input: unknown): Promise<ActionResult> {
   if (conflict) return { ok: false, error: conflict };
 
   await db.insert(periods).values({
-    kind: v.kind,
     name: v.name,
     startDate: v.startDate,
     endDate: v.endDate,
-    submissionDeadline:
-      v.kind === "training" && v.submissionDeadline
-        ? deadlineToTimestamp(v.submissionDeadline)
-        : null,
+    submissionDeadline: deadlineToTimestamp(v.submissionDeadline),
     createdBy: profile.id,
   });
 
@@ -188,7 +149,7 @@ const UpdateInput = z.object({
   name: z.string().trim().min(1, "名称を入力してください。").max(80),
   startDate: isoDate,
   endDate: isoDate,
-  submissionDeadline: isoDate.optional().nullable(),
+  submissionDeadline: isoDate,
 });
 
 export async function updatePeriod(input: unknown): Promise<ActionResult> {
@@ -206,34 +167,18 @@ export async function updatePeriod(input: unknown): Promise<ActionResult> {
     return { ok: false, error: "開始日は終了日以前にしてください。" };
   }
 
-  const rows = await db
-    .select({ kind: periods.kind })
-    .from(periods)
-    .where(eq(periods.id, v.id))
-    .limit(1);
-  if (rows.length === 0) {
-    return { ok: false, error: "対象の期間が見つかりません。" };
-  }
-  const kind = rows[0].kind;
-
-  const lengthError = periodLengthError(kind, v.startDate, v.endDate);
+  const lengthError = periodLengthError(v.startDate, v.endDate);
   if (lengthError) return { ok: false, error: lengthError };
 
-  if (kind === "training") {
-    if (!(typeof v.submissionDeadline === "string" && v.submissionDeadline)) {
-      return { ok: false, error: "講習期間は提出締切日が必須です。" };
-    }
-    if (v.submissionDeadline > v.startDate) {
-      return {
-        ok: false,
-        error: "提出締切日は講習開始日以前にしてください。",
-      };
-    }
+  if (v.submissionDeadline > v.startDate) {
+    return {
+      ok: false,
+      error: "提出締切日は講習開始日以前にしてください。",
+    };
   }
 
   const conflict = await findPeriodConflict({
     excludeId: v.id,
-    kind,
     name: v.name,
     startDate: v.startDate,
     endDate: v.endDate,
@@ -254,10 +199,7 @@ export async function updatePeriod(input: unknown): Promise<ActionResult> {
           name: v.name,
           startDate: v.startDate,
           endDate: v.endDate,
-          submissionDeadline:
-            kind === "training" && v.submissionDeadline
-              ? deadlineToTimestamp(v.submissionDeadline)
-              : null,
+          submissionDeadline: deadlineToTimestamp(v.submissionDeadline),
           updatedAt: new Date(),
         })
         .where(eq(periods.id, v.id))
@@ -309,7 +251,7 @@ export async function setPeriodArchived(
   return { ok: true };
 }
 
-/** 締切後の再開放 / 解除 (講習のみ意味を持つ) */
+/** 締切後の再開放 / 解除 */
 export async function setPeriodReopened(
   input: unknown,
 ): Promise<ActionResult> {
@@ -317,22 +259,14 @@ export async function setPeriodReopened(
   const parsed = ToggleInput.safeParse(input);
   if (!parsed.success) return { ok: false, error: "入力が不正です。" };
 
-  const rows = await db
-    .select({ kind: periods.kind })
-    .from(periods)
-    .where(eq(periods.id, parsed.data.id))
-    .limit(1);
-  if (rows.length === 0) {
-    return { ok: false, error: "対象の期間が見つかりません。" };
-  }
-  if (rows[0].kind !== "training") {
-    return { ok: false, error: "通常期間に再開放はありません。" };
-  }
-
-  await db
+  const updated = await db
     .update(periods)
     .set({ isReopened: parsed.data.value, updatedAt: new Date() })
-    .where(eq(periods.id, parsed.data.id));
+    .where(eq(periods.id, parsed.data.id))
+    .returning({ id: periods.id });
+  if (updated.length === 0) {
+    return { ok: false, error: "対象の期間が見つかりません。" };
+  }
 
   revalidatePath("/admin/periods");
   return { ok: true };
