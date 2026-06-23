@@ -1,4 +1,4 @@
-import { and, asc, desc, eq, gte, lt, lte } from "drizzle-orm";
+import { and, arrayContains, asc, desc, eq, gte, lt, lte } from "drizzle-orm";
 import { requireRole } from "@/lib/auth";
 import { db } from "@/db/client";
 import {
@@ -57,7 +57,9 @@ export default async function AdminFixedShiftsOverviewPage({
           email: profiles.email,
         })
         .from(profiles)
-        .where(and(eq(profiles.role, "tutor"), eq(profiles.isActive, true)))
+        .where(
+          and(arrayContains(profiles.roles, ["tutor"]), eq(profiles.isActive, true)),
+        )
         .orderBy(asc(profiles.displayName)),
       db
         .select()

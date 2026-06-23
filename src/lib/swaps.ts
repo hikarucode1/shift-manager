@@ -1,5 +1,15 @@
 import "server-only";
-import { and, asc, desc, eq, gte, inArray, isNull, ne } from "drizzle-orm";
+import {
+  and,
+  arrayContains,
+  asc,
+  desc,
+  eq,
+  gte,
+  inArray,
+  isNull,
+  ne,
+} from "drizzle-orm";
 import { alias } from "drizzle-orm/pg-core";
 import { db } from "@/db/client";
 import {
@@ -125,7 +135,7 @@ export async function getActiveTutorsExcept(
     .from(profiles)
     .where(
       and(
-        eq(profiles.role, "tutor"),
+        arrayContains(profiles.roles, ["tutor"]),
         eq(profiles.isActive, true),
         ne(profiles.id, excludeId),
       ),

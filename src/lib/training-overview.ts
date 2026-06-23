@@ -1,5 +1,5 @@
 import "server-only";
-import { and, asc, count, eq, inArray } from "drizzle-orm";
+import { and, arrayContains, asc, count, eq, inArray } from "drizzle-orm";
 import { db } from "@/db/client";
 import {
   courseConfirmations,
@@ -126,7 +126,7 @@ export async function getHeatmapData(
         and(
           eq(trainingPreferences.periodId, periodId),
           // 提出者は「有効な講師」に限定 (totalTutorCount と母集団を揃える)
-          eq(profiles.role, "tutor"),
+          arrayContains(profiles.roles, ["tutor"]),
           eq(profiles.isActive, true),
         ),
       )
@@ -134,7 +134,9 @@ export async function getHeatmapData(
     db
       .select({ c: count() })
       .from(profiles)
-      .where(and(eq(profiles.role, "tutor"), eq(profiles.isActive, true))),
+      .where(
+        and(arrayContains(profiles.roles, ["tutor"]), eq(profiles.isActive, true)),
+      ),
     // Issue #75 (ε): 期内の確定済み tutor を取得
     db
       .select({
