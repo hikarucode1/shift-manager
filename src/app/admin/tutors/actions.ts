@@ -7,6 +7,7 @@ import { requireRole } from "@/lib/auth";
 import { db } from "@/db/client";
 import { profiles } from "@/db/schema";
 import { isUniqueViolation } from "@/lib/db-errors";
+import { setProfileActive } from "@/lib/profile-active";
 import { createAdminClient } from "@/lib/supabase/admin";
 
 type ActionResult = { ok: true } | { ok: false; error: string };
@@ -153,7 +154,11 @@ const SetActiveSchema = z.object({
   isActive: z.boolean(),
 });
 
-/** 講師の有効/無効を切り替え (削除は不可、無効化のみ) */
+/**
+ * 講師の有効/無効を切り替え (削除は不可、無効化のみ)。
+ * #111 review: 兼任者 (admin+tutor) を本経路で無効化しても admin 保護 guard を
+ * 通すよう、active 切替を共有ヘルパ setProfileActive に集約 (setAdminActive と共通)。
+ */
 export async function setTutorActive(input: unknown): Promise<ActionResult> {
   const { profile } = await requireRole("admin");
 
@@ -165,23 +170,14 @@ export async function setTutorActive(input: unknown): Promise<ActionResult> {
     return { ok: false, error: "自分自身は変更できません。" };
   }
 
-  const target = await db
-    .select({ roles: profiles.roles })
-    .from(profiles)
-    .where(eq(profiles.id, id))
-    .limit(1);
-  if (target.length === 0) return { ok: false, error: "対象が見つかりません。" };
-  if (!target[0].roles.includes("tutor")) {
-    return { ok: false, error: "講師以外は変更できません。" };
-  }
-
-  await db
-    .update(profiles)
-    .set({ isActive, updatedAt: new Date() })
-    .where(eq(profiles.id, id));
-
-  revalidatePath("/admin/tutors");
-  return { ok: true };
+  const result = await setProfileActive({
+    id,
+    isActive,
+    requireTargetRole: "tutor",
+    notTargetRoleError: "講師以外は変更できません。",
+  });
+  if (result.ok) revalidatePath("/admin/tutors");
+  return result;
 }
 
 const RenameSchema = z.object({
