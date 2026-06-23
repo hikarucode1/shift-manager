@@ -72,7 +72,9 @@ export const profiles = pgTable("profiles", {
   // Supabase auth.users.id。null = まだログインアカウント未連携 (CSV 由来の stub)。
   authUserId: uuid("auth_user_id").unique(),
   displayName: text("display_name").notNull(),
-  role: userRoleEnum("role").notNull().default("tutor"),
+  // #111: 1 profile が複数 role を兼任できる (例: 教室長が講師も担当)。
+  // 旧 role 単一値を roles 配列に置換。判定は「指定 role を含むか」(contains)。
+  roles: userRoleEnum("roles").array().notNull().default(["tutor"]),
   email: text("email").notNull(),
   isActive: boolean("is_active").notNull().default(true),
   createdAt: timestamp("created_at", { withTimezone: true })
@@ -83,10 +85,10 @@ export const profiles = pgTable("profiles", {
     .defaultNow(),
 }, (t) => ({
   // 講師の表示名は一意 (CSV 自動マッチ tutors.find(displayName===name) の
-  // 取り違えを根治)。admin 等は対象外なので partial unique。
+  // 取り違えを根治)。tutor role を含まない profile は対象外なので partial unique。
   tutorNameUniq: uniqueIndex("profiles_tutor_name_uniq")
     .on(t.displayName)
-    .where(sql`${t.role} = 'tutor'`),
+    .where(sql`'tutor' = ANY(${t.roles})`),
 }));
 
 /* ------------------------------------------------------------------ */

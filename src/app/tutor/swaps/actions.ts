@@ -2,7 +2,7 @@
 
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
-import { and, eq, inArray, isNull } from "drizzle-orm";
+import { and, arrayContains, eq, inArray, isNull } from "drizzle-orm";
 import { requireRole } from "@/lib/auth";
 import { db } from "@/db/client";
 import {
@@ -108,7 +108,7 @@ export async function createSwapRequest(
       .where(
         and(
           eq(profiles.id, nominatedTutorId as string),
-          eq(profiles.role, "tutor"),
+          arrayContains(profiles.roles, ["tutor"]),
           eq(profiles.isActive, true),
         ),
       )

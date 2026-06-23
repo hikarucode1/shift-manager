@@ -1,6 +1,6 @@
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
-import { getProfile } from "@/lib/auth";
+import { getProfile, landingPath } from "@/lib/auth";
 import { LoginForm } from "./login-form";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 
@@ -17,7 +17,7 @@ export default async function LoginPage({
   if (user) {
     const profile = await getProfile(user.id);
     if (profile?.isActive) {
-      redirect(profile.role === "admin" ? "/admin" : "/tutor");
+      redirect(landingPath(profile));
     }
   }
 

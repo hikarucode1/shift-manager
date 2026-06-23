@@ -13,9 +13,9 @@ async function main() {
   }
 
   console.log("\n=== profiles ===");
-  const ps = await db.select().from(profiles).orderBy(asc(profiles.role), asc(profiles.displayName));
+  const ps = await db.select().from(profiles).orderBy(asc(profiles.displayName));
   for (const p of ps) {
-    console.log(`  [${p.role}] ${p.displayName}  <${p.email}>  active: ${p.isActive}`);
+    console.log(`  [${p.roles.join(",")}] ${p.displayName}  <${p.email}>  active: ${p.isActive}`);
   }
 
   process.exit(0);

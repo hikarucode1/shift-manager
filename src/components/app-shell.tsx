@@ -24,7 +24,7 @@ export function AppShell({
           <Link href="/" className="flex items-baseline gap-2">
             <span className="text-lg font-semibold">Shift Manager</span>
             <span className="text-xs text-primary-foreground/70">
-              {profile.role === "admin" ? "管理者" : "講師"}
+              {profile.roles.includes("admin") ? "管理者" : "講師"}
             </span>
           </Link>
           <div className="flex items-center gap-3">
