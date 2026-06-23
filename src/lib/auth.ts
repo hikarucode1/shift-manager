@@ -12,9 +12,23 @@ export type SessionProfile = {
   id: string;
   email: string;
   displayName: string;
-  role: Role;
+  /** #111: 兼任対応で複数 role を持ちうる。判定は hasRole / landingPath を使う */
+  roles: Role[];
   isActive: boolean;
 };
+
+/** profile が指定 role を持つか (兼任考慮) */
+export function hasRole(
+  profile: Pick<SessionProfile, "roles">,
+  role: Role,
+): boolean {
+  return profile.roles.includes(role);
+}
+
+/** ログイン後 / リダイレクト先。admin を含むなら管理画面、それ以外は講師画面 */
+export function landingPath(profile: Pick<SessionProfile, "roles">): string {
+  return hasRole(profile, "admin") ? "/admin" : "/tutor";
+}
 
 /**
  * Supabase auth.users.id から内部プロフィールを解決する。
@@ -28,7 +42,7 @@ export const getProfile = cache(
         id: profiles.id,
         email: profiles.email,
         displayName: profiles.displayName,
-        role: profiles.role,
+        roles: profiles.roles,
         isActive: profiles.isActive,
       })
       .from(profiles)
@@ -55,8 +69,8 @@ export async function requireSession() {
 
 export async function requireRole(role: Role) {
   const session = await requireSession();
-  if (session.profile.role !== role) {
-    redirect(session.profile.role === "admin" ? "/admin" : "/tutor");
+  if (!hasRole(session.profile, role)) {
+    redirect(landingPath(session.profile));
   }
   return session;
 }

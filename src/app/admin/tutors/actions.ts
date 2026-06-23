@@ -2,7 +2,7 @@
 
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
-import { and, eq, isNull, ne } from "drizzle-orm";
+import { and, arrayContains, eq, isNull, ne } from "drizzle-orm";
 import { requireRole } from "@/lib/auth";
 import { db } from "@/db/client";
 import { profiles } from "@/db/schema";
@@ -45,14 +45,14 @@ export async function inviteTutor(input: unknown): Promise<ActionResult> {
   if (data.mode === "link") {
     // link 対象が「tutor かつ auth 未連携」か検証
     const target = await db
-      .select({ role: profiles.role, authUserId: profiles.authUserId })
+      .select({ roles: profiles.roles, authUserId: profiles.authUserId })
       .from(profiles)
       .where(eq(profiles.id, data.profileId))
       .limit(1);
     if (target.length === 0) {
       return { ok: false, error: "対象の講師が見つかりません。" };
     }
-    if (target[0].role !== "tutor") {
+    if (!target[0].roles.includes("tutor")) {
       return { ok: false, error: "講師以外は紐付けできません。" };
     }
     if (target[0].authUserId) {
@@ -65,7 +65,7 @@ export async function inviteTutor(input: unknown): Promise<ActionResult> {
       .from(profiles)
       .where(
         and(
-          eq(profiles.role, "tutor"),
+          arrayContains(profiles.roles, ["tutor"]),
           eq(profiles.displayName, data.displayName),
         ),
       )
@@ -108,7 +108,7 @@ export async function inviteTutor(input: unknown): Promise<ActionResult> {
       await db.insert(profiles).values({
         authUserId,
         displayName: data.displayName,
-        role: "tutor",
+        roles: ["tutor"],
         email: data.email,
         isActive: true,
       });
@@ -166,12 +166,12 @@ export async function setTutorActive(input: unknown): Promise<ActionResult> {
   }
 
   const target = await db
-    .select({ role: profiles.role })
+    .select({ roles: profiles.roles })
     .from(profiles)
     .where(eq(profiles.id, id))
     .limit(1);
   if (target.length === 0) return { ok: false, error: "対象が見つかりません。" };
-  if (target[0].role !== "tutor") {
+  if (!target[0].roles.includes("tutor")) {
     return { ok: false, error: "講師以外は変更できません。" };
   }
 
@@ -200,12 +200,12 @@ export async function renameTutor(input: unknown): Promise<ActionResult> {
   const { id, displayName } = parsed.data;
 
   const target = await db
-    .select({ role: profiles.role })
+    .select({ roles: profiles.roles })
     .from(profiles)
     .where(eq(profiles.id, id))
     .limit(1);
   if (target.length === 0) return { ok: false, error: "対象が見つかりません。" };
-  if (target[0].role !== "tutor") {
+  if (!target[0].roles.includes("tutor")) {
     return { ok: false, error: "講師以外は変更できません。" };
   }
 
@@ -216,7 +216,7 @@ export async function renameTutor(input: unknown): Promise<ActionResult> {
     .from(profiles)
     .where(
       and(
-        eq(profiles.role, "tutor"),
+        arrayContains(profiles.roles, ["tutor"]),
         eq(profiles.displayName, displayName),
         ne(profiles.id, id),
       ),

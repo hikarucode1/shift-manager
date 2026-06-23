@@ -1,4 +1,4 @@
-import { asc, eq } from "drizzle-orm";
+import { arrayContains, asc } from "drizzle-orm";
 import { requireRole } from "@/lib/auth";
 import { db } from "@/db/client";
 import { profiles } from "@/db/schema";
@@ -17,7 +17,7 @@ export default async function AdminTutorsPage() {
       createdAt: profiles.createdAt,
     })
     .from(profiles)
-    .where(eq(profiles.role, "tutor"))
+    .where(arrayContains(profiles.roles, ["tutor"]))
     .orderBy(asc(profiles.displayName));
 
   const rows = tutors.map((t) => ({

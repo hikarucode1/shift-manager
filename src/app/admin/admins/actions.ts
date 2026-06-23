@@ -2,7 +2,7 @@
 
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
-import { and, eq, ne, sql } from "drizzle-orm";
+import { and, arrayContains, eq, ne, sql } from "drizzle-orm";
 import { requireRole } from "@/lib/auth";
 import { db } from "@/db/client";
 import { profiles } from "@/db/schema";
@@ -60,14 +60,14 @@ export async function setAdminActive(input: unknown): Promise<ActionResult> {
       );
 
       const target = await tx
-        .select({ role: profiles.role })
+        .select({ roles: profiles.roles })
         .from(profiles)
         .where(eq(profiles.id, id))
         .limit(1);
       if (target.length === 0) {
         throw new BusinessError("対象が見つかりません。");
       }
-      if (target[0].role !== "admin") {
+      if (!target[0].roles.includes("admin")) {
         throw new BusinessError("教室長以外は変更できません。");
       }
 
@@ -77,7 +77,7 @@ export async function setAdminActive(input: unknown): Promise<ActionResult> {
           .from(profiles)
           .where(
             and(
-              eq(profiles.role, "admin"),
+              arrayContains(profiles.roles, ["admin"]),
               eq(profiles.isActive, true),
               ne(profiles.id, id),
             ),

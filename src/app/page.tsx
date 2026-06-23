@@ -1,6 +1,6 @@
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
-import { getProfile } from "@/lib/auth";
+import { getProfile, landingPath } from "@/lib/auth";
 
 export default async function Home() {
   const supabase = await createClient();
@@ -13,5 +13,5 @@ export default async function Home() {
   const profile = await getProfile(user.id);
   if (!profile) redirect("/login");
 
-  redirect(profile.role === "admin" ? "/admin" : "/tutor");
+  redirect(landingPath(profile));
 }

@@ -1,5 +1,5 @@
 import "server-only";
-import { and, eq, gte, inArray, lte } from "drizzle-orm";
+import { and, arrayContains, eq, gte, inArray, lte } from "drizzle-orm";
 import { db } from "@/db/client";
 import {
   shiftAssignments,
@@ -218,6 +218,6 @@ export async function fetchActiveTutors() {
       email: profiles.email,
     })
     .from(profiles)
-    .where(and(eq(profiles.role, "tutor"), eq(profiles.isActive, true)))
+    .where(and(arrayContains(profiles.roles, ["tutor"]), eq(profiles.isActive, true)))
     .orderBy(profiles.displayName);
 }
