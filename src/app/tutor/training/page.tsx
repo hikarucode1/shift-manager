@@ -17,12 +17,8 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
+import { jstToday } from "@/lib/week";
 import { TrainingEditor } from "./training-editor";
-
-function todayIsoJst(): string {
-  const jst = new Date(new Date().getTime() + 9 * 60 * 60 * 1000);
-  return jst.toISOString().slice(0, 10);
-}
 
 function deadlineLabel(iso: string): string {
   return new Date(iso).toLocaleDateString("ja-JP", {
@@ -62,7 +58,7 @@ export default async function TutorTrainingPage({
     }
   }
 
-  const today = todayIsoJst();
+  const today = jstToday();
   const [activePeriods, confirmedRows] = await Promise.all([
     getActiveTrainingPeriods(),
     // Issue #75 (ε): 自分の確定済み講習シフト (今日以降の日付のみ)。

@@ -34,6 +34,11 @@ export function jstToday(now: Date = new Date()): string {
   return jst.toISOString().slice(0, 10);
 }
 
+/** 現在の JST 月初 (YYYY-MM-01)。target_month 系の既定値に使う */
+export function jstMonthStart(now: Date = new Date()): string {
+  return `${jstToday(now).slice(0, 7)}-01`;
+}
+
 function parseIso(d: string): Date {
   assertIso(d);
   // 正午 UTC 固定でパースして DST/丸め事故を避ける (日付演算のみに使う)

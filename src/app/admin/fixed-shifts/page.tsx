@@ -11,16 +11,8 @@ import {
 } from "@/db/schema";
 import { DEFAULT_SLOTS } from "@/lib/shift-constants";
 import { lastDayOfMonth } from "@/lib/shift-period";
+import { jstMonthStart } from "@/lib/week";
 import { AdminSubmissionsOverview } from "./submissions-overview";
-
-/** 当月の 1 日 (JST) を "YYYY-MM-DD" で返す */
-function thisMonthIso(): string {
-  const now = new Date();
-  const jst = new Date(now.getTime() + 9 * 60 * 60 * 1000);
-  const y = jst.getUTCFullYear();
-  const m = String(jst.getUTCMonth() + 1).padStart(2, "0");
-  return `${y}-${m}-01`;
-}
 
 /** "2026-07-01" → "2026-08-01" (翌月の 1 日)。target_month の範囲フィルタ用 */
 function nextMonthIso(monthIso: string): string {
@@ -44,7 +36,7 @@ export default async function AdminFixedShiftsOverviewPage({
 
   const sp = await searchParams;
   const targetMonth =
-    sp.month && isValidMonthIso(sp.month) ? sp.month : thisMonthIso();
+    sp.month && isValidMonthIso(sp.month) ? sp.month : jstMonthStart();
   const monthEnd = nextMonthIso(targetMonth);
   // 期検索 (#83) で「月末以前に始まる期」と判定するため月末日も先に算出。
   // monthEnd (翌月初) は effective_from < monthEnd の比較用、別用途。

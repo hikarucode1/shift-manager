@@ -9,6 +9,7 @@ import {
   slotDefinitions,
 } from "@/db/schema";
 import { DEFAULT_SLOTS, type InputWeekday } from "@/lib/shift-constants";
+import { jstToday } from "@/lib/week";
 import {
   FixedShiftEditor,
   type FixedShiftSubmissionMeta,
@@ -16,15 +17,9 @@ import {
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 
-function todayIso() {
-  const now = new Date();
-  const jst = new Date(now.getTime() + 9 * 60 * 60 * 1000);
-  return jst.toISOString().slice(0, 10);
-}
-
 export default async function FixedShiftPage() {
   const { profile } = await requireRole("tutor");
-  const today = todayIso();
+  const today = jstToday();
   const now = new Date();
 
   const [slotRows, existing, submissionRows, activePeriodRows, confirmedRows] = await Promise.all([
