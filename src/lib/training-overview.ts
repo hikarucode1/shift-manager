@@ -69,7 +69,7 @@ function eachDate(startIso: string, endIso: string): string[] {
   return out;
 }
 
-/** 教室長: ヒートマップ対象の講習期間 (kind=training, 未アーカイブ, 新しい順) */
+/** 教室長: ヒートマップ対象の講習期間 (未アーカイブ, 新しい順)。#110 で全期間=講習期間 */
 export async function getHeatmapPeriods(): Promise<HeatmapPeriod[]> {
   const rows = await db
     .select({
@@ -79,7 +79,7 @@ export async function getHeatmapPeriods(): Promise<HeatmapPeriod[]> {
       endDate: periods.endDate,
     })
     .from(periods)
-    .where(and(eq(periods.kind, "training"), eq(periods.isArchived, false)))
+    .where(eq(periods.isArchived, false))
     .orderBy(asc(periods.startDate));
   return rows.sort((a, b) => (a.startDate < b.startDate ? 1 : -1));
 }
@@ -97,7 +97,6 @@ export async function getHeatmapData(
   const prow = await db
     .select({
       id: periods.id,
-      kind: periods.kind,
       name: periods.name,
       startDate: periods.startDate,
       endDate: periods.endDate,
@@ -107,11 +106,7 @@ export async function getHeatmapData(
     .where(eq(periods.id, periodId))
     .limit(1);
 
-  if (
-    prow.length === 0 ||
-    prow[0].kind !== "training" ||
-    prow[0].isArchived
-  ) {
+  if (prow.length === 0 || prow[0].isArchived) {
     return null;
   }
   const p = prow[0];

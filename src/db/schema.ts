@@ -22,8 +22,6 @@ import {
 
 export const userRoleEnum = pgEnum("user_role", ["tutor", "admin"]);
 
-export const periodKindEnum = pgEnum("period_kind", ["normal", "training"]);
-
 export const requestStatusEnum = pgEnum("request_status", [
   "pending",
   "approved",
@@ -124,11 +122,10 @@ export const periods = pgTable(
   "periods",
   {
     id: uuid("id").primaryKey().defaultRandom(),
-    kind: periodKindEnum("kind").notNull(),
     name: text("name").notNull(), // 例: "2026年 夏期講習"
     startDate: date("start_date").notNull(),
     endDate: date("end_date").notNull(),
-    /** 講習期間のみ有効。null = 通常期間 */
+    /** 講習希望の提出締切。#110 で kind 撤廃後は全期間=講習期間で必須運用 */
     submissionDeadline: timestamp("submission_deadline", {
       withTimezone: true,
     }),

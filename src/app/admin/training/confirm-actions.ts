@@ -26,7 +26,6 @@ const SaveInput = z.object({
 /**
  * Issue #75 (ε): 講習シフトの (期, 日, コマ) に対する確定講師リストを bulk replace する。
  *
- * - 期は kind="training" の periods のみ受け付ける (アプリ層チェック)
  * - date は期の start_date 〜 end_date 内
  * - 同 (period, date, slot) の既存 course_confirmations を全 DELETE → 新規 INSERT
  * - 1 transaction 内
@@ -48,11 +47,10 @@ export async function saveCourseConfirmations(
   const { profile } = await requireRole("admin");
   const now = new Date();
 
-  // 期の存在 + kind="training" + 日付範囲を 1 クエリで検証
+  // 期の存在 + 日付範囲を 1 クエリで検証 (#110 で kind 撤廃、全期間=講習期間)
   const periodRows = await db
     .select({
       id: periods.id,
-      kind: periods.kind,
       startDate: periods.startDate,
       endDate: periods.endDate,
       isArchived: periods.isArchived,
@@ -63,12 +61,6 @@ export async function saveCourseConfirmations(
   const period = periodRows[0];
   if (!period) {
     return { ok: false, error: "対象の講習期間が見つかりません。" };
-  }
-  if (period.kind !== "training") {
-    return {
-      ok: false,
-      error: "対象期間は講習 (training) ではありません。",
-    };
   }
   if (period.isArchived) {
     return { ok: false, error: "対象期間はアーカイブ済みです。" };

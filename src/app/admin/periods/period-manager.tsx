@@ -22,11 +22,8 @@ import {
   updatePeriod,
 } from "./actions";
 
-type Kind = "normal" | "training";
-
 export type PeriodRow = {
   id: string;
-  kind: Kind;
   name: string;
   startDate: string; // YYYY-MM-DD
   endDate: string;
@@ -76,10 +73,7 @@ export function PeriodManager({
     return () => clearTimeout(id);
   }, [notice]);
 
-  // 新規作成フォーム
-  // 通常期間 (normal) は廃止予定のため、新規作成は講習期間に固定 (#110)。
-  // 既存の normal 行の表示・編集・アーカイブは引き続き可能。
-  const kind: Kind = "training";
+  // 新規作成フォーム (#110 で kind 撤廃、全期間が講習期間)
   const [name, setName] = useState("");
   const [start, setStart] = useState("");
   const [end, setEnd] = useState("");
@@ -122,11 +116,10 @@ export function PeriodManager({
     run(
       () =>
         createPeriod({
-          kind,
           name: name.trim(),
           startDate: start,
           endDate: end,
-          submissionDeadline: kind === "training" ? deadline : null,
+          submissionDeadline: deadline,
         }),
       "期間を作成しました。",
       () => {
@@ -154,7 +147,7 @@ export function PeriodManager({
           name: eName.trim(),
           startDate: eStart,
           endDate: eEnd,
-          submissionDeadline: p.kind === "training" ? eDeadline : null,
+          submissionDeadline: eDeadline,
         }),
       "期間を更新しました。",
       () => setEditId(null),
@@ -222,18 +215,16 @@ export function PeriodManager({
                 required
               />
             </div>
-            {kind === "training" && (
-              <div className="space-y-1">
-                <Label htmlFor="p-deadline">提出締切日</Label>
-                <Input
-                  id="p-deadline"
-                  type="date"
-                  value={deadline}
-                  onChange={(e) => setDeadline(e.target.value)}
-                  required
-                />
-              </div>
-            )}
+            <div className="space-y-1">
+              <Label htmlFor="p-deadline">提出締切日</Label>
+              <Input
+                id="p-deadline"
+                type="date"
+                value={deadline}
+                onChange={(e) => setDeadline(e.target.value)}
+                required
+              />
+            </div>
             <Button
               type="submit"
               disabled={isPending}
@@ -414,17 +405,15 @@ function PeriodList({
                           className="h-8 w-36"
                         />
                       </div>
-                      {p.kind === "training" && (
-                        <div className="space-y-1">
-                          <Label className="text-xs">締切</Label>
-                          <Input
-                            type="date"
-                            value={eDeadline}
-                            onChange={(e) => setEDeadline(e.target.value)}
-                            className="h-8 w-36"
-                          />
-                        </div>
-                      )}
+                      <div className="space-y-1">
+                        <Label className="text-xs">締切</Label>
+                        <Input
+                          type="date"
+                          value={eDeadline}
+                          onChange={(e) => setEDeadline(e.target.value)}
+                          className="h-8 w-36"
+                        />
+                      </div>
                       <Button
                         size="sm"
                         disabled={isPending}
@@ -446,13 +435,6 @@ function PeriodList({
                     <div className="min-w-0">
                       <div className="flex flex-wrap items-center gap-2">
                         <span className="font-medium">{p.name}</span>
-                        <Badge
-                          variant={
-                            p.kind === "training" ? "accent" : "secondary"
-                          }
-                        >
-                          {p.kind === "training" ? "講習" : "通常"}
-                        </Badge>
                         {(() => {
                           const s = periodStatus(
                             today,
@@ -467,7 +449,7 @@ function PeriodList({
                       </div>
                       <div className="mt-0.5 text-xs text-muted-foreground">
                         {p.startDate} 〜 {p.endDate}
-                        {p.kind === "training" && p.submissionDeadline && (
+                        {p.submissionDeadline && (
                           <> ／ 締切 {fmtDeadline(p.submissionDeadline)}</>
                         )}
                       </div>
@@ -488,17 +470,15 @@ function PeriodList({
                           >
                             <Pencil className="size-3.5" />
                           </Button>
-                          {p.kind === "training" && (
-                            <Button
-                              size="sm"
-                              variant={p.isReopened ? "destructive" : "outline"}
-                              disabled={isPending}
-                              title="締切を無視して講師の希望提出を受け付けます"
-                              onClick={() => onReopen(p.id, !p.isReopened)}
-                            >
-                              {p.isReopened ? "締切で締める" : "締切後も受付"}
-                            </Button>
-                          )}
+                          <Button
+                            size="sm"
+                            variant={p.isReopened ? "destructive" : "outline"}
+                            disabled={isPending}
+                            title="締切を無視して講師の希望提出を受け付けます"
+                            onClick={() => onReopen(p.id, !p.isReopened)}
+                          >
+                            {p.isReopened ? "締切で締める" : "締切後も受付"}
+                          </Button>
                         </>
                       )}
                       <Button
