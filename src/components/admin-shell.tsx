@@ -6,7 +6,12 @@ import type { SessionProfile } from "@/lib/auth";
 
 type NavItem = { href: string; label: string };
 
-export function AppShell({
+/**
+ * 教室長 (PC) 用シェル (#122)。
+ * sticky ネイビーヘッダー + 横ナビ + `max-w-6xl` 本文。PC 管理前提で横ナビは
+ * `overflow-x-auto`。講師は別シェル (TutorShell, 下部タブ) を使う。
+ */
+export function AdminShell({
   profile,
   nav,
   currentPath,
@@ -23,9 +28,7 @@ export function AppShell({
         <div className="mx-auto flex max-w-6xl items-center justify-between px-4 py-3">
           <Link href="/" className="flex items-baseline gap-2">
             <span className="text-lg font-semibold">Shift Manager</span>
-            <span className="text-xs text-primary-foreground/70">
-              {profile.roles.includes("admin") ? "管理者" : "講師"}
-            </span>
+            <span className="text-xs text-primary-foreground/70">管理者</span>
           </Link>
           <div className="flex items-center gap-3">
             <span className="hidden text-sm text-primary-foreground/80 sm:inline">
@@ -54,7 +57,7 @@ export function AppShell({
                 key={item.href}
                 href={item.href}
                 className={cn(
-                  "rounded-md px-3 py-1.5 text-sm transition-colors",
+                  "rounded-md px-3 py-1.5 text-sm whitespace-nowrap transition-colors",
                   active
                     ? "bg-primary-foreground/15 text-primary-foreground"
                     : "text-primary-foreground/80 hover:bg-primary-foreground/10",

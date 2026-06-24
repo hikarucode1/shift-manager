@@ -1,6 +1,6 @@
 import { headers } from "next/headers";
 import { requireRole } from "@/lib/auth";
-import { AppShell } from "@/components/app-shell";
+import { AdminShell } from "@/components/admin-shell";
 
 const nav = [
   { href: "/admin", label: "ダッシュボード" },
@@ -26,8 +26,8 @@ export default async function AdminLayout({
   const pathname = h.get("x-pathname") ?? undefined;
 
   return (
-    <AppShell profile={profile} nav={nav} currentPath={pathname}>
+    <AdminShell profile={profile} nav={nav} currentPath={pathname}>
       {children}
-    </AppShell>
+    </AdminShell>
   );
 }
