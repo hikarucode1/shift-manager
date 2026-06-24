@@ -2,6 +2,7 @@ import { arrayContains, asc } from "drizzle-orm";
 import { requireRole } from "@/lib/auth";
 import { db } from "@/db/client";
 import { profiles } from "@/db/schema";
+import { AdminTutorsNav } from "@/components/admin-section-nav";
 import { TutorManager } from "./tutor-manager";
 
 export default async function AdminTutorsPage() {
@@ -31,6 +32,7 @@ export default async function AdminTutorsPage() {
 
   return (
     <div className="space-y-6">
+      <AdminTutorsNav />
       <div>
         <h1 className="text-2xl font-semibold">講師管理</h1>
         <p className="mt-1 text-sm text-muted-foreground">

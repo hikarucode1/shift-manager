@@ -2,6 +2,7 @@ import { asc, desc } from "drizzle-orm";
 import { requireRole } from "@/lib/auth";
 import { db } from "@/db/client";
 import { regularShiftPeriods } from "@/db/schema";
+import { AdminPeriodsNav } from "@/components/admin-section-nav";
 import { RegularPeriodManager } from "./regular-period-manager";
 
 export default async function AdminRegularPeriodsPage() {
@@ -35,6 +36,7 @@ export default async function AdminRegularPeriodsPage() {
 
   return (
     <div className="space-y-6">
+      <AdminPeriodsNav />
       <div>
         <h1 className="text-2xl font-semibold">レギュラー期間管理</h1>
         <p className="mt-1 text-sm text-muted-foreground">

@@ -4,7 +4,12 @@ import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import type { SessionProfile } from "@/lib/auth";
 
-type NavItem = { href: string; label: string };
+type NavItem = {
+  href: string;
+  label: string;
+  /** active 判定 (グループ化したナビで複数ルートを束ねる場合に指定) */
+  match?: (path: string | undefined) => boolean;
+};
 
 /**
  * 教室長 (PC) 用シェル (#122)。
@@ -49,9 +54,10 @@ export function AdminShell({
         </div>
         <nav className="mx-auto flex max-w-6xl gap-1 overflow-x-auto px-2 pb-2">
           {nav.map((item) => {
-            const active =
-              currentPath === item.href ||
-              (currentPath?.startsWith(item.href + "/") ?? false);
+            const active = item.match
+              ? item.match(currentPath)
+              : currentPath === item.href ||
+                (currentPath?.startsWith(item.href + "/") ?? false);
             return (
               <Link
                 key={item.href}
