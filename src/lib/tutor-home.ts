@@ -1,5 +1,16 @@
 import "server-only";
-import { and, between, eq, gte, lte, ne, desc, count } from "drizzle-orm";
+import {
+  and,
+  between,
+  count,
+  desc,
+  eq,
+  gte,
+  isNull,
+  lte,
+  ne,
+  or,
+} from "drizzle-orm";
 import { db } from "@/db/client";
 import {
   fixedShiftSubmissions,
@@ -40,6 +51,14 @@ function fmtDeadline(iso: string): string {
   const hh = String(jst.getUTCHours()).padStart(2, "0");
   const mm = String(jst.getUTCMinutes()).padStart(2, "0");
   return `${m}/${d} ${hh}:${mm}`;
+}
+
+/** 現在の JST 時刻 "HH:MM" (slot.endTime と辞書順比較するため 0 埋め) */
+function nowHmJst(now = new Date()): string {
+  const jst = new Date(now.getTime() + JST_OFFSET_MS);
+  const hh = String(jst.getUTCHours()).padStart(2, "0");
+  const mm = String(jst.getUTCMinutes()).padStart(2, "0");
+  return `${hh}:${mm}`;
 }
 
 export type HomeNextShift = {
@@ -86,6 +105,7 @@ export async function getTutorHomeData(tutorId: string): Promise<TutorHomeData> 
   const today = jstToday();
   const tomorrow = addDayIso(today);
   const now = new Date();
+  const nowHm = nowHmJst(now);
   const thisRange = weekOf();
   const nextRange = nextWeek(thisRange);
 
@@ -121,20 +141,27 @@ export async function getTutorHomeData(tutorId: string): Promise<TutorHomeData> 
     if (d.slots.length === 0) continue;
     const liveSlots = d.slots.filter((s) => !s.isAbsent);
     weekSlotCount += liveSlots.length;
+    const confirmed = liveSlots.length > 0;
     weekRows.push({
       date: d.date,
       weekdayLabel: d.weekdayLabel,
-      slotNumbers: d.slots.map((s) => s.slotNumber),
-      status: liveSlots.length === 0 ? "absent" : "confirmed",
+      // 確定行は欠勤コマを除いた番号のみ (混在日でも欠勤を確定として見せない)
+      slotNumbers: (confirmed ? liveSlots : d.slots).map((s) => s.slotNumber),
+      status: confirmed ? "confirmed" : "absent",
     });
   }
 
   // --- 次の出勤 (今日以降、今週→翌週で最初の非欠勤コマ) ---
+  // 当日分は終了時刻を過ぎたコマを除外 (夜に当日朝のコマを「次」に出さない)。
   let nextShift: HomeNextShift | null = null;
   for (const wk of [thisWeek, nextWk]) {
     for (const d of wk.days) {
       if (d.date < today) continue;
-      const slot = d.slots.find((s) => !s.isAbsent);
+      const slot = d.slots.find(
+        (s) =>
+          !s.isAbsent &&
+          (d.date !== today || s.endTime === "" || s.endTime > nowHm),
+      );
       if (slot) {
         nextShift = {
           date: d.date,
@@ -173,18 +200,26 @@ export async function getTutorHomeData(tutorId: string): Promise<TutorHomeData> 
 
   const reg = regularRows[0];
   if (reg) {
+    // training と一貫させ period_id FK で判定 (正確)。0018 で nullable 追加のため
+    // period_id NULL の旧行は effectiveFrom 範囲で救済するハイブリッド。
     const submittedRows = await db
       .select({ c: count() })
       .from(fixedShiftSubmissions)
       .where(
         and(
           eq(fixedShiftSubmissions.tutorId, tutorId),
-          between(
-            fixedShiftSubmissions.effectiveFrom,
-            reg.startDate,
-            reg.endDate,
-          ),
           ne(fixedShiftSubmissions.status, "draft"),
+          or(
+            eq(fixedShiftSubmissions.periodId, reg.id),
+            and(
+              isNull(fixedShiftSubmissions.periodId),
+              between(
+                fixedShiftSubmissions.effectiveFrom,
+                reg.startDate,
+                reg.endDate,
+              ),
+            ),
+          ),
         ),
       );
     deadlines.push({

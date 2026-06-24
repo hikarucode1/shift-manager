@@ -28,8 +28,7 @@ export default async function TutorHome() {
   const { profile } = await requireRole("tutor");
   const data = await getTutorHomeData(profile.id);
 
-  const nearest = data.deadlines[0];
-  // アラートは「編集可能・未提出」の最も近い締切のみ出す
+  // hero の締切 / アラートはどちらも「編集可能・未提出」の最も近い締切を使う
   const alertDeadline = data.deadlines.find((d) => !d.submitted) ?? null;
 
   return (
@@ -49,16 +48,21 @@ export default async function TutorHome() {
           </div>
           <div className="rounded-lg bg-primary-foreground/10 p-3">
             <p className="text-xs text-primary-foreground/70">提出締切</p>
-            <p
-              className={cn(
-                "mt-0.5 text-2xl font-bold",
-                nearest && deadlineLabel(nearest.daysLeft).urgent
-                  ? "text-accent"
-                  : "",
-              )}
-            >
-              {nearest ? deadlineLabel(nearest.daysLeft).text : "—"}
-            </p>
+            {/* 行動を促す未提出の最近接締切を表示 (提出済みは accent 強調しない) */}
+            {alertDeadline ? (
+              <p
+                className={cn(
+                  "mt-0.5 text-2xl font-bold",
+                  deadlineLabel(alertDeadline.daysLeft).urgent && "text-accent",
+                )}
+              >
+                {deadlineLabel(alertDeadline.daysLeft).text}
+              </p>
+            ) : (
+              <p className="mt-1.5 text-lg font-semibold text-primary-foreground/90">
+                {data.deadlines.length > 0 ? "提出済み" : "—"}
+              </p>
+            )}
           </div>
         </div>
       </section>
