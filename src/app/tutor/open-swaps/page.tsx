@@ -1,5 +1,6 @@
 import { requireRole } from "@/lib/auth";
 import { getOpenSwapsForTutor } from "@/lib/swaps";
+import { TutorRequestsNav } from "@/components/tutor-requests-nav";
 import { OpenSwapList } from "./open-swap-list";
 
 export default async function TutorOpenSwapsPage() {
@@ -8,6 +9,7 @@ export default async function TutorOpenSwapsPage() {
 
   return (
     <div className="space-y-6">
+      <TutorRequestsNav />
       <div>
         <h1 className="text-2xl font-semibold">代講募集</h1>
         <p className="mt-1 text-sm text-muted-foreground">

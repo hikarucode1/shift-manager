@@ -4,6 +4,7 @@ import {
   getTutorSwapRequests,
   getTutorSwappableShifts,
 } from "@/lib/swaps";
+import { TutorRequestsNav } from "@/components/tutor-requests-nav";
 import { SwapPanel } from "./swap-panel";
 
 export default async function TutorSwapsPage() {
@@ -17,6 +18,7 @@ export default async function TutorSwapsPage() {
 
   return (
     <div className="space-y-6">
+      <TutorRequestsNav />
       <div>
         <h1 className="text-2xl font-semibold">交代申請</h1>
         <p className="mt-1 text-sm text-muted-foreground">

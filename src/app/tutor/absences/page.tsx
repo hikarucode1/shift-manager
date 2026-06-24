@@ -3,6 +3,7 @@ import {
   getTutorAbsenceRequests,
   getTutorUpcomingShifts,
 } from "@/lib/absences";
+import { TutorRequestsNav } from "@/components/tutor-requests-nav";
 import { AbsencePanel } from "./absence-panel";
 
 export default async function TutorAbsencesPage() {
@@ -15,6 +16,7 @@ export default async function TutorAbsencesPage() {
 
   return (
     <div className="space-y-6">
+      <TutorRequestsNav />
       <div>
         <h1 className="text-2xl font-semibold">欠勤申請</h1>
         <p className="mt-1 text-sm text-muted-foreground">
