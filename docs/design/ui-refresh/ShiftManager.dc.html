@@ -1,0 +1,648 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Noto+Sans+JP:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<style>
+  * { box-sizing: border-box; }
+  body { margin: 0; }
+  .frame { background:#fff; border-radius:8px; box-shadow:0 1px 3px rgba(15,23,42,.1); overflow:hidden; }
+  .flabel { font-size:12px; font-weight:700; letter-spacing:.06em; color:#64748b; margin-bottom:11px; }
+  .seclabel { font-size:13px; font-weight:800; color:#1b2a64; letter-spacing:.04em; margin:0 0 18px; padding-bottom:9px; border-bottom:2px solid #cdd6e4; }
+  .row { display:flex; gap:48px; align-items:flex-start; margin-bottom:56px; }
+  .btn-pri { background:#e9803a; color:#fff; border:none; border-radius:6px; font-weight:600; font-size:13px; cursor:pointer; font-family:inherit; }
+  .btn-out { border:1px solid #e2e8f0; background:#fff; border-radius:6px; font-size:13px; color:#334155; cursor:pointer; font-family:inherit; }
+  .field { width:100%; height:38px; border:1px solid #e2e8f0; border-radius:6px; padding:0 11px; font-size:13px; font-family:inherit; color:#0f172a; background:#fff; }
+  .navlink { padding:6px 13px; border-radius:6px; font-size:13px; text-decoration:none; color:rgba(248,250,252,.78); white-space:nowrap; }
+  .navlink.on { font-weight:600; color:#fff; background:rgba(248,250,252,.16); }
+</style>
+</helmet>
+<div style="width:max-content; min-width:100%; min-height:100vh; box-sizing:border-box; padding:48px; background:#e9edf2; font-family:'Noto Sans JP',ui-sans-serif,system-ui,sans-serif; color:#0f172a;">
+
+  <div style="display:flex; align-items:baseline; gap:14px; margin-bottom:6px;">
+    <h1 style="margin:0; font-size:22px; font-weight:800; letter-spacing:-0.01em;">Shift Manager — 全画面モック</h1>
+    <span style="font-size:13px; color:#64748b;">個別指導塾向け / ネイビー×オレンジ・テーマ準拠</span>
+  </div>
+  <p style="margin:0 0 40px; font-size:13px; color:#64748b; max-width:820px; line-height:1.6;">primary=ネイビー <code style="background:#dde3ea; padding:1px 5px; border-radius:4px;">#1b2a64</code> / accent=オレンジ <code style="background:#dde3ea; padding:1px 5px; border-radius:4px;">#e9803a</code>。ログイン・教室長7画面・講師5画面。</p>
+
+  <!-- ============ ログイン ============ -->
+  <div class="seclabel">ログイン</div>
+  <div class="row">
+    <div style="flex:none; width:560px;">
+      <div class="flabel">/login</div>
+      <div class="frame" data-screen-label="ログイン" style="height:520px; display:flex; align-items:center; justify-content:center; background:#f1f5f9;">
+        <div style="width:360px; background:#fff; border:1px solid #e2e8f0; border-radius:12px; padding:32px; box-shadow:0 4px 20px rgba(15,23,42,.06);">
+          <div style="display:flex; flex-direction:column; align-items:center; margin-bottom:26px;">
+            <div style="width:46px; height:46px; border-radius:11px; background:#1b2a64; color:#fff; font-weight:800; font-size:20px; display:flex; align-items:center; justify-content:center;">S</div>
+            <div style="font-size:18px; font-weight:700; margin-top:12px;">Shift Manager</div>
+            <div style="font-size:12px; color:#94a3b8; margin-top:2px;">個別指導塾シフト管理</div>
+          </div>
+          <label style="font-size:12px; font-weight:600; color:#475569;">メールアドレス</label>
+          <input class="field" style="margin:6px 0 16px;" value="tutor@example.com" />
+          <label style="font-size:12px; font-weight:600; color:#475569;">パスワード</label>
+          <input class="field" type="password" style="margin:6px 0 22px;" value="********" />
+          <button class="btn-pri" style="width:100%; height:40px;">ログイン</button>
+          <div style="text-align:center; margin-top:16px; font-size:12px; color:#94a3b8;">パスワードをお忘れですか？</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ============ 教室長 ============ -->
+  <div class="seclabel">教室長（PC・管理画面）</div>
+
+  <!-- 1. ダッシュボード -->
+  <div class="row">
+    <div style="flex:none; width:1140px;">
+      <div class="flabel">/admin — ダッシュボード</div>
+      <div class="frame" data-screen-label="教室長 ダッシュボード">
+        <header style="background:#1b2a64; color:#f8fafc;">
+          <div style="display:flex; align-items:center; justify-content:space-between; padding:14px 24px;">
+            <div style="display:flex; align-items:baseline; gap:10px;"><span style="font-size:17px; font-weight:700;">Shift Manager</span><span style="font-size:11px; color:rgba(248,250,252,.65);">管理者</span></div>
+            <div style="display:flex; align-items:center; gap:14px;"><span style="font-size:13px; color:rgba(248,250,252,.85);">山田 教室長</span><button style="background:rgba(248,250,252,.1); border:none; color:#f8fafc; font-size:13px; padding:6px 12px; border-radius:6px; cursor:pointer; font-family:inherit;">ログアウト</button></div>
+          </div>
+          <nav style="display:flex; gap:4px; padding:0 16px 10px;">
+            <a href="#" class="navlink on">ダッシュボード</a><a href="#" class="navlink">週次シフト</a><a href="#" class="navlink">講師管理</a><a href="#" class="navlink">期間管理</a><a href="#" class="navlink">講習希望</a><a href="#" class="navlink">Excel取り込み</a><a href="#" class="navlink">申請承認</a>
+          </nav>
+        </header>
+        <div style="padding:24px;">
+          <div style="display:grid; grid-template-columns:repeat(4,1fr); gap:14px; margin-bottom:22px;">
+            <div style="border:1px solid #e2e8f0; border-radius:10px; padding:16px;"><div style="font-size:12px; color:#64748b;">今週の確定コマ</div><div style="font-size:28px; font-weight:800; margin-top:4px;">38</div></div>
+            <div style="border:1px solid #e2e8f0; border-radius:10px; padding:16px; border-left:3px solid #e9803a;"><div style="font-size:12px; color:#64748b;">未承認の申請</div><div style="font-size:28px; font-weight:800; margin-top:4px; color:#e9803a;">3</div></div>
+            <div style="border:1px solid #e2e8f0; border-radius:10px; padding:16px;"><div style="font-size:12px; color:#64748b;">講習希望 提出</div><div style="font-size:28px; font-weight:800; margin-top:4px;">18<span style="font-size:14px; color:#94a3b8;"> / 24</span></div></div>
+            <div style="border:1px solid #e2e8f0; border-radius:10px; padding:16px;"><div style="font-size:12px; color:#64748b;">未連携の講師</div><div style="font-size:28px; font-weight:800; margin-top:4px;">2</div></div>
+          </div>
+          <div style="display:grid; grid-template-columns:1.4fr 1fr; gap:20px;">
+            <div>
+              <div style="font-size:13px; font-weight:700; margin-bottom:10px;">承認待ちの申請</div>
+              <div style="display:flex; flex-direction:column; gap:8px;">
+                <div style="display:flex; align-items:center; gap:12px; border:1px solid #e2e8f0; border-radius:8px; padding:12px 14px;"><span style="font-size:10px; font-weight:700; color:#b91c1c; background:#fdeaea; padding:3px 8px; border-radius:5px;">欠勤</span><div style="flex:1;"><div style="font-size:13px; font-weight:600;">佐藤 講師 ・ 6/26(金) 7限</div><div style="font-size:11.5px; color:#94a3b8;">理由: 体調不良</div></div><button class="btn-pri" style="padding:6px 12px;">承認</button><button class="btn-out" style="padding:6px 12px;">却下</button></div>
+                <div style="display:flex; align-items:center; gap:12px; border:1px solid #e2e8f0; border-radius:8px; padding:12px 14px;"><span style="font-size:10px; font-weight:700; color:#9a4d12; background:#fdf0e6; padding:3px 8px; border-radius:5px;">交代</span><div style="flex:1;"><div style="font-size:13px; font-weight:600;">田中 → 高橋 ・ 6/25(木) 4限</div><div style="font-size:11.5px; color:#94a3b8;">代講 高橋 講師が応募済み</div></div><button class="btn-pri" style="padding:6px 12px;">承認</button><button class="btn-out" style="padding:6px 12px;">却下</button></div>
+                <div style="display:flex; align-items:center; gap:12px; border:1px solid #e2e8f0; border-radius:8px; padding:12px 14px;"><span style="font-size:10px; font-weight:700; color:#b91c1c; background:#fdeaea; padding:3px 8px; border-radius:5px;">欠勤</span><div style="flex:1;"><div style="font-size:13px; font-weight:600;">田中 講師 ・ 6/27(土) 7限</div><div style="font-size:11.5px; color:#94a3b8;">理由: 私用</div></div><button class="btn-pri" style="padding:6px 12px;">承認</button><button class="btn-out" style="padding:6px 12px;">却下</button></div>
+              </div>
+            </div>
+            <div>
+              <div style="font-size:13px; font-weight:700; margin-bottom:10px;">今週の充足状況</div>
+              <div style="border:1px solid #e2e8f0; border-radius:10px; padding:18px;">
+                <div style="display:flex; align-items:baseline; gap:8px;"><div style="font-size:34px; font-weight:800; color:#1b2a64;">92<span style="font-size:16px; color:#e9803a;">%</span></div><div style="font-size:12px; color:#94a3b8;">必要コマに対する充足率</div></div>
+                <div style="height:8px; border-radius:4px; background:#f1f5f9; margin:14px 0 18px; overflow:hidden;"><div style="width:92%; height:100%; background:#e9803a;"></div></div>
+                <div style="display:flex; flex-direction:column; gap:9px; font-size:12.5px;">
+                  <div style="display:flex; justify-content:space-between;"><span style="color:#64748b;">確定 / 必要</span><span style="font-weight:600;">38 / 41 コマ</span></div>
+                  <div style="display:flex; justify-content:space-between;"><span style="color:#64748b;">欠勤（代講未定）</span><span style="font-weight:600; color:#dc2626;">2 コマ</span></div>
+                  <div style="display:flex; justify-content:space-between;"><span style="color:#64748b;">CSV最終公開</span><span style="font-weight:600;">6/20 18:42</span></div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- 2. 週次シフト -->
+  <div class="row">
+    <div style="flex:none; width:1140px;">
+      <div class="flabel">/admin/weekly — 週次シフト表</div>
+      <div class="frame" data-screen-label="教室長 週次シフト">
+        <header style="background:#1b2a64; color:#f8fafc;">
+          <div style="display:flex; align-items:center; justify-content:space-between; padding:14px 24px;">
+            <div style="display:flex; align-items:baseline; gap:10px;"><span style="font-size:17px; font-weight:700;">Shift Manager</span><span style="font-size:11px; color:rgba(248,250,252,.65);">管理者</span></div>
+            <div style="display:flex; align-items:center; gap:14px;"><span style="font-size:13px; color:rgba(248,250,252,.85);">山田 教室長</span><button style="background:rgba(248,250,252,.1); border:none; color:#f8fafc; font-size:13px; padding:6px 12px; border-radius:6px; cursor:pointer; font-family:inherit;">ログアウト</button></div>
+          </div>
+          <nav style="display:flex; gap:4px; padding:0 16px 10px;">
+            <a href="#" class="navlink">ダッシュボード</a><a href="#" class="navlink on">週次シフト</a><a href="#" class="navlink">講師管理</a><a href="#" class="navlink">期間管理</a><a href="#" class="navlink">講習希望</a><a href="#" class="navlink">Excel取り込み</a><a href="#" class="navlink">申請承認</a>
+          </nav>
+        </header>
+        <div style="padding:22px 24px;">
+          <div style="display:flex; flex-wrap:wrap; align-items:center; gap:10px; margin-bottom:16px;">
+            <button class="btn-out" style="height:34px; padding:0 12px;">‹ 前週</button>
+            <div style="font-size:14px; font-weight:600;">2026-06-22 〜 2026-06-28</div>
+            <button class="btn-out" style="height:34px; padding:0 12px;">次週 ›</button>
+            <div style="margin-left:auto; display:flex; align-items:center; gap:8px;">
+              <select class="btn-out" style="height:34px; padding:0 8px;"><option>全講師</option></select>
+              <button class="btn-out" style="height:34px; padding:0 12px;">印刷</button>
+            </div>
+          </div>
+          <div style="display:flex; flex-wrap:wrap; align-items:center; gap:16px; padding:10px 14px; background:#f1f5f9; border:1px solid #e2e8f0; border-radius:8px; font-size:12.5px; color:#64748b; margin-bottom:16px;">
+            <span style="display:flex; align-items:center; gap:6px;"><span style="width:13px; height:13px; border:1.5px solid #94a3b8; border-radius:2px;"></span>2026-W26_確定シフト.csv</span>
+            <span>公開者: 山田 教室長</span><span>公開: 2026/06/20 18:42</span>
+            <span style="margin-left:auto; color:#0f172a; font-weight:600;">出勤 38 件<span style="color:#dc2626; font-weight:500; margin-left:8px;">欠勤 2 件</span></span>
+          </div>
+          <div style="border:1px solid #e2e8f0; border-radius:8px; overflow:hidden;">
+            <div style="display:grid; grid-template-columns:92px repeat(7,1fr);">
+              <div style="background:#f1f5f9; border-bottom:1px solid #e2e8f0; padding:9px 10px; font-size:12px; font-weight:600; color:#475569;">コマ</div>
+              <sc-for list="{{ days }}" as="d" hint-placeholder-count="7">
+                <div style="background:#f1f5f9; border-bottom:1px solid #e2e8f0; border-left:1px solid #e2e8f0; padding:7px 4px; text-align:center;">
+                  <div style="font-size:13px; font-weight:600; color:{{ d.color }};">{{ d.date }}</div>
+                  <div style="font-size:11px; color:{{ d.color }}; opacity:.8;">({{ d.dow }})</div>
+                </div>
+              </sc-for>
+              <sc-for list="{{ slots }}" as="row" hint-placeholder-count="8">
+                <div style="background:#f8fafc; border-bottom:1px solid #eef2f6; padding:8px 10px;">
+                  <div style="font-size:13px; font-weight:600; color:#1e293b;">{{ row.label }}</div>
+                  <div style="font-size:10.5px; color:#94a3b8;">{{ row.time }}</div>
+                </div>
+                <sc-for list="{{ row.cells }}" as="c" hint-placeholder-count="7">
+                  <div style="border-bottom:1px solid #eef2f6; border-left:1px solid #eef2f6; padding:5px; min-height:46px; display:flex; flex-direction:column; gap:4px;">
+                    <sc-for list="{{ c.items }}" as="it" hint-placeholder-count="1">
+                      <div style="{{ it.style }}"><span style="font-weight:600;">{{ it.name }}</span><span style="{{ it.badgeStyle }}">{{ it.badge }}</span></div>
+                    </sc-for>
+                  </div>
+                </sc-for>
+              </sc-for>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- 3. 講師管理 -->
+  <div class="row">
+    <div style="flex:none; width:1140px;">
+      <div class="flabel">/admin/tutors — 講師管理</div>
+      <div class="frame" data-screen-label="教室長 講師管理">
+        <header style="background:#1b2a64; color:#f8fafc;">
+          <div style="display:flex; align-items:center; justify-content:space-between; padding:14px 24px;">
+            <div style="display:flex; align-items:baseline; gap:10px;"><span style="font-size:17px; font-weight:700;">Shift Manager</span><span style="font-size:11px; color:rgba(248,250,252,.65);">管理者</span></div>
+            <div style="display:flex; align-items:center; gap:14px;"><span style="font-size:13px; color:rgba(248,250,252,.85);">山田 教室長</span><button style="background:rgba(248,250,252,.1); border:none; color:#f8fafc; font-size:13px; padding:6px 12px; border-radius:6px; cursor:pointer; font-family:inherit;">ログアウト</button></div>
+          </div>
+          <nav style="display:flex; gap:4px; padding:0 16px 10px;">
+            <a href="#" class="navlink">ダッシュボード</a><a href="#" class="navlink">週次シフト</a><a href="#" class="navlink on">講師管理</a><a href="#" class="navlink">期間管理</a><a href="#" class="navlink">講習希望</a><a href="#" class="navlink">Excel取り込み</a><a href="#" class="navlink">申請承認</a>
+          </nav>
+        </header>
+        <div style="padding:22px 24px;">
+          <div style="display:flex; align-items:center; gap:10px; margin-bottom:16px;">
+            <input class="field" style="max-width:280px;" placeholder="氏名・メールで検索" />
+            <select class="btn-out" style="height:38px; padding:0 10px;"><option>すべての状態</option></select>
+            <button class="btn-pri" style="height:38px; padding:0 16px; margin-left:auto;">＋ 講師を招待</button>
+          </div>
+          <div style="border:1px solid #e2e8f0; border-radius:8px; overflow:hidden;">
+            <div style="display:grid; grid-template-columns:1.2fr 1.6fr .9fr 1.3fr .8fr; background:#f1f5f9; border-bottom:1px solid #e2e8f0; font-size:12px; font-weight:600; color:#475569;">
+              <div style="padding:10px 14px;">氏名</div><div style="padding:10px 14px;">メール</div><div style="padding:10px 14px;">状態</div><div style="padding:10px 14px;">担当科目</div><div style="padding:10px 14px; text-align:right;">操作</div>
+            </div>
+            <sc-for list="{{ tutors }}" as="t" hint-placeholder-count="6">
+              <div style="display:grid; grid-template-columns:1.2fr 1.6fr .9fr 1.3fr .8fr; border-bottom:1px solid #eef2f6; font-size:13px; align-items:center;">
+                <div style="padding:11px 14px; display:flex; align-items:center; gap:9px;"><span style="width:28px; height:28px; border-radius:50%; background:{{ t.avatar }}; color:#fff; font-size:12px; font-weight:700; display:flex; align-items:center; justify-content:center;">{{ t.initial }}</span><span style="font-weight:600;">{{ t.name }}</span></div>
+                <div style="padding:11px 14px; color:#64748b;">{{ t.email }}</div>
+                <div style="padding:11px 14px;"><span style="{{ t.statusStyle }}">{{ t.status }}</span></div>
+                <div style="padding:11px 14px; color:#64748b;">{{ t.subjects }}</div>
+                <div style="padding:11px 14px; text-align:right;"><span style="color:#1b2a64; font-weight:600; cursor:pointer;">編集</span></div>
+              </div>
+            </sc-for>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- 4. 期間管理 -->
+  <div class="row">
+    <div style="flex:none; width:1140px;">
+      <div class="flabel">/admin/periods — 期間・締切管理</div>
+      <div class="frame" data-screen-label="教室長 期間管理">
+        <header style="background:#1b2a64; color:#f8fafc;">
+          <div style="display:flex; align-items:center; justify-content:space-between; padding:14px 24px;">
+            <div style="display:flex; align-items:baseline; gap:10px;"><span style="font-size:17px; font-weight:700;">Shift Manager</span><span style="font-size:11px; color:rgba(248,250,252,.65);">管理者</span></div>
+            <div style="display:flex; align-items:center; gap:14px;"><span style="font-size:13px; color:rgba(248,250,252,.85);">山田 教室長</span><button style="background:rgba(248,250,252,.1); border:none; color:#f8fafc; font-size:13px; padding:6px 12px; border-radius:6px; cursor:pointer; font-family:inherit;">ログアウト</button></div>
+          </div>
+          <nav style="display:flex; gap:4px; padding:0 16px 10px;">
+            <a href="#" class="navlink">ダッシュボード</a><a href="#" class="navlink">週次シフト</a><a href="#" class="navlink">講師管理</a><a href="#" class="navlink on">期間管理</a><a href="#" class="navlink">講習希望</a><a href="#" class="navlink">Excel取り込み</a><a href="#" class="navlink">申請承認</a>
+          </nav>
+        </header>
+        <div style="padding:22px 24px; display:grid; grid-template-columns:1fr 1fr; gap:20px;">
+          <div>
+            <div style="display:flex; align-items:center; justify-content:space-between; margin-bottom:12px;"><div style="font-size:14px; font-weight:700;">通常期間</div><button class="btn-out" style="height:30px; padding:0 11px;">＋ 追加</button></div>
+            <div style="display:flex; flex-direction:column; gap:10px;">
+              <div style="border:1px solid #e2e8f0; border-radius:8px; padding:14px;"><div style="display:flex; justify-content:space-between; align-items:center;"><div style="font-size:13px; font-weight:600;">2026 1学期（通常）</div><span style="font-size:10px; font-weight:700; color:#15803d; background:#e7f6ec; padding:3px 8px; border-radius:5px;">公開中</span></div><div style="font-size:12px; color:#64748b; margin-top:6px;">4/8 〜 7/18 ・ 固定シフト提出締切 3/28</div></div>
+              <div style="border:1px solid #e2e8f0; border-radius:8px; padding:14px;"><div style="display:flex; justify-content:space-between; align-items:center;"><div style="font-size:13px; font-weight:600;">2026 2学期（通常）</div><span style="font-size:10px; font-weight:700; color:#64748b; background:#f1f5f9; padding:3px 8px; border-radius:5px;">準備中</span></div><div style="font-size:12px; color:#64748b; margin-top:6px;">9/1 〜 12/24 ・ 締切 未設定</div></div>
+            </div>
+          </div>
+          <div>
+            <div style="display:flex; align-items:center; justify-content:space-between; margin-bottom:12px;"><div style="font-size:14px; font-weight:700;">講習期間</div><button class="btn-out" style="height:30px; padding:0 11px;">＋ 追加</button></div>
+            <div style="display:flex; flex-direction:column; gap:10px;">
+              <div style="border:1px solid #e2e8f0; border-radius:8px; padding:14px; border-left:3px solid #e9803a;"><div style="display:flex; justify-content:space-between; align-items:center;"><div style="font-size:13px; font-weight:600;">2026 夏期講習</div><span style="font-size:10px; font-weight:700; color:#9a4d12; background:#fdf0e6; padding:3px 8px; border-radius:5px;">希望受付中</span></div><div style="font-size:12px; color:#64748b; margin-top:6px;">7/21 〜 8/29 ・ 希望提出締切 <span style="color:#e9803a; font-weight:600;">6/25 23:59</span></div></div>
+              <div style="border:1px solid #e2e8f0; border-radius:8px; padding:14px;"><div style="display:flex; justify-content:space-between; align-items:center;"><div style="font-size:13px; font-weight:600;">2026 冬期講習</div><span style="font-size:10px; font-weight:700; color:#64748b; background:#f1f5f9; padding:3px 8px; border-radius:5px;">準備中</span></div><div style="font-size:12px; color:#64748b; margin-top:6px;">12/26 〜 1/7 ・ 締切 未設定</div></div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- 5. 講習希望ヒートマップ -->
+  <div class="row">
+    <div style="flex:none; width:1140px;">
+      <div class="flabel">/admin/training — 講習希望の俯瞰（ヒートマップ）</div>
+      <div class="frame" data-screen-label="教室長 講習希望">
+        <header style="background:#1b2a64; color:#f8fafc;">
+          <div style="display:flex; align-items:center; justify-content:space-between; padding:14px 24px;">
+            <div style="display:flex; align-items:baseline; gap:10px;"><span style="font-size:17px; font-weight:700;">Shift Manager</span><span style="font-size:11px; color:rgba(248,250,252,.65);">管理者</span></div>
+            <div style="display:flex; align-items:center; gap:14px;"><span style="font-size:13px; color:rgba(248,250,252,.85);">山田 教室長</span><button style="background:rgba(248,250,252,.1); border:none; color:#f8fafc; font-size:13px; padding:6px 12px; border-radius:6px; cursor:pointer; font-family:inherit;">ログアウト</button></div>
+          </div>
+          <nav style="display:flex; gap:4px; padding:0 16px 10px;">
+            <a href="#" class="navlink">ダッシュボード</a><a href="#" class="navlink">週次シフト</a><a href="#" class="navlink">講師管理</a><a href="#" class="navlink">期間管理</a><a href="#" class="navlink on">講習希望</a><a href="#" class="navlink">Excel取り込み</a><a href="#" class="navlink">申請承認</a>
+          </nav>
+        </header>
+        <div style="padding:22px 24px;">
+          <div style="display:flex; align-items:center; gap:14px; margin-bottom:16px;">
+            <div style="font-size:14px; font-weight:700;">2026 夏期講習</div>
+            <div style="font-size:12px; color:#64748b;">提出 18 / 24 名</div>
+            <div style="margin-left:auto; display:flex; align-items:center; gap:8px; font-size:11px; color:#94a3b8;">少
+              <span style="width:16px; height:14px; background:#f8fafc; border:1px solid #e2e8f0; border-radius:2px;"></span>
+              <span style="width:16px; height:14px; background:#fde8d8; border-radius:2px;"></span>
+              <span style="width:16px; height:14px; background:#f9c89e; border-radius:2px;"></span>
+              <span style="width:16px; height:14px; background:#f0a060; border-radius:2px;"></span>
+              <span style="width:16px; height:14px; background:#e9803a; border-radius:2px;"></span>多</div>
+          </div>
+          <div style="overflow:auto;">
+            <div style="display:grid; grid-template-columns:84px repeat(10,1fr); gap:4px; min-width:760px;">
+              <div></div>
+              <sc-for list="{{ heatDays }}" as="hd" hint-placeholder-count="10">
+                <div style="text-align:center; font-size:11px; color:#64748b; font-weight:600;">{{ hd }}</div>
+              </sc-for>
+              <sc-for list="{{ heatRows }}" as="hr" hint-placeholder-count="8">
+                <div style="font-size:12px; font-weight:600; color:#1e293b; display:flex; align-items:center;">{{ hr.label }}</div>
+                <sc-for list="{{ hr.cells }}" as="hc" hint-placeholder-count="10">
+                  <div style="{{ hc.style }}">{{ hc.count }}</div>
+                </sc-for>
+              </sc-for>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- 6. CSV取り込み -->
+  <div class="row">
+    <div style="flex:none; width:1140px;">
+      <div class="flabel">/admin/uploads — 確定シフト CSV 取り込みウィザード</div>
+      <div class="frame" data-screen-label="教室長 CSV取り込み">
+        <header style="background:#1b2a64; color:#f8fafc;">
+          <div style="display:flex; align-items:center; justify-content:space-between; padding:14px 24px;">
+            <div style="display:flex; align-items:baseline; gap:10px;"><span style="font-size:17px; font-weight:700;">Shift Manager</span><span style="font-size:11px; color:rgba(248,250,252,.65);">管理者</span></div>
+            <div style="display:flex; align-items:center; gap:14px;"><span style="font-size:13px; color:rgba(248,250,252,.85);">山田 教室長</span><button style="background:rgba(248,250,252,.1); border:none; color:#f8fafc; font-size:13px; padding:6px 12px; border-radius:6px; cursor:pointer; font-family:inherit;">ログアウト</button></div>
+          </div>
+          <nav style="display:flex; gap:4px; padding:0 16px 10px;">
+            <a href="#" class="navlink">ダッシュボード</a><a href="#" class="navlink">週次シフト</a><a href="#" class="navlink">講師管理</a><a href="#" class="navlink">期間管理</a><a href="#" class="navlink">講習希望</a><a href="#" class="navlink on">Excel取り込み</a><a href="#" class="navlink">申請承認</a>
+          </nav>
+        </header>
+        <div style="padding:22px 24px;">
+          <!-- stepper -->
+          <div style="display:flex; align-items:center; gap:0; margin-bottom:22px;">
+            <div style="display:flex; align-items:center; gap:8px;"><span style="width:26px; height:26px; border-radius:50%; background:#1b2a64; color:#fff; font-size:12px; font-weight:700; display:flex; align-items:center; justify-content:center;">✓</span><span style="font-size:13px; font-weight:600; color:#1b2a64;">アップロード</span></div>
+            <div style="flex:1; height:2px; background:#e9803a; margin:0 12px;"></div>
+            <div style="display:flex; align-items:center; gap:8px;"><span style="width:26px; height:26px; border-radius:50%; background:#e9803a; color:#fff; font-size:12px; font-weight:700; display:flex; align-items:center; justify-content:center;">2</span><span style="font-size:13px; font-weight:600;">マッピング確認</span></div>
+            <div style="flex:1; height:2px; background:#e2e8f0; margin:0 12px;"></div>
+            <div style="display:flex; align-items:center; gap:8px;"><span style="width:26px; height:26px; border-radius:50%; background:#f1f5f9; color:#94a3b8; font-size:12px; font-weight:700; display:flex; align-items:center; justify-content:center;">3</span><span style="font-size:13px; color:#94a3b8;">確定・公開</span></div>
+          </div>
+          <div style="display:flex; align-items:center; gap:10px; padding:10px 14px; background:#f1f5f9; border:1px solid #e2e8f0; border-radius:8px; font-size:12.5px; color:#64748b; margin-bottom:16px;">
+            <span style="width:13px; height:13px; border:1.5px solid #94a3b8; border-radius:2px;"></span>2026-W26_確定シフト.csv ・ 41 行を検出 ・ 文字コード Shift_JIS
+          </div>
+          <div style="font-size:13px; font-weight:700; margin-bottom:10px;">講師名のマッピング <span style="font-size:12px; color:#dc2626; font-weight:500; margin-left:6px;">未連携 1 件は要確認</span></div>
+          <div style="border:1px solid #e2e8f0; border-radius:8px; overflow:hidden;">
+            <div style="display:grid; grid-template-columns:1fr 24px 1.4fr 1fr; background:#f1f5f9; border-bottom:1px solid #e2e8f0; font-size:12px; font-weight:600; color:#475569;">
+              <div style="padding:10px 14px;">CSV上の講師名</div><div></div><div style="padding:10px 14px;">紐付け先（profiles）</div><div style="padding:10px 14px;">状態</div>
+            </div>
+            <sc-for list="{{ mapping }}" as="m" hint-placeholder-count="5">
+              <div style="display:grid; grid-template-columns:1fr 24px 1.4fr 1fr; border-bottom:1px solid #eef2f6; font-size:13px; align-items:center;">
+                <div style="padding:10px 14px; font-weight:600;">{{ m.csv }}</div>
+                <div style="text-align:center; color:#cbd5e1;">→</div>
+                <div style="padding:10px 14px;"><select class="btn-out" style="height:32px; padding:0 8px; width:100%;"><option>{{ m.match }}</option></select></div>
+                <div style="padding:10px 14px;"><span style="{{ m.style }}">{{ m.status }}</span></div>
+              </div>
+            </sc-for>
+          </div>
+          <div style="display:flex; justify-content:flex-end; gap:10px; margin-top:18px;">
+            <button class="btn-out" style="height:38px; padding:0 16px;">戻る</button>
+            <button class="btn-pri" style="height:38px; padding:0 18px;">確定して公開 ›</button>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- 7. 申請承認 -->
+  <div class="row">
+    <div style="flex:none; width:1140px;">
+      <div class="flabel">/admin/requests — 欠勤・交代申請の承認</div>
+      <div class="frame" data-screen-label="教室長 申請承認">
+        <header style="background:#1b2a64; color:#f8fafc;">
+          <div style="display:flex; align-items:center; justify-content:space-between; padding:14px 24px;">
+            <div style="display:flex; align-items:baseline; gap:10px;"><span style="font-size:17px; font-weight:700;">Shift Manager</span><span style="font-size:11px; color:rgba(248,250,252,.65);">管理者</span></div>
+            <div style="display:flex; align-items:center; gap:14px;"><span style="font-size:13px; color:rgba(248,250,252,.85);">山田 教室長</span><button style="background:rgba(248,250,252,.1); border:none; color:#f8fafc; font-size:13px; padding:6px 12px; border-radius:6px; cursor:pointer; font-family:inherit;">ログアウト</button></div>
+          </div>
+          <nav style="display:flex; gap:4px; padding:0 16px 10px;">
+            <a href="#" class="navlink">ダッシュボード</a><a href="#" class="navlink">週次シフト</a><a href="#" class="navlink">講師管理</a><a href="#" class="navlink">期間管理</a><a href="#" class="navlink">講習希望</a><a href="#" class="navlink">Excel取り込み</a><a href="#" class="navlink on">申請承認</a>
+          </nav>
+        </header>
+        <div style="padding:22px 24px;">
+          <div style="display:flex; gap:6px; margin-bottom:18px; border-bottom:1px solid #e2e8f0;">
+            <div style="padding:9px 14px; font-size:13px; font-weight:600; color:#1b2a64; border-bottom:2px solid #e9803a;">欠勤申請 <span style="background:#fdeaea; color:#b91c1c; font-size:11px; padding:1px 7px; border-radius:10px; margin-left:4px;">2</span></div>
+            <div style="padding:9px 14px; font-size:13px; color:#94a3b8;">交代・代講 <span style="background:#f1f5f9; color:#64748b; font-size:11px; padding:1px 7px; border-radius:10px; margin-left:4px;">1</span></div>
+          </div>
+          <div style="display:flex; flex-direction:column; gap:10px;">
+            <div style="display:flex; align-items:center; gap:14px; border:1px solid #e2e8f0; border-radius:8px; padding:14px 16px;">
+              <span style="width:34px; height:34px; border-radius:50%; background:#1b2a64; color:#fff; font-size:13px; font-weight:700; display:flex; align-items:center; justify-content:center;">佐</span>
+              <div style="flex:1;"><div style="font-size:13.5px; font-weight:600;">佐藤 講師 が 6/26(金) 7限 を欠勤申請</div><div style="font-size:12px; color:#94a3b8; margin-top:2px;">理由: 体調不良 ・ 申請 6/22 09:14 ・ 代講未定</div></div>
+              <span style="font-size:10px; font-weight:700; color:#9a4d12; background:#fdf0e6; padding:4px 9px; border-radius:6px;">承認待ち</span>
+              <button class="btn-pri" style="height:34px; padding:0 16px;">承認</button>
+              <button class="btn-out" style="height:34px; padding:0 14px;">却下</button>
+            </div>
+            <div style="display:flex; align-items:center; gap:14px; border:1px solid #e2e8f0; border-radius:8px; padding:14px 16px;">
+              <span style="width:34px; height:34px; border-radius:50%; background:#1b2a64; color:#fff; font-size:13px; font-weight:700; display:flex; align-items:center; justify-content:center;">田</span>
+              <div style="flex:1;"><div style="font-size:13.5px; font-weight:600;">田中 講師 が 6/27(土) 7限 を欠勤申請</div><div style="font-size:12px; color:#94a3b8; margin-top:2px;">理由: 私用 ・ 申請 6/22 20:31 ・ 代講募集に出す予定</div></div>
+              <span style="font-size:10px; font-weight:700; color:#9a4d12; background:#fdf0e6; padding:4px 9px; border-radius:6px;">承認待ち</span>
+              <button class="btn-pri" style="height:34px; padding:0 16px;">承認</button>
+              <button class="btn-out" style="height:34px; padding:0 14px;">却下</button>
+            </div>
+            <div style="display:flex; align-items:center; gap:14px; border:1px solid #eef2f6; border-radius:8px; padding:14px 16px; opacity:.65;">
+              <span style="width:34px; height:34px; border-radius:50%; background:#cbd5e1; color:#fff; font-size:13px; font-weight:700; display:flex; align-items:center; justify-content:center;">高</span>
+              <div style="flex:1;"><div style="font-size:13.5px; font-weight:600;">高橋 講師 ・ 6/20(金) 4限 欠勤</div><div style="font-size:12px; color:#94a3b8; margin-top:2px;">承認済み 6/19 ・ 代講 伊藤 講師</div></div>
+              <span style="font-size:10px; font-weight:700; color:#15803d; background:#e7f6ec; padding:4px 9px; border-radius:6px;">承認済み</span>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ============ 講師（モバイル） ============ -->
+  <div class="seclabel">講師（スマホ）</div>
+  <div class="row">
+
+    <!-- ホーム -->
+    <div style="flex:none; width:330px;">
+      <div class="flabel">/tutor — ホーム</div>
+      <div data-screen-label="講師 ホーム" style="width:330px; height:680px; background:#f1f5f9; border-radius:28px; box-shadow:0 1px 3px rgba(15,23,42,.1); overflow:hidden; display:flex; flex-direction:column; border:7px solid #1b2a64;">
+        <div style="background:#1b2a64; color:#f8fafc; padding:16px 18px 20px;">
+          <div style="display:flex; align-items:center; justify-content:space-between;">
+            <div><div style="font-size:11px; color:rgba(248,250,252,.6);">Shift Manager ・ 講師</div><div style="font-size:17px; font-weight:700; margin-top:2px;">佐藤 講師</div></div>
+            <span style="width:38px; height:38px; border-radius:50%; background:#e9803a; color:#fff; font-weight:700; display:flex; align-items:center; justify-content:center;">佐</span>
+          </div>
+          <div style="display:flex; gap:8px; margin-top:16px;">
+            <div style="flex:1; background:rgba(248,250,252,.08); border-radius:10px; padding:10px 12px;"><div style="font-size:11px; color:rgba(248,250,252,.6);">今週のコマ</div><div style="font-size:19px; font-weight:800;">9<span style="font-size:11px; color:rgba(248,250,252,.6);"> コマ</span></div></div>
+            <div style="flex:1; background:rgba(248,250,252,.08); border-radius:10px; padding:10px 12px;"><div style="font-size:11px; color:rgba(248,250,252,.6);">提出締切</div><div style="font-size:19px; font-weight:800; color:#f6a96f;">あと2日</div></div>
+          </div>
+        </div>
+        <div style="flex:1; overflow:auto; padding:16px 14px;">
+          <div style="display:flex; gap:9px; align-items:flex-start; background:#fff4ec; border:1px solid #f6d4ba; border-radius:12px; padding:11px 13px; margin-bottom:18px;">
+            <span style="width:8px; height:8px; border-radius:50%; background:#e9803a; margin-top:5px; flex:none;"></span>
+            <div><div style="font-size:12.5px; font-weight:600; color:#9a4d12;">夏期講習の希望提出</div><div style="font-size:11.5px; color:#b06a36; margin-top:2px;">6/25(木) 23:59 まで・未提出あり</div></div>
+          </div>
+          <div style="font-size:12.5px; font-weight:700; margin-bottom:9px;">次の出勤</div>
+          <div style="background:#1b2a64; border-radius:14px; padding:16px; color:#fff; margin-bottom:20px;">
+            <div style="display:flex; justify-content:space-between; align-items:baseline;"><div style="font-size:12.5px; color:rgba(255,255,255,.8);">明日 6/24（水）</div><span style="font-size:11px; background:#e9803a; padding:3px 9px; border-radius:20px;">座席 3</span></div>
+            <div style="font-size:23px; font-weight:800; margin-top:8px;">3限 12:30–13:55</div>
+            <div style="font-size:11.5px; color:rgba(255,255,255,.75); margin-top:6px;">田中(数学) / 鈴木(英語)</div>
+          </div>
+          <div style="font-size:12.5px; font-weight:700; margin-bottom:10px;">今週のシフト</div>
+          <div style="display:flex; flex-direction:column; gap:8px;">
+            <sc-for list="{{ myShifts }}" as="s" hint-placeholder-count="4">
+              <div style="display:flex; align-items:center; gap:11px; background:#fff; border:1px solid #e2e8f0; border-radius:11px; padding:11px 13px;">
+                <div style="text-align:center; flex:none; width:30px;"><div style="font-size:10.5px; color:{{ s.color }}; font-weight:600;">{{ s.dow }}</div><div style="font-size:16px; font-weight:800;">{{ s.date }}</div></div>
+                <div style="width:3px; height:32px; border-radius:2px; background:{{ s.bar }};"></div>
+                <div style="flex:1; min-width:0;"><div style="font-size:13px; font-weight:700;">{{ s.time }}</div><div style="font-size:11px; color:#94a3b8;">{{ s.label }}</div></div>
+                <span style="{{ s.tagStyle }}">{{ s.tag }}</span>
+              </div>
+            </sc-for>
+          </div>
+        </div>
+        <div style="flex:none; border-top:1px solid #e2e8f0; background:#fff; display:flex; padding:9px 0 14px;">
+          <sc-for list="{{ tabs }}" as="t" hint-placeholder-count="4">
+            <div style="flex:1; text-align:center; display:flex; flex-direction:column; align-items:center; gap:4px;"><span style="width:18px; height:18px; border-radius:5px; background:{{ t.bg }};"></span><span style="font-size:10px; color:{{ t.color }}; font-weight:600;">{{ t.label }}</span></div>
+          </sc-for>
+        </div>
+      </div>
+    </div>
+
+    <!-- 固定シフト登録 -->
+    <div style="flex:none; width:330px;">
+      <div class="flabel">/tutor/fixed-shifts — 固定シフト登録</div>
+      <div data-screen-label="講師 固定シフト" style="width:330px; height:680px; background:#fff; border-radius:28px; box-shadow:0 1px 3px rgba(15,23,42,.1); overflow:hidden; display:flex; flex-direction:column; border:7px solid #1b2a64;">
+        <div style="background:#1b2a64; color:#f8fafc; padding:16px 18px;"><div style="font-size:11px; color:rgba(248,250,252,.6);">2026 1学期（通常）</div><div style="font-size:16px; font-weight:700; margin-top:2px;">固定シフト登録</div><div style="font-size:11px; color:rgba(248,250,252,.6); margin-top:4px;">出勤できるコマをタップ ・ 締切 3/28</div></div>
+        <div style="flex:1; overflow:auto; padding:14px;">
+          <div style="display:grid; grid-template-columns:38px repeat(6,1fr); gap:4px;">
+            <div></div>
+            <sc-for list="{{ fxDays }}" as="fd" hint-placeholder-count="6"><div style="text-align:center; font-size:11px; font-weight:600; color:{{ fd.color }};">{{ fd.dow }}</div></sc-for>
+            <sc-for list="{{ fixedRows }}" as="fr" hint-placeholder-count="8">
+              <div style="font-size:11px; font-weight:600; color:#475569; display:flex; align-items:center; justify-content:center;">{{ fr.label }}</div>
+              <sc-for list="{{ fr.cells }}" as="fc" hint-placeholder-count="6"><div style="{{ fc.style }}">{{ fc.mark }}</div></sc-for>
+            </sc-for>
+          </div>
+          <div style="display:flex; align-items:center; gap:14px; margin-top:14px; font-size:11px; color:#94a3b8;">
+            <span style="display:flex; align-items:center; gap:5px;"><span style="width:14px; height:14px; border-radius:4px; background:#e9803a;"></span>出勤可</span>
+            <span style="display:flex; align-items:center; gap:5px;"><span style="width:14px; height:14px; border-radius:4px; background:#f1f5f9; border:1px solid #e2e8f0;"></span>不可</span>
+          </div>
+        </div>
+        <div style="flex:none; padding:12px 16px 18px; border-top:1px solid #e2e8f0;"><button class="btn-pri" style="width:100%; height:42px;">この内容で提出</button></div>
+      </div>
+    </div>
+
+    <!-- 講習希望提出 -->
+    <div style="flex:none; width:330px;">
+      <div class="flabel">/tutor/training — 講習希望提出</div>
+      <div data-screen-label="講師 講習希望" style="width:330px; height:680px; background:#fff; border-radius:28px; box-shadow:0 1px 3px rgba(15,23,42,.1); overflow:hidden; display:flex; flex-direction:column; border:7px solid #1b2a64;">
+        <div style="background:#1b2a64; color:#f8fafc; padding:16px 18px;"><div style="font-size:11px; color:rgba(248,250,252,.6);">2026 夏期講習</div><div style="font-size:16px; font-weight:700; margin-top:2px;">日別の希望提出</div><div style="font-size:11px; color:#f6a96f; margin-top:4px;">締切 6/25 23:59（あと2日）</div></div>
+        <div style="flex:1; overflow:auto; padding:14px;">
+          <div style="display:flex; flex-direction:column; gap:8px;">
+            <sc-for list="{{ trainDays }}" as="td" hint-placeholder-count="5">
+              <div style="border:1px solid #e2e8f0; border-radius:11px; padding:12px 13px;">
+                <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:9px;"><div style="font-size:13px; font-weight:700; color:{{ td.color }};">{{ td.date }}</div><span style="{{ td.tagStyle }}">{{ td.tag }}</span></div>
+                <div style="display:flex; flex-wrap:wrap; gap:5px;">
+                  <sc-for list="{{ td.slots }}" as="ts" hint-placeholder-count="8"><span style="{{ ts.style }}">{{ ts.label }}</span></sc-for>
+                </div>
+              </div>
+            </sc-for>
+          </div>
+        </div>
+        <div style="flex:none; padding:12px 16px 18px; border-top:1px solid #e2e8f0;"><button class="btn-pri" style="width:100%; height:42px;">希望を提出</button></div>
+      </div>
+    </div>
+
+    <!-- 欠勤申請 -->
+    <div style="flex:none; width:330px;">
+      <div class="flabel">/tutor/absences — 欠勤申請</div>
+      <div data-screen-label="講師 欠勤申請" style="width:330px; height:680px; background:#fff; border-radius:28px; box-shadow:0 1px 3px rgba(15,23,42,.1); overflow:hidden; display:flex; flex-direction:column; border:7px solid #1b2a64;">
+        <div style="background:#1b2a64; color:#f8fafc; padding:16px 18px;"><div style="font-size:16px; font-weight:700;">欠勤申請</div><div style="font-size:11px; color:rgba(248,250,252,.6); margin-top:4px;">確定済みシフトから対象を選択</div></div>
+        <div style="flex:1; overflow:auto; padding:16px 15px;">
+          <label style="font-size:12px; font-weight:600; color:#475569;">対象シフト</label>
+          <div style="border:1px solid #e2e8f0; border-radius:8px; padding:12px 13px; margin:7px 0 16px; display:flex; justify-content:space-between; align-items:center;"><div><div style="font-size:13px; font-weight:600;">6/26(金) 7限</div><div style="font-size:11px; color:#94a3b8;">18:30–19:55 ・ 座席3</div></div><span style="font-size:11px; color:#1b2a64; font-weight:600;">変更</span></div>
+          <label style="font-size:12px; font-weight:600; color:#475569;">理由区分</label>
+          <div style="display:flex; gap:7px; margin:7px 0 16px; flex-wrap:wrap;">
+            <span style="font-size:12px; padding:7px 13px; border-radius:20px; background:#1b2a64; color:#fff; font-weight:600;">体調不良</span>
+            <span style="font-size:12px; padding:7px 13px; border-radius:20px; background:#f1f5f9; color:#64748b;">私用</span>
+            <span style="font-size:12px; padding:7px 13px; border-radius:20px; background:#f1f5f9; color:#64748b;">学業</span>
+            <span style="font-size:12px; padding:7px 13px; border-radius:20px; background:#f1f5f9; color:#64748b;">その他</span>
+          </div>
+          <label style="font-size:12px; font-weight:600; color:#475569;">詳細メモ（任意）</label>
+          <div style="border:1px solid #e2e8f0; border-radius:8px; padding:11px 12px; margin:7px 0 16px; min-height:72px; font-size:12.5px; color:#94a3b8;">発熱のため欠勤します。代講をお願いします。</div>
+          <div style="display:flex; gap:9px; align-items:flex-start; background:#fff4ec; border:1px solid #f6d4ba; border-radius:10px; padding:11px 13px;"><span style="width:8px; height:8px; border-radius:50%; background:#e9803a; margin-top:5px; flex:none;"></span><div style="font-size:11.5px; color:#b06a36;">提出後、教室長の承認が必要です。代講募集に出すこともできます。</div></div>
+        </div>
+        <div style="flex:none; padding:12px 16px 18px; border-top:1px solid #e2e8f0;"><button class="btn-pri" style="width:100%; height:42px;">欠勤を申請</button></div>
+      </div>
+    </div>
+
+    <!-- 代講募集・応募 -->
+    <div style="flex:none; width:330px;">
+      <div class="flabel">/tutor/open-swaps — 代講募集・応募</div>
+      <div data-screen-label="講師 代講募集" style="width:330px; height:680px; background:#f1f5f9; border-radius:28px; box-shadow:0 1px 3px rgba(15,23,42,.1); overflow:hidden; display:flex; flex-direction:column; border:7px solid #1b2a64;">
+        <div style="background:#1b2a64; color:#f8fafc; padding:16px 18px;"><div style="font-size:16px; font-weight:700;">代講募集</div><div style="font-size:11px; color:rgba(248,250,252,.6); margin-top:4px;">応募できる募集 3 件</div></div>
+        <div style="flex:1; overflow:auto; padding:14px;">
+          <div style="display:flex; flex-direction:column; gap:10px;">
+            <div style="background:#fff; border:1px solid #e2e8f0; border-radius:12px; padding:14px;">
+              <div style="display:flex; justify-content:space-between; align-items:center;"><div style="font-size:14px; font-weight:700;">6/25(木) 4限</div><span style="font-size:10px; font-weight:700; color:#9a4d12; background:#fdf0e6; padding:3px 8px; border-radius:6px;">募集中</span></div>
+              <div style="font-size:12px; color:#64748b; margin-top:5px;">14:00–15:25 ・ 田中 講師の代講 ・ 数学</div>
+              <button class="btn-pri" style="width:100%; height:38px; margin-top:11px;">応募する</button>
+            </div>
+            <div style="background:#fff; border:1px solid #e2e8f0; border-radius:12px; padding:14px;">
+              <div style="display:flex; justify-content:space-between; align-items:center;"><div style="font-size:14px; font-weight:700;">6/27(土) 7限</div><span style="font-size:10px; font-weight:700; color:#9a4d12; background:#fdf0e6; padding:3px 8px; border-radius:6px;">募集中</span></div>
+              <div style="font-size:12px; color:#64748b; margin-top:5px;">18:30–19:55 ・ 田中 講師の代講 ・ 英語</div>
+              <button class="btn-pri" style="width:100%; height:38px; margin-top:11px;">応募する</button>
+            </div>
+            <div style="background:#fff; border:1px solid #eef2f6; border-radius:12px; padding:14px; opacity:.7;">
+              <div style="display:flex; justify-content:space-between; align-items:center;"><div style="font-size:14px; font-weight:700;">6/24(水) 6限</div><span style="font-size:10px; font-weight:700; color:#15803d; background:#e7f6ec; padding:3px 8px; border-radius:6px;">応募済み</span></div>
+              <div style="font-size:12px; color:#64748b; margin-top:5px;">17:00–18:25 ・ 承認待ち</div>
+            </div>
+          </div>
+        </div>
+        <div style="flex:none; border-top:1px solid #e2e8f0; background:#fff; display:flex; padding:9px 0 14px;">
+          <div style="flex:1; text-align:center; display:flex; flex-direction:column; align-items:center; gap:4px;"><span style="width:18px; height:18px; border-radius:5px; background:#cbd5e1;"></span><span style="font-size:10px; color:#94a3b8; font-weight:600;">ホーム</span></div>
+          <div style="flex:1; text-align:center; display:flex; flex-direction:column; align-items:center; gap:4px;"><span style="width:18px; height:18px; border-radius:5px; background:#cbd5e1;"></span><span style="font-size:10px; color:#94a3b8; font-weight:600;">シフト</span></div>
+          <div style="flex:1; text-align:center; display:flex; flex-direction:column; align-items:center; gap:4px;"><span style="width:18px; height:18px; border-radius:5px; background:#cbd5e1;"></span><span style="font-size:10px; color:#94a3b8; font-weight:600;">希望提出</span></div>
+          <div style="flex:1; text-align:center; display:flex; flex-direction:column; align-items:center; gap:4px;"><span style="width:18px; height:18px; border-radius:5px; background:#e9803a;"></span><span style="font-size:10px; color:#1b2a64; font-weight:600;">申請</span></div>
+        </div>
+      </div>
+    </div>
+
+  </div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script>
+class Component extends DCLogic {
+  renderVals() {
+    const navy = "#1b2a64", orange = "#e9803a";
+    const wkColor = "#475569", sat = "#2563eb", sun = "#dc2626";
+
+    const days = [
+      { dow: "月", date: "6/22", color: wkColor }, { dow: "火", date: "6/23", color: wkColor },
+      { dow: "水", date: "6/24", color: wkColor }, { dow: "木", date: "6/25", color: wkColor },
+      { dow: "金", date: "6/26", color: wkColor }, { dow: "土", date: "6/27", color: sat },
+      { dow: "日", date: "6/28", color: sun },
+    ];
+
+    const chipBase = "display:flex; align-items:center; gap:4px; justify-content:space-between; background:#eef2f9; border:1px solid #dde4f0; border-radius:5px; padding:3px 6px; font-size:11px; color:#1e293b;";
+    const chipAbsent = "display:flex; align-items:center; gap:4px; justify-content:space-between; background:#fdeaea; border:1px solid #f5c9c9; border-radius:5px; padding:3px 6px; font-size:11px; color:#b91c1c; text-decoration:line-through;";
+    const chipOverride = "display:flex; align-items:center; gap:4px; justify-content:space-between; background:#fdf0e6; border:1px solid #f6d4ba; border-radius:5px; padding:3px 6px; font-size:11px; color:#9a4d12;";
+    const seat = "font-size:9px; font-weight:600; background:#fff; border:1px solid #cbd5e1; border-radius:3px; padding:0 4px; color:#64748b; flex:none;";
+    const seatOv = "font-size:9px; font-weight:700; background:#e9803a; color:#fff; border-radius:3px; padding:0 4px; flex:none;";
+    const seatAb = "font-size:9px; font-weight:700; background:#dc2626; color:#fff; border-radius:3px; padding:0 4px; flex:none;";
+    const T = (name, s) => ({ name, badge: "座" + s, badgeStyle: seat, style: chipBase });
+    const TOv = (name) => ({ name, badge: "代講", badgeStyle: seatOv, style: chipOverride });
+    const TAb = (name) => ({ name, badge: "欠勤", badgeStyle: seatAb, style: chipAbsent });
+    const cell = (...items) => ({ items });
+    const e = cell();
+    const slots = [
+      { label: "1限", time: "09:30", cells: [cell(T("佐藤",1)), e, cell(T("高橋",2)), e, cell(T("佐藤",1)), cell(T("伊藤",3),T("高橋",4)), e] },
+      { label: "2限", time: "11:00", cells: [cell(T("佐藤",1)), cell(T("田中",2)), e, cell(T("田中",2)), e, cell(T("伊藤",3)), cell(T("鈴木",1))] },
+      { label: "3限", time: "12:30", cells: [e, cell(T("田中",2)), cell(T("佐藤",3)), e, cell(T("高橋",1)), cell(T("伊藤",3),T("鈴木",5)), cell(T("鈴木",1))] },
+      { label: "4限", time: "14:00", cells: [cell(T("高橋",4)), e, cell(TAb("佐藤")), cell(T("田中",2)), e, cell(T("高橋",4)), e] },
+      { label: "5限", time: "15:30", cells: [cell(T("田中",1)), cell(T("鈴木",2)), e, cell(TOv("伊藤")), cell(T("高橋",1)), e, cell(T("田中",2))] },
+      { label: "6限", time: "17:00", cells: [cell(T("鈴木",2)), cell(T("佐藤",1)), cell(T("田中",4)), e, cell(T("鈴木",2)), cell(T("佐藤",1)), e] },
+      { label: "7限", time: "18:30", cells: [cell(T("伊藤",3)), cell(T("高橋",2)), cell(T("佐藤",1)), cell(T("鈴木",4)), e, cell(TAb("田中")), e] },
+      { label: "8限", time: "20:00", cells: [e, cell(T("伊藤",3)), e, cell(T("高橋",1)), cell(T("佐藤",2)), e, e] },
+    ];
+
+    // tutors table
+    const stOn = "font-size:10px; font-weight:700; color:#15803d; background:#e7f6ec; padding:3px 8px; border-radius:5px;";
+    const stOff = "font-size:10px; font-weight:700; color:#9a4d12; background:#fdf0e6; padding:3px 8px; border-radius:5px;";
+    const tutors = [
+      { name: "佐藤 健太", initial: "佐", avatar: navy, email: "sato@example.com", status: "連携済", statusStyle: stOn, subjects: "数学 / 理科" },
+      { name: "田中 美咲", initial: "田", avatar: "#2563eb", email: "tanaka@example.com", status: "連携済", statusStyle: stOn, subjects: "英語 / 国語" },
+      { name: "鈴木 大輔", initial: "鈴", avatar: "#7c3aed", email: "suzuki@example.com", status: "連携済", statusStyle: stOn, subjects: "数学 / 物理" },
+      { name: "高橋 さくら", initial: "高", avatar: "#0891b2", email: "takahashi@example.com", status: "連携済", statusStyle: stOn, subjects: "英語 / 社会" },
+      { name: "伊藤 翔", initial: "伊", avatar: "#db2777", email: "—", status: "未連携", statusStyle: stOff, subjects: "化学 / 数学" },
+      { name: "渡辺 由香", initial: "渡", avatar: "#ca8a04", email: "—", status: "未連携", statusStyle: stOff, subjects: "国語 / 英語" },
+    ];
+
+    // CSV mapping
+    const okSt = "font-size:10px; font-weight:700; color:#15803d; background:#e7f6ec; padding:3px 8px; border-radius:5px;";
+    const warnSt = "font-size:10px; font-weight:700; color:#b91c1c; background:#fdeaea; padding:3px 8px; border-radius:5px;";
+    const mapping = [
+      { csv: "佐藤健太", match: "佐藤 健太", status: "一致", style: okSt },
+      { csv: "田中美咲", match: "田中 美咲", status: "一致", style: okSt },
+      { csv: "鈴木", match: "鈴木 大輔", status: "推定一致", style: okSt },
+      { csv: "高橋さくら", match: "高橋 さくら", status: "一致", style: okSt },
+      { csv: "伊藤翔", match: "（未連携）伊藤 翔", status: "要確認", style: warnSt },
+    ];
+
+    // training heatmap
+    const heatDays = ["7/21","7/22","7/23","7/24","7/25","7/28","7/29","7/30","7/31","8/1"];
+    const scale = ["#f8fafc","#fde8d8","#f9c89e","#f0a060","#e9803a"];
+    const txtFor = (n) => n >= 3 ? "#fff" : (n === 0 ? "#cbd5e1" : "#9a4d12");
+    const hcell = (n) => ({ count: n === 0 ? "·" : String(n), style: `background:${scale[n]}; color:${txtFor(n)}; border-radius:3px; height:26px; display:flex; align-items:center; justify-content:center; font-size:11px; font-weight:600;` });
+    const pat = [
+      [2,3,1,4,2,0,3,2,1,4],[1,4,2,3,4,1,2,3,2,1],[0,2,3,1,2,4,1,2,3,0],
+      [3,1,4,2,1,3,4,1,2,3],[2,4,1,3,4,2,1,4,1,2],[1,2,3,4,2,1,3,2,4,1],
+      [4,1,2,1,3,4,2,1,2,3],[0,2,1,3,1,0,2,3,1,2],
+    ];
+    const slotLabels = ["1限","2限","3限","4限","5限","6限","7限","8限"];
+    const heatRows = pat.map((r, i) => ({ label: slotLabels[i], cells: r.map(hcell) }));
+
+    // fixed shifts grid (tutor)
+    const fxDays = [
+      { dow:"月", color:wkColor },{ dow:"火", color:wkColor },{ dow:"水", color:wkColor },
+      { dow:"木", color:wkColor },{ dow:"金", color:wkColor },{ dow:"土", color:sat },
+    ];
+    const onCell = { mark:"○", style:"background:#e9803a; color:#fff; border-radius:5px; height:30px; display:flex; align-items:center; justify-content:center; font-size:12px; font-weight:700; cursor:pointer;" };
+    const offCell = { mark:"", style:"background:#f1f5f9; border:1px solid #e2e8f0; border-radius:5px; height:30px; cursor:pointer;" };
+    const fxPat = [
+      [1,0,1,0,1,0],[1,1,0,1,0,1],[0,1,1,0,1,1],[1,0,0,1,0,1],
+      [0,1,1,0,1,0],[1,1,0,1,1,1],[1,0,1,1,0,0],[0,1,0,1,1,0],
+    ];
+    const fixedRows = fxPat.map((r, i) => ({ label: slotLabels[i], cells: r.map(v => v ? onCell : offCell) }));
+
+    // training day cards (tutor)
+    const tagDone = "font-size:10px; font-weight:700; color:#15803d; background:#e7f6ec; padding:3px 8px; border-radius:5px;";
+    const tagTodo = "font-size:10px; font-weight:700; color:#9a4d12; background:#fdf0e6; padding:3px 8px; border-radius:5px;";
+    const slotOn = "font-size:11px; padding:5px 9px; border-radius:14px; background:#e9803a; color:#fff; font-weight:600;";
+    const slotOff = "font-size:11px; padding:5px 9px; border-radius:14px; background:#f1f5f9; color:#94a3b8;";
+    const sl = (labels, onSet) => labels.map(l => ({ label: l, style: onSet.includes(l) ? slotOn : slotOff }));
+    const allSlots = ["1","2","3","4","5","6","7","8"];
+    const trainDays = [
+      { date:"7/21(月)", color:wkColor, tag:"提出済", tagStyle:tagDone, slots: sl(allSlots, ["2","3","4"]) },
+      { date:"7/22(火)", color:wkColor, tag:"提出済", tagStyle:tagDone, slots: sl(allSlots, ["1","2","5","6"]) },
+      { date:"7/23(水)", color:wkColor, tag:"未提出", tagStyle:tagTodo, slots: sl(allSlots, []) },
+      { date:"7/24(木)", color:wkColor, tag:"提出済", tagStyle:tagDone, slots: sl(allSlots, ["3","4","7","8"]) },
+      { date:"7/26(土)", color:sat, tag:"未提出", tagStyle:tagTodo, slots: sl(allSlots, []) },
+    ];
+
+    // mobile home
+    const tagConfirm = "font-size:10.5px; color:#15803d; background:#e7f6ec; padding:4px 9px; border-radius:20px; font-weight:600; flex:none;";
+    const tagPending = "font-size:10.5px; color:#9a4d12; background:#fdf0e6; padding:4px 9px; border-radius:20px; font-weight:600; flex:none;";
+    const myShifts = [
+      { dow:"火", date:"23", color:wkColor, bar:navy, time:"2限 / 6限", label:"確定シフト", tag:"確定", tagStyle:tagConfirm },
+      { dow:"水", date:"24", color:wkColor, bar:navy, time:"3限 / 7限", label:"確定シフト", tag:"確定", tagStyle:tagConfirm },
+      { dow:"金", date:"26", color:wkColor, bar:orange, time:"1限 / 3限", label:"交代申請を提出中", tag:"申請中", tagStyle:tagPending },
+      { dow:"土", date:"27", color:sat, bar:navy, time:"1限 / 6限", label:"確定シフト", tag:"確定", tagStyle:tagConfirm },
+    ];
+    const tabs = [
+      { label:"ホーム", bg:orange, color:navy },{ label:"シフト", bg:"#cbd5e1", color:"#94a3b8" },
+      { label:"希望提出", bg:"#cbd5e1", color:"#94a3b8" },{ label:"申請", bg:"#cbd5e1", color:"#94a3b8" },
+    ];
+
+    return { days, slots, tutors, mapping, heatDays, heatRows, fxDays, fixedRows, trainDays, myShifts, tabs };
+  }
+}
+</script>
+</body>
+</html>
