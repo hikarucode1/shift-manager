@@ -12,6 +12,7 @@ import {
 import { DEFAULT_SLOTS } from "@/lib/shift-constants";
 import { lastDayOfMonth } from "@/lib/shift-period";
 import { jstMonthStart } from "@/lib/week";
+import { AdminPeriodsNav } from "@/components/admin-section-nav";
 import { AdminSubmissionsOverview } from "./submissions-overview";
 
 /** "2026-07-01" → "2026-08-01" (翌月の 1 日)。target_month の範囲フィルタ用 */
@@ -216,6 +217,7 @@ export default async function AdminFixedShiftsOverviewPage({
 
   return (
     <div className="space-y-6">
+      <AdminPeriodsNav />
       <div>
         <h1 className="text-2xl font-semibold">固定シフト俯瞰 (C1)</h1>
         <p className="mt-1 text-sm text-muted-foreground">

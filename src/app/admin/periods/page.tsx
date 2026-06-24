@@ -3,6 +3,7 @@ import { requireRole } from "@/lib/auth";
 import { db } from "@/db/client";
 import { periods } from "@/db/schema";
 import { jstToday } from "@/lib/week";
+import { AdminPeriodsNav } from "@/components/admin-section-nav";
 import { PeriodManager } from "./period-manager";
 
 export default async function AdminPeriodsPage() {
@@ -35,6 +36,7 @@ export default async function AdminPeriodsPage() {
 
   return (
     <div className="space-y-6">
+      <AdminPeriodsNav />
       <div>
         <h1 className="text-2xl font-semibold">講習期間管理</h1>
         <p className="mt-1 text-sm text-muted-foreground">
