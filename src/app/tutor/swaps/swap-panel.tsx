@@ -79,12 +79,18 @@ export function SwapPanel({
       setNotice({ type: "error", text: "対象のコマを選択してください。" });
       return;
     }
+    // native required は空白のみを通すため trim 後の空チェックで一貫させる
+    const trimmedReason = reason.trim();
+    if (!trimmedReason) {
+      setNotice({ type: "error", text: "理由を入力してください。" });
+      return;
+    }
     run(
       () =>
         createSwapRequest({
           date: sel.date,
           slotNumber: sel.slotNumber,
-          reason: reason.trim(),
+          reason: trimmedReason,
           kind,
           nominatedTutorId: kind === "named" ? nominee : null,
         }),
