@@ -18,9 +18,11 @@ import {
 } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { jstToday } from "@/lib/week";
+import { deadlineLabel } from "@/lib/deadline";
+import { cn } from "@/lib/utils";
 import { TrainingEditor } from "./training-editor";
 
-function deadlineLabel(iso: string): string {
+function formatDeadlineDate(iso: string): string {
   return new Date(iso).toLocaleDateString("ja-JP", {
     timeZone: "Asia/Tokyo",
   });
@@ -37,21 +39,40 @@ export default async function TutorTrainingPage({
   if (period) {
     const data = await getTrainingEditorData(profile.id, period);
     if (data) {
+      const dl = deadlineLabel(data.period.daysLeft);
       return (
-        <div className="space-y-6">
-          <div>
-            <Link
-              href="/tutor/training"
-              className="text-sm text-muted-foreground hover:underline"
-            >
-              ← 講習期間の一覧へ
-            </Link>
-            <h1 className="mt-1 text-2xl font-semibold">{data.period.name}</h1>
-            <p className="mt-1 text-sm text-muted-foreground">
-              {data.period.startDate} 〜 {data.period.endDate} ／ 締切{" "}
-              {deadlineLabel(data.period.submissionDeadline)}
+        <div className="space-y-5">
+          <Link
+            href="/tutor/training"
+            className="inline-flex items-center text-sm text-muted-foreground hover:underline"
+          >
+            ← 講習期間の一覧へ
+          </Link>
+
+          {/* ネイビー hero: 期間名 + 締切 (accent 強調) */}
+          <section className="rounded-xl bg-primary p-4 text-primary-foreground">
+            <p className="text-xs text-primary-foreground/70">
+              {data.period.startDate} 〜 {data.period.endDate}
             </p>
-          </div>
+            <h1 className="mt-0.5 text-xl font-bold">{data.period.name}</h1>
+            <p className="mt-2 text-sm">
+              <span className="text-primary-foreground/70">締切 </span>
+              <span
+                className={cn(
+                  "font-semibold",
+                  data.period.isReopened || dl.urgent
+                    ? "text-accent"
+                    : "text-primary-foreground",
+                )}
+              >
+                {formatDeadlineDate(data.period.submissionDeadline)}
+                {data.period.isReopened
+                  ? "（締切無視中・提出可）"
+                  : `（${dl.text}）`}
+              </span>
+            </p>
+          </section>
+
           <TrainingEditor data={serializeData(data)} />
         </div>
       );
@@ -101,13 +122,14 @@ export default async function TutorTrainingPage({
   }
 
   return (
-    <div className="space-y-6">
-      <div>
-        <h1 className="text-2xl font-semibold">講習希望提出</h1>
-        <p className="mt-1 text-sm text-muted-foreground">
-          講習期間ごとに、勤務できるコマを選んで提出します。締切までは何度でも変更できます。
+    <div className="space-y-5">
+      {/* ネイビー hero (#130/#131 と統一) */}
+      <section className="rounded-xl bg-primary p-4 text-primary-foreground">
+        <h1 className="text-xl font-bold">講習希望提出</h1>
+        <p className="mt-1 text-xs text-primary-foreground/80">
+          講習期間ごとに勤務できるコマを選びます。締切までは何度でも変更できます。
         </p>
-      </div>
+      </section>
 
       {/* Issue #75 (ε): 自分の確定済み講習シフト (read-only) */}
       {confirmedByPeriod.size > 0 && (
@@ -145,7 +167,9 @@ export default async function TutorTrainingPage({
         </Card>
       ) : (
         <div className="grid gap-3">
-          {activePeriods.map((p) => (
+          {activePeriods.map((p) => {
+            const dl = deadlineLabel(p.daysLeft);
+            return (
             <Link key={p.id} href={`/tutor/training?period=${p.id}`}>
               <Card className="transition-colors hover:bg-muted/50">
                 <CardHeader className="flex-row items-center justify-between space-y-0">
@@ -153,17 +177,15 @@ export default async function TutorTrainingPage({
                     <CardTitle className="text-base">{p.name}</CardTitle>
                     <CardDescription>
                       {p.startDate} 〜 {p.endDate} ／ 締切{" "}
-                      {deadlineLabel(p.submissionDeadline)}
+                      {formatDeadlineDate(p.submissionDeadline)}
                     </CardDescription>
                   </div>
                   <div className="flex items-center gap-2">
                     {p.isReopened ? (
                       <Badge variant="destructive">締切無視中（提出可）</Badge>
                     ) : p.editable ? (
-                      <Badge variant="secondary">
-                        {p.daysLeft > 0
-                          ? `あと ${p.daysLeft} 日`
-                          : "本日締切"}
+                      <Badge variant={dl.urgent ? "accent" : "secondary"}>
+                        {dl.text}
                       </Badge>
                     ) : (
                       <Badge variant="outline">締切終了</Badge>
@@ -173,7 +195,8 @@ export default async function TutorTrainingPage({
                 </CardHeader>
               </Card>
             </Link>
-          ))}
+            );
+          })}
         </div>
       )}
     </div>

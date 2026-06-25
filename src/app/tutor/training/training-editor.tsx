@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { AlertCircle, Lock } from "lucide-react";
 import {
@@ -9,10 +10,18 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
 import { cn } from "@/lib/utils";
 import { shortDate } from "@/lib/week";
 import { saveTrainingNote, setTrainingSlot } from "./actions";
+
+/** 曜日ラベルから色クラス (土=青 / 日=赤 / 平日=既定) を返す */
+function weekdayColor(weekdayLabel: string): string {
+  if (weekdayLabel === "土") return "text-blue-600";
+  if (weekdayLabel === "日") return "text-red-600";
+  return "text-foreground";
+}
 
 type SlotDef = {
   slotNumber: number;
@@ -168,62 +177,78 @@ export function TrainingEditor({ data }: TrainingEditorProps) {
         </p>
       )}
 
-      <Card>
-        <CardHeader className="flex-row items-center justify-between space-y-0">
-          <CardTitle className="text-base">
-            勤務できるコマを選択
-            <Badge variant="secondary" className="ml-2">
-              選択 {selectedCount}
-            </Badge>
-          </CardTitle>
-          {savingCount > 0 && (
-            <span className="text-xs text-muted-foreground">保存中...</span>
-          )}
-        </CardHeader>
-        <CardContent>
-          <div className="space-y-2">
-            {days.map((d) => (
-              <div
-                key={d.date}
-                className="rounded-md border p-2 sm:flex sm:items-center sm:gap-3"
-              >
-                <div
+      {/* 日付カードの縦リスト */}
+      <div className="space-y-2">
+        {days.map((d) => {
+          const daySelected = slots.some((s) =>
+            selected.has(key(d.date, s.slotNumber)),
+          );
+          return (
+            <div key={d.date} className="rounded-xl border p-3">
+              <div className="mb-2.5 flex items-center justify-between">
+                <span
                   className={cn(
-                    "mb-2 w-24 shrink-0 text-sm font-medium sm:mb-0",
-                    d.isWeekend && "text-muted-foreground",
+                    "text-sm font-bold",
+                    weekdayColor(d.weekdayLabel),
                   )}
                 >
                   {shortDate(d.date)}（{d.weekdayLabel}）
-                </div>
-                <div className="flex flex-wrap gap-1.5">
-                  {slots.map((s) => {
-                    const on = selected.has(key(d.date, s.slotNumber));
-                    return (
-                      <button
-                        key={s.slotNumber}
-                        type="button"
-                        disabled={!editable}
-                        onClick={() => toggle(d.date, s.slotNumber)}
-                        title={`${s.startTime}〜${s.endTime}`}
-                        aria-pressed={on}
-                        className={cn(
-                          "rounded-md border px-2.5 py-1 text-xs transition-colors",
-                          on
-                            ? "border-primary bg-primary text-primary-foreground"
-                            : "border-input bg-background hover:bg-muted",
-                          !editable && "cursor-not-allowed opacity-60",
-                        )}
-                      >
-                        {s.label}
-                      </button>
-                    );
-                  })}
-                </div>
+                </span>
+                {daySelected ? (
+                  <Badge className="border-transparent bg-green-50 text-green-700 hover:bg-green-50">
+                    選択済
+                  </Badge>
+                ) : (
+                  <Badge className="border-transparent bg-accent/15 text-accent hover:bg-accent/15">
+                    未選択
+                  </Badge>
+                )}
               </div>
-            ))}
-          </div>
-        </CardContent>
-      </Card>
+              <div className="flex flex-wrap gap-1.5">
+                {slots.map((s) => {
+                  const on = selected.has(key(d.date, s.slotNumber));
+                  return (
+                    <button
+                      key={s.slotNumber}
+                      type="button"
+                      disabled={!editable}
+                      onClick={() => toggle(d.date, s.slotNumber)}
+                      title={`${s.startTime}〜${s.endTime}`}
+                      aria-pressed={on}
+                      className={cn(
+                        "rounded-md border px-2.5 py-1 text-xs font-medium transition-colors",
+                        on
+                          ? "border-accent bg-accent text-accent-foreground"
+                          : "border-input bg-background hover:bg-muted",
+                        !editable && "cursor-not-allowed opacity-60",
+                      )}
+                    >
+                      {s.label}
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+          );
+        })}
+      </div>
+
+      {/* コマの時間帯: モバイルは title が出ないため折りたたみで常設 (#131 と同方針) */}
+      <details className="text-xs text-muted-foreground">
+        <summary className="cursor-pointer select-none">
+          コマの時間帯を見る
+        </summary>
+        <ul className="mt-2 grid grid-cols-2 gap-x-4 gap-y-1 sm:grid-cols-4">
+          {slots.map((s) => (
+            <li key={s.slotNumber} className="flex justify-between gap-2">
+              <span className="font-medium text-foreground">{s.label}</span>
+              <span>
+                {s.startTime}–{s.endTime}
+              </span>
+            </li>
+          ))}
+        </ul>
+      </details>
 
       <Card>
         <CardHeader>
@@ -253,6 +278,30 @@ export function TrainingEditor({ data }: TrainingEditorProps) {
           </p>
         </CardContent>
       </Card>
+
+      {/* 完了バー: 選択は自動保存されるため、ここは確認 + 一覧への導線 */}
+      <div className="space-y-2 border-t pt-4">
+        <div className="flex items-center justify-between text-sm text-muted-foreground">
+          <span>選択 {selectedCount} コマ</span>
+          {savingCount > 0 ? (
+            <span>保存中...</span>
+          ) : (
+            <span>選んだコマは自動で保存されます</span>
+          )}
+        </div>
+        <Button asChild className="w-full">
+          <Link
+            href="/tutor/training"
+            aria-disabled={savingCount > 0}
+            tabIndex={savingCount > 0 ? -1 : undefined}
+            className={cn(
+              savingCount > 0 && "pointer-events-none opacity-60",
+            )}
+          >
+            {savingCount > 0 ? "保存中..." : "一覧へ戻る"}
+          </Link>
+        </Button>
+      </div>
     </div>
   );
 }
