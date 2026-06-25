@@ -60,11 +60,9 @@ export default async function TutorTrainingPage({
               <span
                 className={cn(
                   "font-semibold",
-                  data.period.isReopened
+                  data.period.isReopened || dl.urgent
                     ? "text-accent"
-                    : dl.urgent
-                      ? "text-accent"
-                      : "text-primary-foreground",
+                    : "text-primary-foreground",
                 )}
               >
                 {formatDeadlineDate(data.period.submissionDeadline)}
@@ -169,7 +167,9 @@ export default async function TutorTrainingPage({
         </Card>
       ) : (
         <div className="grid gap-3">
-          {activePeriods.map((p) => (
+          {activePeriods.map((p) => {
+            const dl = deadlineLabel(p.daysLeft);
+            return (
             <Link key={p.id} href={`/tutor/training?period=${p.id}`}>
               <Card className="transition-colors hover:bg-muted/50">
                 <CardHeader className="flex-row items-center justify-between space-y-0">
@@ -184,12 +184,8 @@ export default async function TutorTrainingPage({
                     {p.isReopened ? (
                       <Badge variant="destructive">締切無視中（提出可）</Badge>
                     ) : p.editable ? (
-                      <Badge
-                        variant={
-                          deadlineLabel(p.daysLeft).urgent ? "accent" : "secondary"
-                        }
-                      >
-                        {deadlineLabel(p.daysLeft).text}
+                      <Badge variant={dl.urgent ? "accent" : "secondary"}>
+                        {dl.text}
                       </Badge>
                     ) : (
                       <Badge variant="outline">締切終了</Badge>
@@ -199,7 +195,8 @@ export default async function TutorTrainingPage({
                 </CardHeader>
               </Card>
             </Link>
-          ))}
+            );
+          })}
         </div>
       )}
     </div>

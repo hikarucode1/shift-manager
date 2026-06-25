@@ -290,7 +290,16 @@ export function TrainingEditor({ data }: TrainingEditorProps) {
           )}
         </div>
         <Button asChild className="w-full">
-          <Link href="/tutor/training">保存して一覧へ戻る</Link>
+          <Link
+            href="/tutor/training"
+            aria-disabled={savingCount > 0}
+            tabIndex={savingCount > 0 ? -1 : undefined}
+            className={cn(
+              savingCount > 0 && "pointer-events-none opacity-60",
+            )}
+          >
+            {savingCount > 0 ? "保存中..." : "一覧へ戻る"}
+          </Link>
         </Button>
       </div>
     </div>
