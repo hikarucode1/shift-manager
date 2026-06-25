@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState, useTransition } from "react";
+import { Fragment, useMemo, useState, useTransition } from "react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -230,69 +230,102 @@ export function FixedShiftEditor({
         )}
       </div>
 
-      <div className="overflow-x-auto">
-        <table className="w-full min-w-[520px] border-separate border-spacing-1">
-          <thead>
-            <tr>
-              <th className="w-16 text-xs font-medium text-muted-foreground"></th>
-              {INPUT_WEEKDAYS.map((w) => (
-                <th
-                  key={w.key}
-                  className="text-xs font-medium text-muted-foreground"
-                >
-                  {w.label}
-                </th>
-              ))}
-            </tr>
-          </thead>
-          <tbody>
+      <div>
+        <div className="grid grid-cols-[40px_repeat(6,minmax(0,1fr))] gap-1">
+          {/* ヘッダー行: 曜日 */}
+          <div />
+          {INPUT_WEEKDAYS.map((w) => (
+            <div
+              key={w.key}
+              className="flex items-center justify-center text-xs font-semibold text-muted-foreground"
+            >
+              {w.label}
+            </div>
+          ))}
+
+          {/* コマ行 */}
+          {slots.map((slot) => (
+            <Fragment key={slot.slotNumber}>
+              <div
+                className="flex flex-col items-center justify-center leading-none text-muted-foreground"
+                title={`${slot.label} ${slot.startTime}–${slot.endTime}`}
+              >
+                <span className="text-sm font-semibold">{slot.slotNumber}</span>
+                <span className="mt-0.5 text-[9px]">限</span>
+              </div>
+              {INPUT_WEEKDAYS.map((w) => {
+                const state = cellStates.get(cellKey(w.key, slot.slotNumber));
+                const isYes = state === "yes";
+                const isMaybe = state === "maybe";
+                return (
+                  <button
+                    key={w.key}
+                    type="button"
+                    onClick={() => cycle(w.key, slot.slotNumber)}
+                    disabled={!isEditable}
+                    aria-label={`${w.label} ${slot.label} ${
+                      isYes ? "出勤可" : isMaybe ? "可だが避けたい" : "不可"
+                    }`}
+                    className={cn(
+                      "flex aspect-square w-full items-center justify-center rounded-md border text-sm font-semibold transition-colors disabled:cursor-not-allowed disabled:opacity-60",
+                      isYes &&
+                        "border-accent bg-accent text-accent-foreground shadow-sm hover:bg-accent/90",
+                      isMaybe &&
+                        "border-accent/40 bg-accent/15 text-accent hover:bg-accent/25",
+                      !state && "border-input bg-background hover:bg-muted",
+                    )}
+                  >
+                    {symbolFor(state)}
+                  </button>
+                );
+              })}
+            </Fragment>
+          ))}
+        </div>
+
+        {/* 凡例 */}
+        <div className="mt-3 flex flex-wrap items-center gap-x-4 gap-y-2 text-xs text-muted-foreground">
+          <span className="flex items-center gap-1.5">
+            <span className="size-3.5 rounded bg-accent" />出勤可 ○
+          </span>
+          <span className="flex items-center gap-1.5">
+            <span className="size-3.5 rounded border border-accent/40 bg-accent/15" />
+            避けたい △
+          </span>
+          <span className="flex items-center gap-1.5">
+            <span className="size-3.5 rounded border border-input bg-background" />
+            不可
+          </span>
+        </div>
+
+        {/* コマの時間帯: モバイルは title ツールチップが出ないため折りたたみで常設 (#131 レビュー指摘1) */}
+        <details className="mt-2 text-xs text-muted-foreground">
+          <summary className="cursor-pointer select-none">
+            コマの時間帯を見る
+          </summary>
+          <ul className="mt-2 grid grid-cols-2 gap-x-4 gap-y-1 sm:grid-cols-4">
             {slots.map((slot) => (
-              <tr key={slot.slotNumber}>
-                <th className="text-left text-xs font-medium text-muted-foreground">
-                  <div>{slot.label}</div>
-                  <div className="text-[10px] text-muted-foreground/80">
-                    {slot.startTime}–{slot.endTime}
-                  </div>
-                </th>
-                {INPUT_WEEKDAYS.map((w) => {
-                  const state = cellStates.get(cellKey(w.key, slot.slotNumber));
-                  const isYes = state === "yes";
-                  const isMaybe = state === "maybe";
-                  return (
-                    <td key={w.key} className="p-0">
-                      <button
-                        type="button"
-                        onClick={() => cycle(w.key, slot.slotNumber)}
-                        disabled={!isEditable}
-                        aria-label={`${w.label} ${slot.label} ${
-                          isYes ? "出勤可" : isMaybe ? "可だが避けたい" : "不可"
-                        }`}
-                        className={cn(
-                          "flex h-11 w-full items-center justify-center rounded-md border text-sm transition-colors disabled:cursor-not-allowed disabled:opacity-60",
-                          isYes &&
-                            "border-primary bg-primary text-primary-foreground shadow-sm hover:bg-primary/90",
-                          isMaybe &&
-                            "border-amber-500 bg-amber-50 text-amber-900 shadow-sm hover:bg-amber-100 dark:bg-amber-950 dark:text-amber-100",
-                          !state && "border-input bg-background hover:bg-muted",
-                        )}
-                      >
-                        {symbolFor(state)}
-                      </button>
-                    </td>
-                  );
-                })}
-              </tr>
+              <li key={slot.slotNumber} className="flex justify-between gap-2">
+                <span className="font-medium text-foreground">{slot.label}</span>
+                <span>
+                  {slot.startTime}–{slot.endTime}
+                </span>
+              </li>
             ))}
-          </tbody>
-        </table>
+          </ul>
+        </details>
+
         {isEditable && (
           <p className="mt-2 text-xs text-muted-foreground">
-            タップごとに ○ (出勤可) → △ (可だが避けたい) → 空 (不可) → ○ … と循環します。△ にするには空セルから 2 回、○ セルから 1 回タップしてください。
+            タップごとに ○ (出勤可) → △ (避けたい) → 空 (不可) → ○ … と循環します。
           </p>
         )}
       </div>
 
-      <fieldset disabled={!isEditable} className="contents">
+      <fieldset disabled={!isEditable} className="space-y-4 border-t pt-4">
+        <p className="text-sm font-semibold text-muted-foreground">
+          詳細設定（任意）
+        </p>
         <div className="grid gap-4 sm:grid-cols-2">
           <div className="space-y-2">
             <Label htmlFor="effective-from">適用開始日</Label>
@@ -370,35 +403,39 @@ export function FixedShiftEditor({
         </div>
       </fieldset>
 
-      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-        <span className="text-sm text-muted-foreground">
+      <div className="space-y-3 border-t pt-4">
+        <p className="text-center text-sm text-muted-foreground">
           選択中: ○ {yesCount} 枠 / △ {maybeCount} 枠
-        </span>
-        <div className="flex flex-wrap items-center gap-2">
-          {isSubmitted && (
+        </p>
+        {isSubmitted && (
+          <Button
+            variant="outline"
+            className="w-full"
+            onClick={handleRevert}
+            disabled={isPending}
+          >
+            下書きに戻す
+          </Button>
+        )}
+        {isEditable && (
+          <div className="flex flex-col gap-2">
+            <Button
+              className="w-full"
+              onClick={handleSubmit}
+              disabled={isPending || status === "none"}
+            >
+              {isPending ? "..." : "この内容で提出"}
+            </Button>
             <Button
               variant="outline"
-              onClick={handleRevert}
+              className="w-full"
+              onClick={handleSave}
               disabled={isPending}
             >
-              下書きに戻す
+              {isPending ? "..." : "下書き保存"}
             </Button>
-          )}
-          {isEditable && (
-            <>
-              <Button
-                variant="outline"
-                onClick={handleSave}
-                disabled={isPending}
-              >
-                {isPending ? "..." : "保存 (下書き)"}
-              </Button>
-              <Button onClick={handleSubmit} disabled={isPending || status === "none"}>
-                {isPending ? "..." : "提出"}
-              </Button>
-            </>
-          )}
-        </div>
+          </div>
+        )}
       </div>
 
       {message && (

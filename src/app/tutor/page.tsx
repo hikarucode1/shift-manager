@@ -4,14 +4,8 @@ import { requireRole } from "@/lib/auth";
 import { getTutorHomeData } from "@/lib/tutor-home";
 import { shortDate } from "@/lib/week";
 import { cn } from "@/lib/utils";
+import { deadlineLabel } from "@/lib/deadline";
 import { Badge } from "@/components/ui/badge";
-
-/** 締切残り日数のラベル + 緊急かどうか */
-function deadlineLabel(daysLeft: number): { text: string; urgent: boolean } {
-  if (daysLeft < 0) return { text: "締切超過", urgent: true };
-  if (daysLeft === 0) return { text: "本日締切", urgent: true };
-  return { text: `あと${daysLeft}日`, urgent: daysLeft <= 3 };
-}
 
 /** 次の出勤の日付ラベル (今日/明日/曜日) */
 function dayLabel(s: {
