@@ -16,13 +16,7 @@ import {
 } from "./fixed-shift-editor";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { cn } from "@/lib/utils";
-
-/** 締切残り日数のラベル + 緊急かどうか (#130 と同じ規則) */
-function deadlineLabel(daysLeft: number): { text: string; urgent: boolean } {
-  if (daysLeft < 0) return { text: "締切超過", urgent: true };
-  if (daysLeft === 0) return { text: "本日締切", urgent: true };
-  return { text: `あと${daysLeft}日`, urgent: daysLeft <= 3 };
-}
+import { deadlineLabel } from "@/lib/deadline";
 
 export default async function FixedShiftPage() {
   const { profile } = await requireRole("tutor");
@@ -228,6 +222,7 @@ export default async function FixedShiftPage() {
             >
               {headerDeadline.dueAt.toLocaleString("ja-JP", {
                 timeZone: "Asia/Tokyo",
+                year: "numeric",
                 month: "2-digit",
                 day: "2-digit",
                 hour: "2-digit",

@@ -293,9 +293,27 @@ export function FixedShiftEditor({
             避けたい △
           </span>
           <span className="flex items-center gap-1.5">
-            <span className="size-3.5 rounded border bg-background" />不可
+            <span className="size-3.5 rounded border border-input bg-background" />
+            不可
           </span>
         </div>
+
+        {/* コマの時間帯: モバイルは title ツールチップが出ないため折りたたみで常設 (#131 レビュー指摘1) */}
+        <details className="mt-2 text-xs text-muted-foreground">
+          <summary className="cursor-pointer select-none">
+            コマの時間帯を見る
+          </summary>
+          <ul className="mt-2 grid grid-cols-2 gap-x-4 gap-y-1 sm:grid-cols-4">
+            {slots.map((slot) => (
+              <li key={slot.slotNumber} className="flex justify-between gap-2">
+                <span className="font-medium text-foreground">{slot.label}</span>
+                <span>
+                  {slot.startTime}–{slot.endTime}
+                </span>
+              </li>
+            ))}
+          </ul>
+        </details>
 
         {isEditable && (
           <p className="mt-2 text-xs text-muted-foreground">
