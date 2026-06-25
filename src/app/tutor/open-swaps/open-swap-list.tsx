@@ -64,25 +64,35 @@ export function OpenSwapList({ swaps }: { swaps: OpenSwap[] }) {
       ) : (
         <div className="grid gap-3">
           {swaps.map((s) => (
-            <Card key={s.id}>
-              <CardContent className="flex flex-col gap-2 py-4 sm:flex-row sm:items-center sm:justify-between">
-                <div className="min-w-0">
-                  <div className="flex flex-wrap items-center gap-2">
-                    <span className="font-medium">
+            <Card key={s.id} className={cn(s.applied && "bg-muted/40")}>
+              <CardContent className="space-y-3 p-4">
+                <div className="flex items-start justify-between gap-2">
+                  <div className="min-w-0">
+                    <p className="font-semibold">
                       {shortDate(s.date)}（{s.weekdayLabel}） {s.slotLabel}
-                    </span>
-                    <Badge variant="outline">
-                      {s.kind === "named" ? "あなたを指名" : "代講募集"}
-                    </Badge>
+                    </p>
+                    <p className="mt-0.5 text-xs text-muted-foreground">
+                      {s.requesterName} さんの代講
+                      {s.kind === "named" && "（あなたを指名）"}
+                    </p>
                   </div>
-                  <p className="mt-0.5 text-xs text-muted-foreground">
-                    依頼: {s.requesterName} ／ 理由: {s.reason}
-                  </p>
+                  {s.applied ? (
+                    <Badge className="shrink-0 border-transparent bg-green-50 text-green-700 hover:bg-green-50">
+                      応募済み・承認待ち
+                    </Badge>
+                  ) : (
+                    <Badge variant="accent" className="shrink-0">
+                      募集中
+                    </Badge>
+                  )}
                 </div>
+
+                <p className="text-sm text-foreground">理由: {s.reason}</p>
+
                 {s.applied ? (
                   <Button
                     variant="outline"
-                    size="sm"
+                    className="w-full"
                     disabled={isPending}
                     onClick={() =>
                       run(
@@ -95,7 +105,7 @@ export function OpenSwapList({ swaps }: { swaps: OpenSwap[] }) {
                   </Button>
                 ) : (
                   <Button
-                    size="sm"
+                    className="w-full"
                     disabled={isPending}
                     onClick={() =>
                       run(

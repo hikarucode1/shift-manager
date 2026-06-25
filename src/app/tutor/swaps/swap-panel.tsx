@@ -2,7 +2,7 @@
 
 import { useEffect, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
-import { AlertCircle } from "lucide-react";
+import { AlertCircle, Info } from "lucide-react";
 import type { MySwapRequest, SwappableShift } from "@/lib/swaps";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
@@ -79,12 +79,18 @@ export function SwapPanel({
       setNotice({ type: "error", text: "対象のコマを選択してください。" });
       return;
     }
+    // native required は空白のみを通すため trim 後の空チェックで一貫させる
+    const trimmedReason = reason.trim();
+    if (!trimmedReason) {
+      setNotice({ type: "error", text: "理由を入力してください。" });
+      return;
+    }
     run(
       () =>
         createSwapRequest({
           date: sel.date,
           slotNumber: sel.slotNumber,
-          reason: reason.trim(),
+          reason: trimmedReason,
           kind,
           nominatedTutorId: kind === "named" ? nominee : null,
         }),
@@ -125,50 +131,91 @@ export function SwapPanel({
               交代申請できる今後のシフトがありません。
             </p>
           ) : (
-            <form className="space-y-3" onSubmit={handleSubmit}>
-              <div className="space-y-1">
-                <Label htmlFor="sw-target">対象コマ</Label>
-                <select
-                  id="sw-target"
-                  value={target}
-                  onChange={(e) => setTarget(e.target.value)}
-                  required
-                  className="h-9 w-full rounded-md border bg-background px-2 text-sm focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
-                >
-                  <option value="">— 選択してください —</option>
-                  {shifts.map((s) => (
-                    <option
-                      key={`${s.date}|${s.slotNumber}`}
-                      value={`${s.date}|${s.slotNumber}`}
-                    >
-                      {shortDate(s.date)}（{s.weekdayLabel}） {s.slotLabel}{" "}
-                      {s.startTime}〜{s.endTime}
-                    </option>
-                  ))}
-                </select>
-              </div>
-              <div className="flex flex-wrap gap-4">
-                <label className="flex items-center gap-2 text-sm">
-                  <input
-                    type="radio"
-                    name="kind"
-                    checked={kind === "open"}
-                    onChange={() => setKind("open")}
-                  />
-                  代講を募集する
-                </label>
-                <label className="flex items-center gap-2 text-sm">
-                  <input
-                    type="radio"
-                    name="kind"
-                    checked={kind === "named"}
-                    onChange={() => setKind("named")}
-                  />
-                  指名する
-                </label>
-              </div>
+            <form className="space-y-5" onSubmit={handleSubmit}>
+              {/* 1. 対象シフト選択 (排他選択 = native radio + fieldset/legend) */}
+              <fieldset className="space-y-2">
+                <legend className="mb-2 text-sm font-medium">
+                  対象のシフト
+                </legend>
+                <div className="space-y-2">
+                  {shifts.map((s) => {
+                    const val = `${s.date}|${s.slotNumber}`;
+                    const on = target === val;
+                    return (
+                      <label
+                        key={val}
+                        className={cn(
+                          "flex w-full cursor-pointer items-center justify-between rounded-xl border p-3 transition-colors focus-within:ring-1 focus-within:ring-ring",
+                          on
+                            ? "border-primary bg-primary text-primary-foreground"
+                            : "border-input bg-background hover:bg-muted",
+                        )}
+                      >
+                        <input
+                          type="radio"
+                          name="sw-target"
+                          value={val}
+                          checked={on}
+                          onChange={() => setTarget(val)}
+                          className="sr-only"
+                        />
+                        <span className="text-sm font-medium">
+                          {shortDate(s.date)}（{s.weekdayLabel}） {s.slotLabel}
+                        </span>
+                        <span
+                          className={cn(
+                            "text-xs",
+                            on
+                              ? "text-primary-foreground/80"
+                              : "text-muted-foreground",
+                          )}
+                        >
+                          {s.startTime}–{s.endTime}
+                        </span>
+                      </label>
+                    );
+                  })}
+                </div>
+              </fieldset>
+
+              {/* 2. 種別 (代講募集 / 指名) */}
+              <fieldset className="space-y-2">
+                <legend className="mb-2 text-sm font-medium">交代の方法</legend>
+                <div className="flex flex-wrap gap-2">
+                  {(
+                    [
+                      { value: "open", label: "代講を募集する" },
+                      { value: "named", label: "指名する" },
+                    ] as const
+                  ).map((k) => {
+                    const on = kind === k.value;
+                    return (
+                      <label
+                        key={k.value}
+                        className={cn(
+                          "cursor-pointer rounded-full border px-3.5 py-1.5 text-sm transition-colors focus-within:ring-1 focus-within:ring-ring",
+                          on
+                            ? "border-primary bg-primary text-primary-foreground"
+                            : "border-input bg-background hover:bg-muted",
+                        )}
+                      >
+                        <input
+                          type="radio"
+                          name="sw-kind"
+                          value={k.value}
+                          checked={on}
+                          onChange={() => setKind(k.value)}
+                          className="sr-only"
+                        />
+                        {k.label}
+                      </label>
+                    );
+                  })}
+                </div>
+              </fieldset>
+
               {kind === "named" && (
-                <div className="space-y-1">
+                <div className="space-y-1.5">
                   <Label htmlFor="sw-nominee">指名する講師</Label>
                   <select
                     id="sw-nominee"
@@ -186,21 +233,35 @@ export function SwapPanel({
                   </select>
                 </div>
               )}
-              <div className="space-y-1">
+
+              {/* 3. 理由 */}
+              <div className="space-y-1.5">
                 <Label htmlFor="sw-reason">理由（必須）</Label>
                 <textarea
                   id="sw-reason"
                   value={reason}
                   onChange={(e) => setReason(e.target.value)}
                   required
-                  rows={2}
+                  rows={3}
                   maxLength={500}
                   placeholder="例: 体調不良のため"
                   className="w-full rounded-md border bg-background px-3 py-2 text-sm focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
                 />
               </div>
-              <Button type="submit" disabled={isPending}>
-                {isPending ? "送信中..." : "申請する"}
+
+              {/* 4. 注意バナー (bg-accent/10) */}
+              <div className="rounded-lg bg-accent/10 p-3 text-sm">
+                <p className="flex items-start gap-2 text-foreground">
+                  <Info className="mt-0.5 size-4 shrink-0 text-accent" />
+                  <span>
+                    指名はその講師の承諾後に成立します。代講募集は応募者の中から教室長が承認します。
+                  </span>
+                </p>
+              </div>
+
+              {/* 5. 下部 primary 全幅 */}
+              <Button type="submit" disabled={isPending} className="w-full">
+                {isPending ? "送信中..." : "交代を申請"}
               </Button>
             </form>
           )}

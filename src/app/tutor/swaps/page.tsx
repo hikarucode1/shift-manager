@@ -17,14 +17,17 @@ export default async function TutorSwapsPage() {
   ]);
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-5">
       <TutorRequestsNav />
-      <div>
-        <h1 className="text-2xl font-semibold">交代申請</h1>
-        <p className="mt-1 text-sm text-muted-foreground">
+
+      {/* ネイビー hero (#130/#131/#132/#133 と統一) */}
+      <section className="rounded-xl bg-primary p-4 text-primary-foreground">
+        <h1 className="text-xl font-bold">交代申請</h1>
+        <p className="mt-1 text-xs text-primary-foreground/80">
           確定シフトを別の講師に代わってもらう申請をします。指名するか、代講を募集できます。
         </p>
-      </div>
+      </section>
+
       <SwapPanel shifts={shifts} tutors={tutors} requests={requests} />
     </div>
   );
