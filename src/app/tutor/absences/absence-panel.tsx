@@ -2,7 +2,7 @@
 
 import { useEffect, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
-import { AlertCircle } from "lucide-react";
+import { AlertCircle, Info } from "lucide-react";
 import type { AbsenceRequestRow, UpcomingShift } from "@/lib/absences";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
@@ -28,6 +28,9 @@ const STATUS_LABEL: Record<
   cancelled: { text: "取消", variant: "outline" },
 };
 
+/** 理由区分チップ (design handoff #133)。選択値を reason 先頭に合成する。 */
+const REASON_CATEGORIES = ["体調不良", "私用", "学業", "その他"] as const;
+
 export function AbsencePanel({
   upcoming,
   history,
@@ -42,7 +45,9 @@ export function AbsencePanel({
   >(null);
 
   const [target, setTarget] = useState("");
-  const [reason, setReason] = useState("");
+  const [category, setCategory] =
+    useState<(typeof REASON_CATEGORIES)[number] | "">("");
+  const [memo, setMemo] = useState("");
 
   useEffect(() => {
     if (!notice) return;
@@ -77,17 +82,32 @@ export function AbsencePanel({
       setNotice({ type: "error", text: "対象のコマを選択してください。" });
       return;
     }
+    if (!category) {
+      setNotice({ type: "error", text: "理由区分を選択してください。" });
+      return;
+    }
+    const trimmed = memo.trim();
+    if (category === "その他" && !trimmed) {
+      setNotice({
+        type: "error",
+        text: "「その他」を選んだ場合は詳細メモを入力してください。",
+      });
+      return;
+    }
+    // backend は単一の reason 文字列のみ受け付ける (無改修) ため区分＋メモを合成
+    const reason = trimmed ? `${category}（${trimmed}）` : category;
     run(
       () =>
         createAbsenceRequest({
           date: sel.date,
           slotNumber: sel.slotNumber,
-          reason: reason.trim(),
+          reason,
         }),
       "欠勤申請を送信しました。",
       () => {
         setTarget("");
-        setReason("");
+        setCategory("");
+        setMemo("");
       },
     );
   }
@@ -120,43 +140,104 @@ export function AbsencePanel({
               申請できる今後のシフトがありません。
             </p>
           ) : (
-            <form className="space-y-3" onSubmit={handleSubmit}>
-              <div className="space-y-1">
-                <Label htmlFor="abs-target">対象コマ</Label>
-                <select
-                  id="abs-target"
-                  value={target}
-                  onChange={(e) => setTarget(e.target.value)}
-                  required
-                  className="h-9 w-full rounded-md border bg-background px-2 text-sm focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
-                >
-                  <option value="">— 選択してください —</option>
-                  {upcoming.map((u) => (
-                    <option
-                      key={`${u.date}|${u.slotNumber}`}
-                      value={`${u.date}|${u.slotNumber}`}
-                    >
-                      {shortDate(u.date)}（{u.weekdayLabel}） {u.slotLabel}{" "}
-                      {u.startTime}〜{u.endTime}
-                    </option>
-                  ))}
-                </select>
+            <form className="space-y-5" onSubmit={handleSubmit}>
+              {/* 1. 対象シフト選択 (選択中=primary 地) */}
+              <div className="space-y-2">
+                <Label>対象のシフト</Label>
+                <div className="space-y-2">
+                  {upcoming.map((u) => {
+                    const val = `${u.date}|${u.slotNumber}`;
+                    const on = target === val;
+                    return (
+                      <button
+                        key={val}
+                        type="button"
+                        onClick={() => setTarget(val)}
+                        aria-pressed={on}
+                        className={cn(
+                          "flex w-full items-center justify-between rounded-xl border p-3 text-left transition-colors",
+                          on
+                            ? "border-primary bg-primary text-primary-foreground"
+                            : "border-input bg-background hover:bg-muted",
+                        )}
+                      >
+                        <span className="text-sm font-medium">
+                          {shortDate(u.date)}（{u.weekdayLabel}） {u.slotLabel}
+                        </span>
+                        <span
+                          className={cn(
+                            "text-xs",
+                            on
+                              ? "text-primary-foreground/80"
+                              : "text-muted-foreground",
+                          )}
+                        >
+                          {u.startTime}–{u.endTime}
+                        </span>
+                      </button>
+                    );
+                  })}
+                </div>
               </div>
-              <div className="space-y-1">
-                <Label htmlFor="abs-reason">理由（必須）</Label>
+
+              {/* 2. 理由区分チップ (選択中=primary 地) */}
+              <div className="space-y-2">
+                <Label>理由</Label>
+                <div className="flex flex-wrap gap-2">
+                  {REASON_CATEGORIES.map((c) => {
+                    const on = category === c;
+                    return (
+                      <button
+                        key={c}
+                        type="button"
+                        onClick={() => setCategory(c)}
+                        aria-pressed={on}
+                        className={cn(
+                          "rounded-full border px-3.5 py-1.5 text-sm transition-colors",
+                          on
+                            ? "border-primary bg-primary text-primary-foreground"
+                            : "border-input bg-background hover:bg-muted",
+                        )}
+                      >
+                        {c}
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+
+              {/* 3. 詳細メモ */}
+              <div className="space-y-1.5">
+                <Label htmlFor="abs-memo">
+                  詳細メモ
+                  <span className="ml-1 text-xs font-normal text-muted-foreground">
+                    {category === "その他" ? "（必須）" : "（任意）"}
+                  </span>
+                </Label>
                 <textarea
-                  id="abs-reason"
-                  value={reason}
-                  onChange={(e) => setReason(e.target.value)}
-                  required
-                  rows={2}
-                  maxLength={500}
-                  placeholder="例: 体調不良のため"
+                  id="abs-memo"
+                  value={memo}
+                  onChange={(e) => setMemo(e.target.value)}
+                  rows={3}
+                  maxLength={490}
+                  placeholder="例: 通院のため"
                   className="w-full rounded-md border bg-background px-3 py-2 text-sm focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
                 />
               </div>
-              <Button type="submit" disabled={isPending}>
-                {isPending ? "送信中..." : "申請する"}
+
+              {/* 4. 注意バナー (bg-accent/10) */}
+              <div className="rounded-lg bg-accent/10 p-3 text-sm">
+                <p className="flex items-start gap-2 text-foreground">
+                  <Info className="mt-0.5 size-4 shrink-0 text-accent" />
+                  <span>
+                    欠勤申請には教室長の承認が必要です。承認後、教室長が代講募集に出す場合があります。
+                  </span>
+                </p>
+              </div>
+
+              {/* 5. 下部 primary 全幅 */}
+              <Button type="submit" disabled={isPending} className="w-full">
+                {isPending ? "送信中..." : "欠勤を申請"}
               </Button>
             </form>
           )}
