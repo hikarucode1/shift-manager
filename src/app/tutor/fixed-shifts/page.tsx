@@ -15,7 +15,14 @@ import {
   type FixedShiftSubmissionMeta,
 } from "./fixed-shift-editor";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { Badge } from "@/components/ui/badge";
+import { cn } from "@/lib/utils";
+
+/** 締切残り日数のラベル + 緊急かどうか (#130 と同じ規則) */
+function deadlineLabel(daysLeft: number): { text: string; urgent: boolean } {
+  if (daysLeft < 0) return { text: "締切超過", urgent: true };
+  if (daysLeft === 0) return { text: "本日締切", urgent: true };
+  return { text: `あと${daysLeft}日`, urgent: daysLeft <= 3 };
+}
 
 export default async function FixedShiftPage() {
   const { profile } = await requireRole("tutor");
@@ -183,40 +190,54 @@ export default async function FixedShiftPage() {
       : null,
   };
 
-  return (
-    <div className="space-y-6">
-      <div>
-        <h1 className="text-2xl font-semibold">固定シフト登録</h1>
-        <p className="mt-1 text-sm text-muted-foreground">
-          通常期間に毎週入れる勤務可能枠を設定します。保存すると、指定日以降の毎週に自動で適用されます。
-        </p>
-      </div>
+  // navy ヘッダー用: 受付中の期があれば締切までの残り日数を算出 (JST カレンダー日基準)
+  const headerDeadline = activePeriod
+    ? (() => {
+        const dueDate = jstToday(activePeriod.submissionDueAt);
+        const daysLeft = Math.round(
+          (Date.parse(dueDate) - Date.parse(today)) / 86_400_000,
+        );
+        return {
+          ...deadlineLabel(daysLeft),
+          dueAt: activePeriod.submissionDueAt,
+        };
+      })()
+    : null;
 
-      {activePeriod && (
-        <Card className="border-primary/40 bg-primary/5">
-          <CardContent className="flex flex-col gap-1 py-3 text-sm">
-            <div className="flex items-center gap-2">
-              <Badge>受付中</Badge>
-              <span className="font-medium">{activePeriod.label} の提出</span>
-            </div>
-            <p className="text-xs text-muted-foreground">
-              対象期間 {activePeriod.startDate} 〜 {activePeriod.endDate}
-            </p>
-            <p className="text-xs text-muted-foreground">
-              締切{" "}
-              {activePeriod.submissionDueAt.toLocaleString("ja-JP", {
+  return (
+    <div className="space-y-5">
+      {/* ネイビー hero: 期間名 + タイトル + 締切 (#130 と統一) */}
+      <section className="rounded-xl bg-primary p-4 text-primary-foreground">
+        <p className="text-xs text-primary-foreground/70">
+          {activePeriod ? activePeriod.label : "通常期間"}
+        </p>
+        <h1 className="mt-0.5 text-xl font-bold">固定シフト登録</h1>
+        <p className="mt-1 text-xs text-primary-foreground/80">
+          出勤できるコマをタップして登録します
+        </p>
+        {headerDeadline && (
+          <p className="mt-2 text-sm">
+            <span className="text-primary-foreground/70">締切 </span>
+            <span
+              className={cn(
+                "font-semibold",
+                headerDeadline.urgent
+                  ? "text-accent"
+                  : "text-primary-foreground",
+              )}
+            >
+              {headerDeadline.dueAt.toLocaleString("ja-JP", {
                 timeZone: "Asia/Tokyo",
-                year: "numeric",
                 month: "2-digit",
                 day: "2-digit",
                 hour: "2-digit",
                 minute: "2-digit",
               })}
-              {" "}まで
-            </p>
-          </CardContent>
-        </Card>
-      )}
+              （{headerDeadline.text}）
+            </span>
+          </p>
+        )}
+      </section>
 
       {/* Issue #74 (δ): 自分の確定済みレギュラー枠 (期間範囲ごとに表示) */}
       {confirmedRows.length > 0 && (
@@ -266,10 +287,10 @@ export default async function FixedShiftPage() {
         <CardHeader>
           <CardTitle className="text-base">曜日 × コマ</CardTitle>
           <CardDescription>
-            ○ = 出勤可、△ = 出勤可だが避けたい、空欄 = 不可。タップごとに ○ → △ → 空 → ○ … と循環します（△ は空セルから 2 回、○ セルから 1 回）。
+            出勤できるコマをタップして登録します。締切までは何度でも修正できます。
           </CardDescription>
         </CardHeader>
-        <CardContent>
+        <CardContent className="px-3 sm:px-6">
           <FixedShiftEditor
             slots={slots}
             initialEntries={currentEntries}
