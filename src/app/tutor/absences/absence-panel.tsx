@@ -141,26 +141,33 @@ export function AbsencePanel({
             </p>
           ) : (
             <form className="space-y-5" onSubmit={handleSubmit}>
-              {/* 1. 対象シフト選択 (選択中=primary 地) */}
-              <div className="space-y-2">
-                <Label>対象のシフト</Label>
+              {/* 1. 対象シフト選択 (排他選択 = native radio + fieldset/legend) */}
+              <fieldset className="space-y-2">
+                <legend className="mb-2 text-sm font-medium">
+                  対象のシフト
+                </legend>
                 <div className="space-y-2">
                   {upcoming.map((u) => {
                     const val = `${u.date}|${u.slotNumber}`;
                     const on = target === val;
                     return (
-                      <button
+                      <label
                         key={val}
-                        type="button"
-                        onClick={() => setTarget(val)}
-                        aria-pressed={on}
                         className={cn(
-                          "flex w-full items-center justify-between rounded-xl border p-3 text-left transition-colors",
+                          "flex w-full cursor-pointer items-center justify-between rounded-xl border p-3 transition-colors focus-within:ring-1 focus-within:ring-ring",
                           on
                             ? "border-primary bg-primary text-primary-foreground"
                             : "border-input bg-background hover:bg-muted",
                         )}
                       >
+                        <input
+                          type="radio"
+                          name="abs-target"
+                          value={val}
+                          checked={on}
+                          onChange={() => setTarget(val)}
+                          className="sr-only"
+                        />
                         <span className="text-sm font-medium">
                           {shortDate(u.date)}（{u.weekdayLabel}） {u.slotLabel}
                         </span>
@@ -174,37 +181,42 @@ export function AbsencePanel({
                         >
                           {u.startTime}–{u.endTime}
                         </span>
-                      </button>
+                      </label>
                     );
                   })}
                 </div>
-              </div>
+              </fieldset>
 
-              {/* 2. 理由区分チップ (選択中=primary 地) */}
-              <div className="space-y-2">
-                <Label>理由</Label>
+              {/* 2. 理由区分チップ (排他選択 = native radio + fieldset/legend) */}
+              <fieldset className="space-y-2">
+                <legend className="mb-2 text-sm font-medium">理由</legend>
                 <div className="flex flex-wrap gap-2">
                   {REASON_CATEGORIES.map((c) => {
                     const on = category === c;
                     return (
-                      <button
+                      <label
                         key={c}
-                        type="button"
-                        onClick={() => setCategory(c)}
-                        aria-pressed={on}
                         className={cn(
-                          "rounded-full border px-3.5 py-1.5 text-sm transition-colors",
+                          "cursor-pointer rounded-full border px-3.5 py-1.5 text-sm transition-colors focus-within:ring-1 focus-within:ring-ring",
                           on
                             ? "border-primary bg-primary text-primary-foreground"
                             : "border-input bg-background hover:bg-muted",
                         )}
                       >
+                        <input
+                          type="radio"
+                          name="abs-reason"
+                          value={c}
+                          checked={on}
+                          onChange={() => setCategory(c)}
+                          className="sr-only"
+                        />
                         {c}
-                      </button>
+                      </label>
                     );
                   })}
                 </div>
-              </div>
+              </fieldset>
 
               {/* 3. 詳細メモ */}
               <div className="space-y-1.5">
