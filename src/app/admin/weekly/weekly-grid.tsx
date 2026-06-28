@@ -1,6 +1,6 @@
 "use client";
 
-import { Fragment, useMemo, useState } from "react";
+import { useMemo, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { ChevronLeft, ChevronRight, FileText, Printer } from "lucide-react";
@@ -145,30 +145,38 @@ export function WeeklyGrid({ schedule }: { schedule: AdminWeekSchedule }) {
           </CardContent>
         </Card>
       ) : (
-        <div className="overflow-x-auto">
-          <div className="weekly-grid grid min-w-[900px] grid-cols-[92px_repeat(7,1fr)] overflow-hidden rounded-lg border text-sm">
+        // 外側を overflow-x-auto + border にして、先頭「コマ」列の sticky を
+        // スクロールコンテナ基準で効かせる。各コマ行は subgrid ラッパで囲み、
+        // 実 DOM ボックスとして break-inside:avoid を行単位で効かせる (印刷分割対策)。
+        <div className="overflow-x-auto rounded-lg border">
+          <div className="weekly-grid grid min-w-[900px] grid-cols-[92px_repeat(7,1fr)] text-sm">
             {/* ヘッダー行 */}
-            <div className="border-b bg-muted px-2.5 py-2 text-xs font-semibold text-slate-600">
-              コマ
-            </div>
-            {schedule.days.map((d) => (
-              <div
-                key={d.date}
-                className="border-b border-l bg-muted px-1 py-1.5 text-center"
-              >
-                <div className={cn("text-[13px] font-semibold", dayColor(d.weekday))}>
-                  {shortDate(d.date)}
-                </div>
-                <div className={cn("text-[11px] opacity-80", dayColor(d.weekday))}>
-                  ({d.weekdayLabel})
-                </div>
+            <div className="col-span-full grid grid-cols-subgrid break-inside-avoid">
+              <div className="sticky left-0 z-10 border-b bg-muted px-2.5 py-2 text-xs font-semibold text-slate-600">
+                コマ
               </div>
-            ))}
+              {schedule.days.map((d) => (
+                <div
+                  key={d.date}
+                  className="border-b border-l bg-muted px-1 py-1.5 text-center"
+                >
+                  <div className={cn("text-[13px] font-semibold", dayColor(d.weekday))}>
+                    {shortDate(d.date)}
+                  </div>
+                  <div className={cn("text-[11px] opacity-80", dayColor(d.weekday))}>
+                    ({d.weekdayLabel})
+                  </div>
+                </div>
+              ))}
+            </div>
 
             {/* コマ行 */}
             {filtered.map((row) => (
-              <Fragment key={row.slotNumber}>
-                <div className="border-b bg-card px-2.5 py-2">
+              <div
+                key={row.slotNumber}
+                className="col-span-full grid grid-cols-subgrid break-inside-avoid"
+              >
+                <div className="sticky left-0 z-10 border-b bg-card px-2.5 py-2">
                   <div className="text-[13px] font-semibold">{row.label}</div>
                   <div className="text-[10.5px] text-muted-foreground">
                     {row.startTime}
@@ -255,7 +263,7 @@ export function WeeklyGrid({ schedule }: { schedule: AdminWeekSchedule }) {
                     </div>
                   );
                 })}
-              </Fragment>
+              </div>
             ))}
           </div>
         </div>
