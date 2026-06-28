@@ -99,14 +99,13 @@ body {
     padding: 0 !important;
   }
 
-  .weekly-print table {
+  .weekly-print .weekly-grid {
     min-width: 0 !important;
     width: 100% !important;
     font-size: 9px;
   }
 
-  .weekly-print tr,
-  .weekly-print li {
+  .weekly-print .weekly-grid > div {
     break-inside: avoid;
   }
 

@@ -1,15 +1,22 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { Fragment, useMemo, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { ChevronLeft, ChevronRight, FileText, Printer } from "lucide-react";
-import type { AdminWeekSchedule } from "@/lib/admin-schedule";
+import type { AdminDay, AdminWeekSchedule } from "@/lib/admin-schedule";
 import { nextWeek, prevWeek, shortDate } from "@/lib/week";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent } from "@/components/ui/card";
 import { cn } from "@/lib/utils";
+
+// 曜日色: 平日=slate / 土=青 / 日=赤（デザインハンドオフ準拠）
+function dayColor(weekday: AdminDay["weekday"]) {
+  if (weekday === "sat") return "text-blue-600";
+  if (weekday === "sun") return "text-destructive";
+  return "text-slate-600";
+}
 
 export function WeeklyGrid({ schedule }: { schedule: AdminWeekSchedule }) {
   const router = useRouter();
@@ -42,7 +49,7 @@ export function WeeklyGrid({ schedule }: { schedule: AdminWeekSchedule }) {
 
   return (
     <div className="space-y-4">
-      {/* 週ナビ */}
+      {/* ツールバー: 前週 / 週ラベル / 次週・右に講師select + 印刷 */}
       <div className="flex flex-wrap items-center gap-2 print:hidden">
         <Button variant="outline" size="sm" asChild>
           <Link href={`/admin/weekly?week=${prev.start}`}>
@@ -97,35 +104,33 @@ export function WeeklyGrid({ schedule }: { schedule: AdminWeekSchedule }) {
         </div>
       </div>
 
-      {/* アップロード情報 */}
+      {/* アップロード情報バー */}
       {schedule.upload && (
-        <Card className="print:border-0 print:shadow-none">
-          <CardContent className="flex flex-wrap items-center gap-x-4 gap-y-1 py-3 text-sm text-muted-foreground">
-            <span className="flex items-center gap-1">
-              <FileText className="size-4" />
-              {schedule.upload.originalFilename}
+        <div className="flex flex-wrap items-center gap-x-4 gap-y-1 rounded-lg border bg-muted px-3.5 py-2.5 text-[12.5px] text-muted-foreground print:border-0">
+          <span className="flex items-center gap-1.5">
+            <FileText className="size-3.5" />
+            {schedule.upload.originalFilename}
+          </span>
+          <span>公開者: {schedule.upload.uploadedByName}</span>
+          {schedule.upload.publishedAt && (
+            <span>
+              公開:{" "}
+              {new Date(schedule.upload.publishedAt).toLocaleString("ja-JP", {
+                timeZone: "Asia/Tokyo",
+              })}
             </span>
-            <span>公開者: {schedule.upload.uploadedByName}</span>
-            {schedule.upload.publishedAt && (
-              <span>
-                公開:{" "}
-                {new Date(schedule.upload.publishedAt).toLocaleString("ja-JP", {
-                  timeZone: "Asia/Tokyo",
-                })}
+          )}
+          <span className="ml-auto font-semibold text-foreground">
+            {tutorFilter
+              ? `表示中 ${shownCount} 件 / 全 ${schedule.totalShiftCount} 件`
+              : `出勤 ${schedule.totalShiftCount} 件`}
+            {schedule.absentShiftCount > 0 && (
+              <span className="ml-2 font-medium text-destructive">
+                欠勤 {schedule.absentShiftCount} 件
               </span>
             )}
-            <span className="ml-auto">
-              {tutorFilter
-                ? `表示中 ${shownCount} 件 / 全 ${schedule.totalShiftCount} 件`
-                : `出勤 ${schedule.totalShiftCount} 件`}
-              {schedule.absentShiftCount > 0 && (
-                <span className="ml-2 text-destructive">
-                  欠勤 {schedule.absentShiftCount} 件
-                </span>
-              )}
-            </span>
-          </CardContent>
-        </Card>
+          </span>
+        </div>
       )}
 
       {!schedule.published ? (
@@ -141,125 +146,118 @@ export function WeeklyGrid({ schedule }: { schedule: AdminWeekSchedule }) {
         </Card>
       ) : (
         <div className="overflow-x-auto">
-          <table className="w-full min-w-[900px] border-collapse text-sm">
-            <thead>
-              <tr>
-                <th className="sticky left-0 z-10 w-24 border bg-muted p-2 text-left">
-                  コマ
-                </th>
+          <div className="weekly-grid grid min-w-[900px] grid-cols-[92px_repeat(7,1fr)] overflow-hidden rounded-lg border text-sm">
+            {/* ヘッダー行 */}
+            <div className="border-b bg-muted px-2.5 py-2 text-xs font-semibold text-slate-600">
+              コマ
+            </div>
+            {schedule.days.map((d) => (
+              <div
+                key={d.date}
+                className="border-b border-l bg-muted px-1 py-1.5 text-center"
+              >
+                <div className={cn("text-[13px] font-semibold", dayColor(d.weekday))}>
+                  {shortDate(d.date)}
+                </div>
+                <div className={cn("text-[11px] opacity-80", dayColor(d.weekday))}>
+                  ({d.weekdayLabel})
+                </div>
+              </div>
+            ))}
+
+            {/* コマ行 */}
+            {filtered.map((row) => (
+              <Fragment key={row.slotNumber}>
+                <div className="border-b bg-card px-2.5 py-2">
+                  <div className="text-[13px] font-semibold">{row.label}</div>
+                  <div className="text-[10.5px] text-muted-foreground">
+                    {row.startTime}
+                    {row.startTime && "〜"}
+                    {row.endTime}
+                  </div>
+                </div>
                 {schedule.days.map((d) => {
-                  const weekend =
-                    d.weekday === "sat" || d.weekday === "sun";
+                  const cells = row.cellsByDate[d.date] ?? [];
                   return (
-                    <th
+                    <div
                       key={d.date}
-                      className={cn(
-                        "border bg-muted p-2 text-center font-medium",
-                        weekend && "text-muted-foreground",
-                      )}
+                      className="flex min-h-[46px] flex-col gap-1 border-b border-l p-1.5"
                     >
-                      <div>{shortDate(d.date)}</div>
-                      <div className="text-xs font-normal">
-                        ({d.weekdayLabel})
-                      </div>
-                    </th>
-                  );
-                })}
-              </tr>
-            </thead>
-            <tbody>
-              {filtered.map((row) => (
-                <tr key={row.slotNumber} className="align-top">
-                  <th className="sticky left-0 z-10 border bg-muted p-2 text-left">
-                    <div className="font-medium">{row.label}</div>
-                    <div className="text-xs font-normal text-muted-foreground">
-                      {row.startTime}
-                      {row.startTime && "〜"}
-                      {row.endTime}
-                    </div>
-                  </th>
-                  {schedule.days.map((d) => {
-                    const cells = row.cellsByDate[d.date] ?? [];
-                    return (
-                      <td key={d.date} className="border p-1.5 align-top">
-                        {cells.length === 0 ? (
-                          <span className="text-xs text-muted-foreground/50">
-                            —
-                          </span>
-                        ) : (
-                          <ul className="space-y-1.5">
-                            {cells.map((c) => (
-                              <li
-                                key={c.tutorId}
-                                title={c.note ?? undefined}
+                      {cells.length === 0 ? (
+                        <span className="text-xs text-muted-foreground/40">—</span>
+                      ) : (
+                        cells.map((c) => (
+                          <div
+                            key={c.tutorId}
+                            title={c.note ?? undefined}
+                            className={cn(
+                              "rounded p-1.5 text-xs ring-1",
+                              c.isAbsent
+                                ? "bg-destructive/10 ring-destructive/20"
+                                : c.isOverride
+                                  ? "bg-accent/10 ring-accent/20"
+                                  : "bg-muted ring-border",
+                            )}
+                          >
+                            <div className="flex flex-wrap items-center gap-1">
+                              <span
                                 className={cn(
-                                  "rounded p-1.5 ring-1 ring-border",
-                                  c.isAbsent
-                                    ? "bg-destructive/10"
-                                    : "bg-card",
+                                  "font-semibold",
+                                  c.isAbsent &&
+                                    "text-muted-foreground line-through",
                                 )}
                               >
-                                <div className="flex flex-wrap items-center gap-1">
-                                  <span
-                                    className={cn(
-                                      "font-medium",
-                                      c.isAbsent &&
-                                        "text-muted-foreground line-through",
-                                    )}
-                                  >
-                                    {c.tutorName}
-                                  </span>
-                                  {c.isAbsent && (
-                                    <Badge
-                                      variant="destructive"
-                                      className="px-1 py-0 text-[10px] font-normal"
-                                    >
-                                      欠勤
-                                    </Badge>
-                                  )}
-                                  {c.seatNumber && (
-                                    <Badge
-                                      variant="outline"
-                                      className="px-1 py-0 text-[10px] font-normal"
-                                    >
-                                      座{c.seatNumber}
-                                    </Badge>
-                                  )}
-                                  {c.isOverride && (
-                                    <Badge
-                                      variant="accent"
-                                      className="px-1 py-0 text-[10px] font-normal"
-                                    >
-                                      代講
-                                    </Badge>
-                                  )}
-                                </div>
-                                {c.students.length > 0 && (
-                                  <div className="mt-0.5 text-xs text-muted-foreground">
-                                    {c.students
-                                      .map(
-                                        (s) =>
-                                          `${s.name}${s.subject ? `(${s.subject})` : ""}`,
-                                      )
-                                      .join(" / ")}
-                                  </div>
-                                )}
-                                {c.note && (
-                                  <div className="mt-0.5 text-[10px] text-muted-foreground">
-                                    メモ: {c.note}
-                                  </div>
-                                )}
-                              </li>
-                            ))}
-                          </ul>
-                        )}
-                      </td>
-                    );
-                  })}
-                </tr>
-              ))}
-            </tbody>
-          </table>
+                                {c.tutorName}
+                              </span>
+                              {c.isAbsent && (
+                                <Badge
+                                  variant="destructive"
+                                  className="px-1 py-0 text-[10px] font-normal"
+                                >
+                                  欠勤
+                                </Badge>
+                              )}
+                              {c.isOverride && (
+                                <Badge
+                                  variant="accent"
+                                  className="px-1 py-0 text-[10px] font-normal"
+                                >
+                                  代講
+                                </Badge>
+                              )}
+                              {c.seatNumber && (
+                                <Badge
+                                  variant="outline"
+                                  className="px-1 py-0 text-[10px] font-normal"
+                                >
+                                  座{c.seatNumber}
+                                </Badge>
+                              )}
+                            </div>
+                            {c.students.length > 0 && (
+                              <div className="mt-0.5 text-[11px] text-muted-foreground">
+                                {c.students
+                                  .map(
+                                    (s) =>
+                                      `${s.name}${s.subject ? `(${s.subject})` : ""}`,
+                                  )
+                                  .join(" / ")}
+                              </div>
+                            )}
+                            {c.note && (
+                              <div className="mt-0.5 text-[10px] text-muted-foreground">
+                                メモ: {c.note}
+                              </div>
+                            )}
+                          </div>
+                        ))
+                      )}
+                    </div>
+                  );
+                })}
+              </Fragment>
+            ))}
+          </div>
         </div>
       )}
     </div>
