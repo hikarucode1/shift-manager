@@ -22,7 +22,7 @@ export type TutorRow = {
 
 type StatusFilter = "all" | "linked" | "unlinked";
 
-// アバター背景色 (氏名から決定的に選ぶ)
+// アバター背景色 (profile id から決定的に選ぶ)
 const AVATAR_COLORS = [
   "bg-primary",
   "bg-accent",
@@ -71,10 +71,10 @@ export function TutorManager({ tutors }: { tutors: TutorRow[] }) {
       if (statusFilter === "linked" && !t.linked) return false;
       if (statusFilter === "unlinked" && t.linked) return false;
       if (!q) return true;
-      return (
-        t.displayName.toLowerCase().includes(q) ||
-        t.email.toLowerCase().includes(q)
-      );
+      if (t.displayName.toLowerCase().includes(q)) return true;
+      // 未連携行は UI 上メールを隠す (「ログイン未連携」表示) ため、
+      // 隠れた実メールで誤ヒットしないよう連携済みのみメールを検索対象にする。
+      return t.linked && t.email.toLowerCase().includes(q);
     });
   }, [tutors, search, statusFilter]);
 

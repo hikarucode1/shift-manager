@@ -16,7 +16,7 @@ export type AdminRow = {
   createdAt: string;
 };
 
-// アバター背景色 (氏名から決定的に選ぶ)
+// アバター背景色 (profile id から決定的に選ぶ)
 const AVATAR_COLORS = [
   "bg-primary",
   "bg-accent",
