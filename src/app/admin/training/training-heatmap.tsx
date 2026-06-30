@@ -212,7 +212,10 @@ export function TrainingHeatmap({ data }: { data: HeatmapData }) {
                   const confirmedCount = (confirmedByCell[key] ?? []).length;
                   const level = heatLevel(c, maxCount);
                   const a = HEAT_ALPHA[level];
-                  const dark = level >= 3;
+                  // 最濃 (level 4 = フル accent) のみ白文字。level 3 (alpha 0.62) は
+                  // 薄めの橙で白文字だとコントラスト不足のため既定の濃色文字に保つ
+                  // (#127 review)。白 on フル accent はアプリ標準の bg-accent と同基準。
+                  const dark = level >= 4;
                   const cellInteractive = c > 0 || confirmedCount > 0;
                   return (
                     <td key={d.date} className="border p-0">
