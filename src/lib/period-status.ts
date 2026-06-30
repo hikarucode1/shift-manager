@@ -12,6 +12,16 @@ export const MUTED_BADGE =
 export const ACCENT_BADGE =
   "border-transparent bg-accent/15 text-accent hover:bg-accent/15";
 
+/**
+ * green バッジ (進行中 / 公開中などの成功状態)。
+ * 緑は globals.css にセマンティックトークンが無く、アプリ全体 (tutors / training 等)
+ * で `bg-green-50 text-green-700` リテラルを使う慣習に合わせている。
+ * dark モードは現状未起動 (テーマトグル無し) のためリテラル固定で問題ないが、
+ * 将来 dark 対応する際はこの 1 箇所を緑トークンに差し替えれば 3 画面に波及する。
+ */
+export const GREEN_BADGE =
+  "border-transparent bg-green-50 text-green-700 hover:bg-green-50";
+
 export type SubmissionStatus = {
   label: "開始前" | "受付中" | "締切後";
   /** 受付中のみ accent 強調。配色は UI 刷新デザインに準拠。 */

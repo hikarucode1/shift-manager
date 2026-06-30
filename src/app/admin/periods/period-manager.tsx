@@ -15,6 +15,7 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import { cn } from "@/lib/utils";
+import { ACCENT_BADGE, GREEN_BADGE, MUTED_BADGE } from "@/lib/period-status";
 import {
   createPeriod,
   setPeriodArchived,
@@ -50,23 +51,9 @@ type PeriodStatus = {
  * 配色は UI 刷新デザイン (進行中=緑 / 開始前=muted / 終了=muted) に準拠。
  */
 function periodStatus(today: string, start: string, end: string): PeriodStatus {
-  if (today < start)
-    return {
-      label: "開始前",
-      className:
-        "border-transparent bg-muted text-muted-foreground hover:bg-muted",
-    };
-  if (today > end)
-    return {
-      label: "終了",
-      className:
-        "border-transparent bg-muted text-muted-foreground hover:bg-muted",
-    };
-  return {
-    label: "進行中",
-    className:
-      "border-transparent bg-green-50 text-green-700 hover:bg-green-50",
-  };
+  if (today < start) return { label: "開始前", className: MUTED_BADGE };
+  if (today > end) return { label: "終了", className: MUTED_BADGE };
+  return { label: "進行中", className: GREEN_BADGE };
 }
 
 /**
@@ -79,16 +66,8 @@ function deadlineStatus(
 ): { label: "受付中" | "締切済"; className: string } {
   const open = today <= jstDateOf(deadlineIso);
   return open
-    ? {
-        label: "受付中",
-        className:
-          "border-transparent bg-accent/15 text-accent hover:bg-accent/15",
-      }
-    : {
-        label: "締切済",
-        className:
-          "border-transparent bg-muted text-muted-foreground hover:bg-muted",
-      };
+    ? { label: "受付中", className: ACCENT_BADGE }
+    : { label: "締切済", className: MUTED_BADGE };
 }
 
 export function PeriodManager({
