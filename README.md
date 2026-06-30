@@ -138,6 +138,8 @@ src/
 │  ├─ admin-shell.tsx      # 教室長(PC)シェル: ヘッダー + 横ナビ
 │  ├─ tutor-shell.tsx      # 講師(スマホ)シェル: ヘッダー + 下部タブ
 │  ├─ segmented-nav.tsx    # グループ内サブナビ（セグメント）
+│  ├─ admin-section-nav.tsx # 教室長グループのサブナビ定義
+│  ├─ tutor-requests-nav.tsx # 講師「申請」グループのサブナビ定義
 │  └─ ui/                  # shadcn/ui プリミティブ
 ├─ db/
 │  ├─ client.ts            # Drizzle + postgres-js
