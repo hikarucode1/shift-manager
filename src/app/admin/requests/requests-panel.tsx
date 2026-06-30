@@ -77,7 +77,7 @@ export function RequestsPanel({ pending }: { pending: PendingAbsence[] }) {
                 <span
                   className={cn(
                     "flex size-8 shrink-0 items-center justify-center rounded-full text-xs font-bold text-white",
-                    avatarColor(p.tutorName),
+                    avatarColor(p.tutorId),
                   )}
                   aria-hidden
                 >

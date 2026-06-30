@@ -32,12 +32,14 @@ export function RequestsTabs({
         className="flex gap-1 border-b"
       >
         <TabButton
+          tab="absence"
           active={tab === "absence"}
           onClick={() => setTab("absence")}
           label="欠勤申請"
           count={pendingAbsences.length}
         />
         <TabButton
+          tab="swap"
           active={tab === "swap"}
           onClick={() => setTab("swap")}
           label="交代・代講"
@@ -45,21 +47,29 @@ export function RequestsTabs({
         />
       </div>
 
-      {tab === "absence" ? (
-        <RequestsPanel pending={pendingAbsences} />
-      ) : (
-        <SwapRequestsPanel pending={pendingSwaps} />
-      )}
+      <div
+        role="tabpanel"
+        id={`requests-panel-${tab}`}
+        aria-labelledby={`requests-tab-${tab}`}
+      >
+        {tab === "absence" ? (
+          <RequestsPanel pending={pendingAbsences} />
+        ) : (
+          <SwapRequestsPanel pending={pendingSwaps} />
+        )}
+      </div>
     </div>
   );
 }
 
 function TabButton({
+  tab,
   active,
   onClick,
   label,
   count,
 }: {
+  tab: Tab;
   active: boolean;
   onClick: () => void;
   label: string;
@@ -69,7 +79,9 @@ function TabButton({
     <button
       type="button"
       role="tab"
+      id={`requests-tab-${tab}`}
       aria-selected={active}
+      aria-controls={`requests-panel-${tab}`}
       onClick={onClick}
       className={cn(
         "-mb-px flex items-center gap-1.5 border-b-2 px-3 py-2 text-sm font-medium transition-colors",
