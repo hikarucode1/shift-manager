@@ -457,8 +457,11 @@ function PreviewStage({
                         "-mx-2 rounded-md bg-destructive/10 px-2",
                     )}
                   >
-                    {/* CSV 講師名 */}
-                    <span className="text-sm font-medium sm:w-36 sm:shrink-0">
+                    {/* CSV 講師名 (固定幅列では長名を省略表示、フル名は title で) */}
+                    <span
+                      title={name}
+                      className="text-sm font-medium sm:w-36 sm:shrink-0 sm:truncate"
+                    >
                       {name}
                     </span>
                     <ArrowRight className="hidden size-4 shrink-0 text-muted-foreground sm:block" />
