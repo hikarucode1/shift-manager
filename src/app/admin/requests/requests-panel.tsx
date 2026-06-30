@@ -6,22 +6,18 @@ import { AlertCircle, CheckCircle2 } from "lucide-react";
 import type { PendingAbsence } from "@/lib/absences";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import {
-  Card,
-  CardContent,
-  CardHeader,
-  CardTitle,
-} from "@/components/ui/card";
 import { shortDate } from "@/lib/week";
 import { cn } from "@/lib/utils";
+import { avatarColor, avatarInitial } from "@/lib/avatar";
 import { decideAbsenceRequest } from "@/app/tutor/absences/actions";
 
 export function RequestsPanel({ pending }: { pending: PendingAbsence[] }) {
   const router = useRouter();
   const [isPending, startTransition] = useTransition();
-  const [notice, setNotice] = useState<
-    { type: "ok" | "error"; text: string } | null
-  >(null);
+  const [notice, setNotice] = useState<{
+    type: "ok" | "error";
+    text: string;
+  } | null>(null);
   // 却下入力中の行 id → 理由
   const [rejectId, setRejectId] = useState<string | null>(null);
   const [rejectNote, setRejectNote] = useState("");
@@ -69,116 +65,118 @@ export function RequestsPanel({ pending }: { pending: PendingAbsence[] }) {
         </p>
       )}
 
-      <Card>
-        <CardHeader>
-          <CardTitle className="text-base">
-            欠勤申請（未対応）
-            <Badge variant="accent" className="ml-2">
-              {pending.length}
-            </Badge>
-          </CardTitle>
-        </CardHeader>
-        <CardContent>
-          {pending.length === 0 ? (
-            <p className="py-6 text-center text-sm text-muted-foreground">
-              未対応の申請はありません。
-            </p>
-          ) : (
-            <div className="divide-y">
-              {pending.map((p) => (
-                <div key={p.id} className="space-y-2 py-3">
+      {pending.length === 0 ? (
+        <p className="rounded-lg border py-10 text-center text-sm text-muted-foreground">
+          未対応の欠勤申請はありません。
+        </p>
+      ) : (
+        <div className="space-y-3">
+          {pending.map((p) => (
+            <div key={p.id} className="space-y-3 rounded-lg border p-3.5">
+              <div className="flex items-start gap-3">
+                <span
+                  className={cn(
+                    "flex size-8 shrink-0 items-center justify-center rounded-full text-xs font-bold text-white",
+                    avatarColor(p.tutorName),
+                  )}
+                  aria-hidden
+                >
+                  {avatarInitial(p.tutorName)}
+                </span>
+                <div className="min-w-0 flex-1 space-y-0.5">
                   <div className="flex flex-wrap items-center gap-2">
                     <span className="font-medium">{p.tutorName}</span>
-                    <span className="text-sm">
-                      {shortDate(p.date)}（{p.weekdayLabel}） {p.slotLabel}
-                    </span>
+                    <Badge variant="accent">未対応</Badge>
                   </div>
+                  <p className="text-sm text-muted-foreground">
+                    {shortDate(p.date)}（{p.weekdayLabel}） {p.slotLabel}
+                  </p>
                   <p className="text-sm text-muted-foreground">
                     理由: {p.reason}
                   </p>
+                </div>
+              </div>
 
-                  {rejectId === p.id ? (
-                    <div className="space-y-2">
-                      <textarea
-                        value={rejectNote}
-                        onChange={(e) => setRejectNote(e.target.value)}
-                        rows={2}
-                        maxLength={500}
-                        placeholder="却下の理由を入力（講師に表示されます）"
-                        className="w-full rounded-md border bg-background px-3 py-2 text-sm focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
-                      />
-                      <div className="flex gap-2">
-                        <Button
-                          variant="destructive"
-                          size="sm"
-                          disabled={isPending || !rejectNote.trim()}
-                          onClick={() =>
-                            run(
-                              () =>
-                                decideAbsenceRequest({
-                                  id: p.id,
-                                  decision: "rejected",
-                                  decisionNote: rejectNote.trim(),
-                                }),
-                              "却下しました。",
-                              () => {
-                                setRejectId(null);
-                                setRejectNote("");
-                              },
-                            )
-                          }
-                        >
-                          却下を確定
-                        </Button>
-                        <Button
-                          variant="ghost"
-                          size="sm"
-                          onClick={() => {
+              {rejectId === p.id ? (
+                <div className="space-y-2">
+                  <textarea
+                    value={rejectNote}
+                    onChange={(e) => setRejectNote(e.target.value)}
+                    rows={2}
+                    maxLength={500}
+                    placeholder="却下の理由を入力（講師に表示されます）"
+                    className="w-full rounded-md border bg-background px-3 py-2 text-sm focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+                  />
+                  <div className="flex gap-2">
+                    <Button
+                      variant="destructive"
+                      size="sm"
+                      disabled={isPending || !rejectNote.trim()}
+                      onClick={() =>
+                        run(
+                          () =>
+                            decideAbsenceRequest({
+                              id: p.id,
+                              decision: "rejected",
+                              decisionNote: rejectNote.trim(),
+                            }),
+                          "却下しました。",
+                          () => {
                             setRejectId(null);
                             setRejectNote("");
-                          }}
-                        >
-                          やめる
-                        </Button>
-                      </div>
-                    </div>
-                  ) : (
-                    <div className="flex gap-2">
-                      <Button
-                        size="sm"
-                        disabled={isPending}
-                        onClick={() =>
-                          run(
-                            () =>
-                              decideAbsenceRequest({
-                                id: p.id,
-                                decision: "approved",
-                              }),
-                            "承認しました。",
-                          )
-                        }
-                      >
-                        承認
-                      </Button>
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        disabled={isPending}
-                        onClick={() => {
-                          setRejectId(p.id);
-                          setRejectNote("");
-                        }}
-                      >
-                        却下
-                      </Button>
-                    </div>
-                  )}
+                          },
+                        )
+                      }
+                    >
+                      却下を確定
+                    </Button>
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      onClick={() => {
+                        setRejectId(null);
+                        setRejectNote("");
+                      }}
+                    >
+                      やめる
+                    </Button>
+                  </div>
                 </div>
-              ))}
+              ) : (
+                <div className="flex gap-2">
+                  <Button
+                    size="sm"
+                    disabled={isPending}
+                    onClick={() =>
+                      run(
+                        () =>
+                          decideAbsenceRequest({
+                            id: p.id,
+                            decision: "approved",
+                          }),
+                        "承認しました。",
+                      )
+                    }
+                  >
+                    承認
+                  </Button>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    disabled={isPending}
+                    onClick={() => {
+                      setRejectId(p.id);
+                      setRejectNote("");
+                    }}
+                  >
+                    却下
+                  </Button>
+                </div>
+              )}
             </div>
-          )}
-        </CardContent>
-      </Card>
+          ))}
+        </div>
+      )}
     </div>
   );
 }
