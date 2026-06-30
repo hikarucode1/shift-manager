@@ -15,6 +15,7 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import { cn } from "@/lib/utils";
+import { submissionStatus } from "@/lib/period-status";
 import {
   createSubmissionPeriod,
   setSubmissionPeriodArchived,
@@ -28,22 +29,6 @@ export type SubmissionPeriodRow = {
   submissionDueAt: string;
   isArchived: boolean;
 };
-
-type SubmissionStatus = {
-  label: "開始前" | "受付中" | "締切後";
-  variant: "default" | "outline" | "secondary";
-};
-
-function submissionStatus(
-  nowIso: string,
-  opensAt: string,
-  dueAt: string,
-): SubmissionStatus {
-  const now = Date.parse(nowIso);
-  if (now < Date.parse(opensAt)) return { label: "開始前", variant: "outline" };
-  if (now > Date.parse(dueAt)) return { label: "締切後", variant: "secondary" };
-  return { label: "受付中", variant: "default" };
-}
 
 function fmtMonth(iso: string): string {
   const [y, m] = iso.split("-");
@@ -333,14 +318,23 @@ function PeriodList({
             {emptyText}
           </p>
         ) : (
-          <div className="divide-y">
+          <div className="grid gap-3 sm:grid-cols-2">
             {rows.map((p) => {
               const editing = editId === p.id;
+              const status = submissionStatus(
+                now,
+                p.submissionOpensAt,
+                p.submissionDueAt,
+              );
               return (
                 <div
                   key={p.id}
                   className={cn(
-                    "flex flex-col gap-2 py-3 lg:flex-row lg:items-center lg:justify-between",
+                    "flex flex-col gap-2 rounded-lg border border-l-[3px] p-3.5 lg:flex-row lg:items-center lg:justify-between",
+                    editing && "sm:col-span-2",
+                    !archivedView && status.active
+                      ? "border-l-accent"
+                      : "border-l-muted-foreground/30",
                     archivedView && "opacity-60",
                   )}
                 >
@@ -395,18 +389,15 @@ function PeriodList({
                         <span className="font-medium">
                           {fmtMonth(p.targetMonth)}
                         </span>
-                        {(() => {
-                          const s = submissionStatus(
-                            now,
-                            p.submissionOpensAt,
-                            p.submissionDueAt,
-                          );
-                          return <Badge variant={s.variant}>{s.label}</Badge>;
-                        })()}
+                        <Badge className={status.className}>
+                          {status.label}
+                        </Badge>
                       </div>
                       <div className="mt-0.5 text-xs text-muted-foreground">
                         受付 {fmtDateTime(p.submissionOpensAt)} 〜 締切{" "}
-                        {fmtDateTime(p.submissionDueAt)}
+                        <span className="font-medium text-accent">
+                          {fmtDateTime(p.submissionDueAt)}
+                        </span>
                       </div>
                     </div>
                   )}

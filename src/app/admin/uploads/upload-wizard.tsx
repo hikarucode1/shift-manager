@@ -2,7 +2,13 @@
 
 import { useMemo, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
-import { AlertCircle, CheckCircle2, UploadCloud } from "lucide-react";
+import {
+  AlertCircle,
+  ArrowRight,
+  Check,
+  CheckCircle2,
+  UploadCloud,
+} from "lucide-react";
 import type { ParsedShiftCsv } from "@/lib/shift-csv-parser";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -24,6 +30,66 @@ type Tutor = { id: string; displayName: string; email: string };
 type Mappings = Record<string, string>; // teacherName -> tutorId or ""
 
 type Stage = "idle" | "parsed" | "done";
+
+/** 対応OK バッジ (一致/推定一致=緑)。アプリ共通の green 慣習に合わせる。 */
+const OK_BADGE =
+  "border-transparent bg-green-50 text-green-700 hover:bg-green-50";
+
+const WIZARD_STEPS = ["アップロード", "マッピング確認", "確定・公開"] as const;
+
+/**
+ * 取り込みウィザードのステッパー (#128 デザイン screen 7)。
+ * 完了=primary 丸✓ / 現在=accent 丸 / 未=muted 丸。
+ * current = 現在ステップの 0-based index。finished で全完了表示。
+ */
+function Stepper({
+  current,
+  finished = false,
+}: {
+  current: number;
+  finished?: boolean;
+}) {
+  return (
+    <ol className="flex items-center gap-1 overflow-x-auto pb-1 text-sm">
+      {WIZARD_STEPS.map((label, i) => {
+        const done = finished || i < current;
+        const active = !finished && i === current;
+        return (
+          <li key={label} className="flex items-center gap-1">
+            <span
+              className={cn(
+                "flex size-6 shrink-0 items-center justify-center rounded-full text-xs font-medium",
+                done && "bg-primary text-primary-foreground",
+                active && "bg-accent text-accent-foreground",
+                !done && !active && "bg-muted text-muted-foreground",
+              )}
+            >
+              {done ? <Check className="size-3.5" /> : i + 1}
+            </span>
+            <span
+              className={cn(
+                "whitespace-nowrap",
+                active
+                  ? "font-medium text-foreground"
+                  : "text-muted-foreground",
+              )}
+            >
+              {label}
+            </span>
+            {i < WIZARD_STEPS.length - 1 && (
+              <span
+                className={cn(
+                  "mx-1 h-px w-6 shrink-0",
+                  done ? "bg-primary" : "bg-border",
+                )}
+              />
+            )}
+          </li>
+        );
+      })}
+    </ol>
+  );
+}
 
 type ParsedBundle = {
   parsed: ParsedShiftCsv;
@@ -140,7 +206,9 @@ export function UploadWizard({ tutors }: { tutors: Tutor[] }) {
 
   if (stage === "done" && result && bundle) {
     return (
-      <Card>
+      <div className="space-y-4">
+        <Stepper current={2} finished />
+        <Card>
         <CardHeader>
           <CardTitle className="flex items-center gap-2 text-base">
             <CheckCircle2 className="text-primary" />
@@ -169,28 +237,34 @@ export function UploadWizard({ tutors }: { tutors: Tutor[] }) {
           </div>
         </CardContent>
       </Card>
+      </div>
     );
   }
 
   if (stage === "parsed" && bundle) {
     return (
-      <PreviewStage
-        bundle={bundle}
-        tutors={tutors}
-        mappings={mappings}
-        onMappingChange={(name, id) =>
-          setMappings((prev) => ({ ...prev, [name]: id }))
-        }
-        onCancel={reset}
-        onCommit={handleCommit}
-        isPending={isCommitPending}
-        error={error}
-      />
+      <div className="space-y-4">
+        <Stepper current={1} />
+        <PreviewStage
+          bundle={bundle}
+          tutors={tutors}
+          mappings={mappings}
+          onMappingChange={(name, id) =>
+            setMappings((prev) => ({ ...prev, [name]: id }))
+          }
+          onCancel={reset}
+          onCommit={handleCommit}
+          isPending={isCommitPending}
+          error={error}
+        />
+      </div>
     );
   }
 
   return (
-    <Card>
+    <div className="space-y-4">
+      <Stepper current={0} />
+      <Card>
       <CardHeader>
         <CardTitle className="flex items-center gap-2 text-base">
           <UploadCloud />
@@ -229,7 +303,8 @@ export function UploadWizard({ tutors }: { tutors: Tutor[] }) {
           </Button>
         </form>
       </CardContent>
-    </Card>
+      </Card>
+    </div>
   );
 }
 
@@ -377,30 +452,25 @@ function PreviewStage({
                   <div
                     key={name}
                     className={cn(
-                      "flex flex-col gap-2 py-2 sm:flex-row sm:items-center sm:justify-between",
+                      "flex flex-col gap-2 py-2 sm:flex-row sm:items-center sm:gap-3",
                       conflictingCsvNames.has(name) &&
                         "-mx-2 rounded-md bg-destructive/10 px-2",
                     )}
                   >
-                    <div className="flex items-center gap-2">
-                      <span className="text-sm font-medium">{name}</span>
-                      {!matched ? (
-                        ambiguousCsvNames.has(name) ? (
-                          <Badge variant="destructive">要手動選択</Badge>
-                        ) : (
-                          <Badge variant="destructive">未対応</Badge>
-                        )
-                      ) : conflictingCsvNames.has(name) ? (
-                        <Badge variant="destructive">重複</Badge>
-                      ) : (
-                        <Badge variant="secondary">対応OK</Badge>
-                      )}
-                    </div>
+                    {/* CSV 講師名 (固定幅列では長名を省略表示、フル名は title で) */}
+                    <span
+                      title={name}
+                      className="text-sm font-medium sm:w-36 sm:shrink-0 sm:truncate"
+                    >
+                      {name}
+                    </span>
+                    <ArrowRight className="hidden size-4 shrink-0 text-muted-foreground sm:block" />
+                    {/* 紐付け先 (Select) */}
                     <select
                       value={current}
                       onChange={(e) => onMappingChange(name, e.target.value)}
                       className={cn(
-                        "h-9 min-w-[200px] rounded-md border bg-background px-2 text-sm",
+                        "h-9 min-w-[200px] rounded-md border bg-background px-2 text-sm sm:flex-1",
                         "focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring",
                       )}
                     >
@@ -414,6 +484,20 @@ function PreviewStage({
                         </option>
                       ))}
                     </select>
+                    {/* 状態 */}
+                    <div className="sm:w-24 sm:shrink-0 sm:text-right">
+                      {!matched ? (
+                        ambiguousCsvNames.has(name) ? (
+                          <Badge variant="destructive">要手動選択</Badge>
+                        ) : (
+                          <Badge variant="destructive">未対応</Badge>
+                        )
+                      ) : conflictingCsvNames.has(name) ? (
+                        <Badge variant="destructive">重複</Badge>
+                      ) : (
+                        <Badge className={OK_BADGE}>対応OK</Badge>
+                      )}
+                    </div>
                   </div>
                 );
               })}
@@ -524,13 +608,13 @@ function PreviewStage({
 
       <div className="flex flex-col gap-2 sm:flex-row sm:justify-end">
         <Button variant="outline" onClick={onCancel} disabled={isPending}>
-          キャンセル
+          戻る
         </Button>
         <Button
           onClick={onCommit}
           disabled={isPending || unmatchedCount > 0 || hasDuplicates}
         >
-          {isPending ? "公開中..." : "確定公開"}
+          {isPending ? "公開中..." : "確定して公開"}
         </Button>
       </div>
     </div>
