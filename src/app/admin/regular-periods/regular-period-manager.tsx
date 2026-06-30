@@ -15,6 +15,7 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import { cn } from "@/lib/utils";
+import { submissionStatus } from "@/lib/period-status";
 import {
   createRegularPeriod,
   setRegularPeriodArchived,
@@ -30,31 +31,6 @@ export type RegularPeriodRow = {
   submissionDueAt: string; // ISO (UTC)
   isArchived: boolean;
 };
-
-type SubmissionStatus = {
-  label: "開始前" | "受付中" | "締切後";
-  /** 受付中のみ accent 強調。配色は UI 刷新デザインに準拠。 */
-  active: boolean;
-  className: string;
-};
-
-const MUTED_BADGE =
-  "border-transparent bg-muted text-muted-foreground hover:bg-muted";
-const ACCENT_BADGE =
-  "border-transparent bg-accent/15 text-accent hover:bg-accent/15";
-
-function submissionStatus(
-  nowIso: string,
-  opensAt: string,
-  dueAt: string,
-): SubmissionStatus {
-  const now = Date.parse(nowIso);
-  if (now < Date.parse(opensAt))
-    return { label: "開始前", active: false, className: MUTED_BADGE };
-  if (now > Date.parse(dueAt))
-    return { label: "締切後", active: false, className: MUTED_BADGE };
-  return { label: "受付中", active: true, className: ACCENT_BADGE };
-}
 
 /** "2026-04-01" → "2026/04/01" */
 function fmtDate(iso: string): string {

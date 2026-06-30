@@ -483,8 +483,11 @@ function PeriodList({
                             <Badge className={s.className}>{s.label}</Badge>
                           );
                         })()}
+                        {/* 締切バッジは再開放中は出さない。締切後でも受付中なので
+                            「締切済」表示が「締切無視中」と矛盾するのを避ける (#126 review)。*/}
                         {!archivedView &&
                           p.submissionDeadline &&
+                          !p.isReopened &&
                           (() => {
                             const d = deadlineStatus(
                               today,
