@@ -8,6 +8,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
 import { cn } from "@/lib/utils";
+import { avatarColor, avatarInitial } from "@/lib/avatar";
 import { inviteTutor, renameTutor, setTutorActive } from "./actions";
 
 export type TutorRow = {
@@ -22,31 +23,16 @@ export type TutorRow = {
 
 type StatusFilter = "all" | "linked" | "unlinked";
 
-// アバター背景色 (profile id から決定的に選ぶ)
-const AVATAR_COLORS = [
-  "bg-primary",
-  "bg-accent",
-  "bg-emerald-600",
-  "bg-sky-600",
-  "bg-violet-600",
-  "bg-rose-600",
-];
-
-function avatarColor(seed: string) {
-  let h = 0;
-  for (let i = 0; i < seed.length; i++) h = (h * 31 + seed.charCodeAt(i)) >>> 0;
-  return AVATAR_COLORS[h % AVATAR_COLORS.length];
-}
-
 // 列幅: 氏名 / メール / 状態 / 担当科目 / 操作
 const COLS = "grid-cols-[1.2fr_1.6fr_.9fr_1.3fr_.8fr]";
 
 export function TutorManager({ tutors }: { tutors: TutorRow[] }) {
   const router = useRouter();
   const [isPending, startTransition] = useTransition();
-  const [notice, setNotice] = useState<
-    { type: "ok" | "error"; text: string } | null
-  >(null);
+  const [notice, setNotice] = useState<{
+    type: "ok" | "error";
+    text: string;
+  } | null>(null);
 
   // ツールバー
   const [search, setSearch] = useState("");
@@ -258,7 +244,7 @@ export function TutorManager({ tutors }: { tutors: TutorRow[] }) {
                           )}
                           aria-hidden
                         >
-                          {t.displayName.trim().charAt(0) || "?"}
+                          {avatarInitial(t.displayName)}
                         </span>
                         <span className="truncate font-semibold">
                           {t.displayName}
