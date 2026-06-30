@@ -11,11 +11,22 @@ import { shortDate } from "@/lib/week";
 import { cn } from "@/lib/utils";
 import { saveCourseConfirmations } from "./confirm-actions";
 
-/** 希望者数 → 背景アルファ (0 は無色) */
-function alphaFor(count: number, max: number): number {
+/**
+ * 希望者数 → 5 段階のヒートレベル (0 = 無色, 1..4 = 薄→濃)。
+ * デザイン (screen 6) の橙ランプ #fde8d8→#f9c89e→#f0a060→#e9803a を accent
+ * トークンのアルファで近似する。max に対する相対割合で段階化 (実データ依存)。
+ */
+function heatLevel(count: number, max: number): 0 | 1 | 2 | 3 | 4 {
   if (count <= 0 || max <= 0) return 0;
-  return 0.18 + (count / max) * 0.72;
+  const frac = count / max;
+  if (frac <= 0.25) return 1;
+  if (frac <= 0.5) return 2;
+  if (frac <= 0.75) return 3;
+  return 4;
 }
+
+/** ヒートレベル → accent アルファ。index 0 は無色 (· 表示)。 */
+const HEAT_ALPHA = [0, 0.15, 0.38, 0.62, 0.9] as const;
 
 type OpenCell = {
   date: string;
@@ -145,15 +156,14 @@ export function TrainingHeatmap({ data }: { data: HeatmapData }) {
       <div className="flex flex-wrap items-center gap-3 text-xs text-muted-foreground">
         <span>色が濃いほど希望者が多い（最大 {maxCount} 名）</span>
         <span className="flex items-center gap-1">
-          <span
-            className="inline-block size-3 rounded-sm ring-1 ring-border"
-            style={{ backgroundColor: "hsl(var(--primary) / 0.2)" }}
-          />
           少
-          <span
-            className="ml-1 inline-block size-3 rounded-sm"
-            style={{ backgroundColor: "hsl(var(--primary) / 0.9)" }}
-          />
+          {HEAT_ALPHA.slice(1).map((a) => (
+            <span
+              key={a}
+              className="inline-block size-3 rounded-sm ring-1 ring-border"
+              style={{ backgroundColor: `hsl(var(--accent) / ${a})` }}
+            />
+          ))}
           多
         </span>
         <span>セルをクリックで希望者一覧 + 確定操作</span>
@@ -166,7 +176,7 @@ export function TrainingHeatmap({ data }: { data: HeatmapData }) {
         <table className="border-collapse text-sm">
           <thead>
             <tr>
-              <th className="sticky left-0 z-10 border bg-muted p-2 text-left">
+              <th className="sticky left-0 z-10 min-w-[84px] border bg-muted p-2 text-left">
                 コマ
               </th>
               {days.map((d) => (
@@ -188,7 +198,7 @@ export function TrainingHeatmap({ data }: { data: HeatmapData }) {
           <tbody>
             {slots.map((s) => (
               <tr key={s.slotNumber}>
-                <th className="sticky left-0 z-10 border bg-muted p-2 text-left">
+                <th className="sticky left-0 z-10 min-w-[84px] border bg-muted p-2 text-left">
                   <div className="font-medium">{s.label}</div>
                   <div className="text-[10px] font-normal text-muted-foreground">
                     {s.startTime}
@@ -200,8 +210,9 @@ export function TrainingHeatmap({ data }: { data: HeatmapData }) {
                   const key = `${d.date}|${s.slotNumber}`;
                   const c = counts[key] ?? 0;
                   const confirmedCount = (confirmedByCell[key] ?? []).length;
-                  const a = alphaFor(c, maxCount);
-                  const dark = a >= 0.65;
+                  const level = heatLevel(c, maxCount);
+                  const a = HEAT_ALPHA[level];
+                  const dark = level >= 3;
                   const cellInteractive = c > 0 || confirmedCount > 0;
                   return (
                     <td key={d.date} className="border p-0">
@@ -219,13 +230,11 @@ export function TrainingHeatmap({ data }: { data: HeatmapData }) {
                           cellInteractive
                             ? "cursor-pointer hover:ring-2 hover:ring-ring"
                             : "cursor-default text-muted-foreground/40",
-                          dark && "font-medium text-primary-foreground",
+                          dark && "font-medium text-accent-foreground",
                         )}
                         style={{
                           backgroundColor:
-                            a > 0
-                              ? `hsl(var(--primary) / ${a.toFixed(3)})`
-                              : undefined,
+                            a > 0 ? `hsl(var(--accent) / ${a})` : undefined,
                         }}
                       >
                         <span>{c > 0 ? c : "·"}</span>
