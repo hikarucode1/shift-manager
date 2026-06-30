@@ -15,6 +15,7 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import { cn } from "@/lib/utils";
+import { ACCENT_BADGE, GREEN_BADGE, MUTED_BADGE } from "@/lib/period-status";
 import {
   createPeriod,
   setPeriodArchived,
@@ -40,18 +41,33 @@ function jstDateOf(iso: string): string {
 
 type PeriodStatus = {
   label: "開始前" | "進行中" | "終了";
-  variant: "default" | "outline" | "secondary";
+  className: string;
 };
 
 /**
  * JST 現在日 (today) と期間の開始・終了日から進行状況を判定。
  * すべて "YYYY-MM-DD" なので辞書順比較 = 日付順比較。期間は両端含む。
  * today は page.tsx (server) で確定させ SSR/hydration のズレを防ぐ。
+ * 配色は UI 刷新デザイン (進行中=緑 / 開始前=muted / 終了=muted) に準拠。
  */
 function periodStatus(today: string, start: string, end: string): PeriodStatus {
-  if (today < start) return { label: "開始前", variant: "outline" };
-  if (today > end) return { label: "終了", variant: "secondary" };
-  return { label: "進行中", variant: "default" };
+  if (today < start) return { label: "開始前", className: MUTED_BADGE };
+  if (today > end) return { label: "終了", className: MUTED_BADGE };
+  return { label: "進行中", className: GREEN_BADGE };
+}
+
+/**
+ * 提出締切を過ぎたかどうか。締切は 23:59:59 JST 保存なので、JST 日付 (today)
+ * と締切の JST 日付を辞書順比較すれば足りる。締切日当日までは「受付中」。
+ */
+function deadlineStatus(
+  today: string,
+  deadlineIso: string,
+): { label: "受付中" | "締切済"; className: string } {
+  const open = today <= jstDateOf(deadlineIso);
+  return open
+    ? { label: "受付中", className: ACCENT_BADGE }
+    : { label: "締切済", className: MUTED_BADGE };
 }
 
 export function PeriodManager({
@@ -366,15 +382,16 @@ function PeriodList({
             {emptyText}
           </p>
         ) : (
-          <div className="divide-y">
+          <div className="grid gap-3 sm:grid-cols-2">
             {rows.map((p) => {
               const editing = editId === p.id;
               return (
                 <div
                   key={p.id}
                   className={cn(
-                    "flex flex-col gap-2 py-3 lg:flex-row lg:items-center lg:justify-between",
-                    archivedView && "opacity-60",
+                    "flex flex-col gap-2 rounded-lg border border-l-[3px] border-l-accent p-3.5 lg:flex-row lg:items-center lg:justify-between",
+                    editing && "sm:col-span-2",
+                    archivedView && "border-l-muted-foreground/30 opacity-60",
                   )}
                 >
                   {editing ? (
@@ -441,8 +458,24 @@ function PeriodList({
                             p.startDate,
                             p.endDate,
                           );
-                          return <Badge variant={s.variant}>{s.label}</Badge>;
+                          return (
+                            <Badge className={s.className}>{s.label}</Badge>
+                          );
                         })()}
+                        {/* 締切バッジは再開放中は出さない。締切後でも受付中なので
+                            「締切済」表示が「締切無視中」と矛盾するのを避ける (#126 review)。*/}
+                        {!archivedView &&
+                          p.submissionDeadline &&
+                          !p.isReopened &&
+                          (() => {
+                            const d = deadlineStatus(
+                              today,
+                              p.submissionDeadline,
+                            );
+                            return (
+                              <Badge className={d.className}>{d.label}</Badge>
+                            );
+                          })()}
                         {p.isReopened && (
                           <Badge variant="destructive">締切無視中</Badge>
                         )}
@@ -450,7 +483,12 @@ function PeriodList({
                       <div className="mt-0.5 text-xs text-muted-foreground">
                         {p.startDate} 〜 {p.endDate}
                         {p.submissionDeadline && (
-                          <> ／ 締切 {fmtDeadline(p.submissionDeadline)}</>
+                          <>
+                            {" ／ 締切 "}
+                            <span className="font-medium text-accent">
+                              {fmtDeadline(p.submissionDeadline)}
+                            </span>
+                          </>
                         )}
                       </div>
                     </div>

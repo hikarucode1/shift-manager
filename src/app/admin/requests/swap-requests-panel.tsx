@@ -6,14 +6,9 @@ import { AlertCircle, CheckCircle2 } from "lucide-react";
 import type { AdminSwapRequest } from "@/lib/swaps";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import {
-  Card,
-  CardContent,
-  CardHeader,
-  CardTitle,
-} from "@/components/ui/card";
 import { shortDate } from "@/lib/week";
 import { cn } from "@/lib/utils";
+import { avatarColor, avatarInitial } from "@/lib/avatar";
 import { decideSwapRequest } from "./swap-actions";
 
 export function SwapRequestsPanel({
@@ -23,9 +18,10 @@ export function SwapRequestsPanel({
 }) {
   const router = useRouter();
   const [isPending, startTransition] = useTransition();
-  const [notice, setNotice] = useState<
-    { type: "ok" | "error"; text: string } | null
-  >(null);
+  const [notice, setNotice] = useState<{
+    type: "ok" | "error";
+    text: string;
+  } | null>(null);
   const [rejectId, setRejectId] = useState<string | null>(null);
   const [rejectNote, setRejectNote] = useState("");
 
@@ -72,29 +68,28 @@ export function SwapRequestsPanel({
         </p>
       )}
 
-      <Card>
-        <CardHeader>
-          <CardTitle className="text-base">
-            交代申請（未対応）
-            <Badge variant="accent" className="ml-2">
-              {pending.length}
-            </Badge>
-          </CardTitle>
-        </CardHeader>
-        <CardContent>
-          {pending.length === 0 ? (
-            <p className="py-6 text-center text-sm text-muted-foreground">
-              未対応の交代申請はありません。
-            </p>
-          ) : (
-            <div className="divide-y">
-              {pending.map((r) => (
-                <div key={r.id} className="space-y-2 py-3">
+      {pending.length === 0 ? (
+        <p className="rounded-lg border py-10 text-center text-sm text-muted-foreground">
+          未対応の交代申請はありません。
+        </p>
+      ) : (
+        <div className="space-y-3">
+          {pending.map((r) => (
+            <div key={r.id} className="space-y-3 rounded-lg border p-3.5">
+              <div className="flex items-start gap-3">
+                <span
+                  className={cn(
+                    "flex size-8 shrink-0 items-center justify-center rounded-full text-xs font-bold text-white",
+                    avatarColor(r.requesterId),
+                  )}
+                  aria-hidden
+                >
+                  {avatarInitial(r.requesterName)}
+                </span>
+                <div className="min-w-0 flex-1 space-y-0.5">
                   <div className="flex flex-wrap items-center gap-2">
                     <span className="font-medium">{r.requesterName}</span>
-                    <span className="text-sm">
-                      {shortDate(r.date)}（{r.weekdayLabel}） {r.slotLabel}
-                    </span>
+                    <Badge variant="accent">未対応</Badge>
                     <Badge variant="outline">
                       {r.kind === "named"
                         ? `指名: ${r.nominatedName ?? "—"}`
@@ -102,108 +97,111 @@ export function SwapRequestsPanel({
                     </Badge>
                   </div>
                   <p className="text-sm text-muted-foreground">
+                    {shortDate(r.date)}（{r.weekdayLabel}） {r.slotLabel}
+                  </p>
+                  <p className="text-sm text-muted-foreground">
                     理由: {r.reason}
                   </p>
+                </div>
+              </div>
 
-                  {rejectId === r.id ? (
-                    <div className="space-y-2">
-                      <textarea
-                        value={rejectNote}
-                        onChange={(e) => setRejectNote(e.target.value)}
-                        rows={2}
-                        maxLength={500}
-                        placeholder="却下の理由を入力（講師に表示されます）"
-                        className="w-full rounded-md border bg-background px-3 py-2 text-sm focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
-                      />
-                      <div className="flex gap-2">
-                        <Button
-                          variant="destructive"
-                          size="sm"
-                          disabled={isPending || !rejectNote.trim()}
-                          onClick={() =>
-                            run(
-                              () =>
-                                decideSwapRequest({
-                                  decision: "rejected",
-                                  id: r.id,
-                                  decisionNote: rejectNote.trim(),
-                                }),
-                              "却下しました。",
-                              () => {
-                                setRejectId(null);
-                                setRejectNote("");
-                              },
-                            )
-                          }
-                        >
-                          却下を確定
-                        </Button>
-                        <Button
-                          variant="ghost"
-                          size="sm"
-                          onClick={() => {
+              {rejectId === r.id ? (
+                <div className="space-y-2">
+                  <textarea
+                    value={rejectNote}
+                    onChange={(e) => setRejectNote(e.target.value)}
+                    rows={2}
+                    maxLength={500}
+                    placeholder="却下の理由を入力（講師に表示されます）"
+                    className="w-full rounded-md border bg-background px-3 py-2 text-sm focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+                  />
+                  <div className="flex gap-2">
+                    <Button
+                      variant="destructive"
+                      size="sm"
+                      disabled={isPending || !rejectNote.trim()}
+                      onClick={() =>
+                        run(
+                          () =>
+                            decideSwapRequest({
+                              decision: "rejected",
+                              id: r.id,
+                              decisionNote: rejectNote.trim(),
+                            }),
+                          "却下しました。",
+                          () => {
                             setRejectId(null);
                             setRejectNote("");
-                          }}
-                        >
-                          やめる
-                        </Button>
+                          },
+                        )
+                      }
+                    >
+                      却下を確定
+                    </Button>
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      onClick={() => {
+                        setRejectId(null);
+                        setRejectNote("");
+                      }}
+                    >
+                      やめる
+                    </Button>
+                  </div>
+                </div>
+              ) : (
+                <div className="space-y-2">
+                  {r.applicants.length === 0 ? (
+                    <p className="text-xs text-muted-foreground">
+                      まだ応募者がいません。
+                    </p>
+                  ) : (
+                    <div className="space-y-1">
+                      <p className="text-xs font-medium">
+                        応募者から代講者を選んで承認:
+                      </p>
+                      <div className="flex flex-wrap gap-2">
+                        {r.applicants.map((a) => (
+                          <Button
+                            key={a.applicationId}
+                            size="sm"
+                            disabled={isPending}
+                            onClick={() =>
+                              run(
+                                () =>
+                                  decideSwapRequest({
+                                    decision: "approved",
+                                    id: r.id,
+                                    applicationId: a.applicationId,
+                                  }),
+                                `${a.applicantName} を代講者として承認しました。`,
+                              )
+                            }
+                          >
+                            {a.applicantName} を承認
+                          </Button>
+                        ))}
                       </div>
                     </div>
-                  ) : (
-                    <div className="space-y-2">
-                      {r.applicants.length === 0 ? (
-                        <p className="text-xs text-muted-foreground">
-                          まだ応募者がいません。
-                        </p>
-                      ) : (
-                        <div className="space-y-1">
-                          <p className="text-xs font-medium">
-                            応募者から代講者を選んで承認:
-                          </p>
-                          <div className="flex flex-wrap gap-2">
-                            {r.applicants.map((a) => (
-                              <Button
-                                key={a.applicationId}
-                                size="sm"
-                                disabled={isPending}
-                                onClick={() =>
-                                  run(
-                                    () =>
-                                      decideSwapRequest({
-                                        decision: "approved",
-                                        id: r.id,
-                                        applicationId: a.applicationId,
-                                      }),
-                                    `${a.applicantName} を代講者として承認しました。`,
-                                  )
-                                }
-                              >
-                                {a.applicantName} を承認
-                              </Button>
-                            ))}
-                          </div>
-                        </div>
-                      )}
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        disabled={isPending}
-                        onClick={() => {
-                          setRejectId(r.id);
-                          setRejectNote("");
-                        }}
-                      >
-                        却下
-                      </Button>
-                    </div>
                   )}
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    disabled={isPending}
+                    onClick={() => {
+                      setRejectId(r.id);
+                      setRejectNote("");
+                    }}
+                  >
+                    却下
+                  </Button>
                 </div>
-              ))}
+              )}
             </div>
-          )}
-        </CardContent>
-      </Card>
+          ))}
+        </div>
+      )}
     </div>
   );
 }

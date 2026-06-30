@@ -1,8 +1,7 @@
 import { requireRole } from "@/lib/auth";
 import { getPendingAbsenceRequests } from "@/lib/absences";
 import { getPendingSwapRequests } from "@/lib/swaps";
-import { RequestsPanel } from "./requests-panel";
-import { SwapRequestsPanel } from "./swap-requests-panel";
+import { RequestsTabs } from "./requests-tabs";
 
 export default async function AdminRequestsPage() {
   await requireRole("admin");
@@ -20,8 +19,10 @@ export default async function AdminRequestsPage() {
           講師からの欠勤申請・交代申請を承認 / 却下します。
         </p>
       </div>
-      <SwapRequestsPanel pending={pendingSwaps} />
-      <RequestsPanel pending={pendingAbsences} />
+      <RequestsTabs
+        pendingAbsences={pendingAbsences}
+        pendingSwaps={pendingSwaps}
+      />
     </div>
   );
 }
