@@ -13,6 +13,8 @@ export type AdminRow = {
   displayName: string;
   email: string;
   isActive: boolean;
+  /** 講師を兼任しているか (docs/design/dual-role.md) */
+  isTutor: boolean;
   createdAt: string;
 };
 
@@ -177,6 +179,11 @@ export function AdminManager({
                           自分
                         </Badge>
                       )}
+                      {a.isTutor && (
+                        <Badge variant="outline" className="shrink-0">
+                          講師兼任
+                        </Badge>
+                      )}
                     </div>
                     {/* メール */}
                     <div className="truncate px-3.5 py-2.5 text-muted-foreground">
@@ -204,7 +211,9 @@ export function AdminManager({
                             ? "自分自身は変更できません"
                             : wouldBeLastActive
                               ? "最後の有効な教室長は無効化できません"
-                              : undefined
+                              : a.isTutor && a.isActive
+                                ? "無効化すると講師としてもログインできなくなります"
+                                : undefined
                         }
                       >
                         {a.isActive ? "無効化" : "有効化"}
@@ -216,6 +225,13 @@ export function AdminManager({
             )}
           </div>
         </div>
+      )}
+
+      {admins.some((a) => a.isTutor) && (
+        <p className="text-xs text-muted-foreground">
+          「講師兼任」の教室長を無効化すると、講師としてもログインできなくなります。
+          有効/無効はロール別ではなくアカウント全体に作用します。
+        </p>
       )}
     </div>
   );

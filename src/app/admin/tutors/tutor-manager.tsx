@@ -16,6 +16,8 @@ export type TutorRow = {
   displayName: string;
   email: string;
   isActive: boolean;
+  /** 教室長を兼任しているか (docs/design/dual-role.md) */
+  isAdmin: boolean;
   /** auth.users と連携済み (= ログイン可能) か */
   linked: boolean;
   createdAt: string;
@@ -26,7 +28,13 @@ type StatusFilter = "all" | "linked" | "unlinked";
 // 列幅: 氏名 / メール / 状態 / 担当科目 / 操作
 const COLS = "grid-cols-[1.2fr_1.6fr_.9fr_1.3fr_.8fr]";
 
-export function TutorManager({ tutors }: { tutors: TutorRow[] }) {
+export function TutorManager({
+  tutors,
+  currentProfileId,
+}: {
+  tutors: TutorRow[];
+  currentProfileId: string;
+}) {
   const router = useRouter();
   const [isPending, startTransition] = useTransition();
   const [notice, setNotice] = useState<{
@@ -249,6 +257,11 @@ export function TutorManager({ tutors }: { tutors: TutorRow[] }) {
                         <span className="truncate font-semibold">
                           {t.displayName}
                         </span>
+                        {t.isAdmin && (
+                          <Badge variant="outline" className="shrink-0">
+                            教室長兼任
+                          </Badge>
+                        )}
                       </div>
                       {/* メール */}
                       <div className="truncate px-3.5 py-2.5 text-muted-foreground">
@@ -363,7 +376,12 @@ export function TutorManager({ tutors }: { tutors: TutorRow[] }) {
                             <Button
                               variant={t.isActive ? "outline" : "default"}
                               size="sm"
-                              disabled={isPending}
+                              disabled={isPending || t.id === currentProfileId}
+                              title={
+                                t.id === currentProfileId
+                                  ? "自分自身は変更できません"
+                                  : undefined
+                              }
                               onClick={() =>
                                 run(
                                   () =>
@@ -380,7 +398,11 @@ export function TutorManager({ tutors }: { tutors: TutorRow[] }) {
                               {t.isActive ? "無効化" : "有効化"}
                             </Button>
                             <span className="text-xs text-muted-foreground">
-                              無効化するとログインできなくなります（削除はできません）。
+                              {t.id === currentProfileId
+                                ? "自分自身の有効/無効は変更できません。"
+                                : t.isAdmin
+                                  ? "教室長兼任のため、無効化すると教室長としてもログインできなくなります（削除はできません）。"
+                                  : "無効化するとログインできなくなります（削除はできません）。"}
                             </span>
                           </div>
                         )}

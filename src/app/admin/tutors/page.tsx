@@ -6,13 +6,14 @@ import { AdminTutorsNav } from "@/components/admin-section-nav";
 import { TutorManager } from "./tutor-manager";
 
 export default async function AdminTutorsPage() {
-  await requireRole("admin");
+  const { profile } = await requireRole("admin");
 
   const tutors = await db
     .select({
       id: profiles.id,
       displayName: profiles.displayName,
       email: profiles.email,
+      roles: profiles.roles,
       isActive: profiles.isActive,
       authUserId: profiles.authUserId,
       createdAt: profiles.createdAt,
@@ -26,6 +27,7 @@ export default async function AdminTutorsPage() {
     displayName: t.displayName,
     email: t.email,
     isActive: t.isActive,
+    isAdmin: t.roles.includes("admin"),
     linked: t.authUserId !== null,
     createdAt: t.createdAt.toISOString(),
   }));
@@ -39,7 +41,7 @@ export default async function AdminTutorsPage() {
           講師の招待・氏名変更・有効/無効を行います。削除はできません（無効化のみ）。
         </p>
       </div>
-      <TutorManager tutors={rows} />
+      <TutorManager tutors={rows} currentProfileId={profile.id} />
     </div>
   );
 }

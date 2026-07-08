@@ -175,6 +175,8 @@ src/
 
 - 認証は Supabase Auth、権限は `profiles.roles`（`user_role[]` = `tutor` / `admin` の配列）。
   `requireRole` は「指定ロールを**含むか**」(contains) で判定するため、`{admin,tutor}` の**兼任**が可能（#111）
+- 兼任の権限境界（無効化は全ロールに作用 / 自分自身は変更不可 / 最後の有効教室長保護は経路不問）と
+  兼任化 runbook は [`docs/design/dual-role.md`](./docs/design/dual-role.md)（#146 で仕様確定）
 - 各ロールのページは `src/app/{tutor,admin}/layout.tsx` 内の `requireRole` でガード
 - ロール不一致時は自分のホームへリダイレクト
 
