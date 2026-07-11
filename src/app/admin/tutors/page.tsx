@@ -1,4 +1,4 @@
-import { arrayContains, asc } from "drizzle-orm";
+import { and, arrayContains, asc, count, eq } from "drizzle-orm";
 import { requireRole } from "@/lib/auth";
 import { db } from "@/db/client";
 import { profiles } from "@/db/schema";
@@ -7,6 +7,16 @@ import { TutorManager } from "./tutor-manager";
 
 export default async function AdminTutorsPage() {
   const { profile } = await requireRole("admin");
+
+  // 兼任者 (admin かつ tutor) が「最後の有効な教室長」のとき、講師一覧からの
+  // 無効化を UI 側でも事前 disable するため、有効な教室長数を数える。
+  // (サーバー側は setProfileActive に集約されたガードで経路不問に保護済み)
+  const [{ value: activeAdminCount }] = await db
+    .select({ value: count() })
+    .from(profiles)
+    .where(
+      and(arrayContains(profiles.roles, ["admin"]), eq(profiles.isActive, true)),
+    );
 
   const tutors = await db
     .select({
@@ -41,7 +51,11 @@ export default async function AdminTutorsPage() {
           講師の招待・氏名変更・有効/無効を行います。削除はできません（無効化のみ）。
         </p>
       </div>
-      <TutorManager tutors={rows} currentProfileId={profile.id} />
+      <TutorManager
+        tutors={rows}
+        currentProfileId={profile.id}
+        activeAdminCount={activeAdminCount}
+      />
     </div>
   );
 }

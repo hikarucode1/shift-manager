@@ -31,9 +31,12 @@ const COLS = "grid-cols-[1.2fr_1.6fr_.9fr_1.3fr_.8fr]";
 export function TutorManager({
   tutors,
   currentProfileId,
+  activeAdminCount,
 }: {
   tutors: TutorRow[];
   currentProfileId: string;
+  /** 有効な教室長の総数 (兼任者の「最後の有効教室長」判定に使う) */
+  activeAdminCount: number;
 }) {
   const router = useRouter();
   const [isPending, startTransition] = useTransition();
@@ -234,6 +237,12 @@ export function TutorManager({
             ) : (
               filtered.map((t) => {
                 const editing = editingId === t.id;
+                const isSelf = t.id === currentProfileId;
+                // 兼任者が最後の有効な教室長のとき、無効化はサーバーで reject
+                // される。admin 一覧と同様に UI でも事前 disable する。
+                const wouldBeLastActive =
+                  t.isAdmin && t.isActive && activeAdminCount <= 1;
+                const disableToggle = isPending || isSelf || wouldBeLastActive;
                 return (
                   <div key={t.id} className="border-b last:border-b-0">
                     <div
@@ -257,6 +266,11 @@ export function TutorManager({
                         <span className="truncate font-semibold">
                           {t.displayName}
                         </span>
+                        {t.id === currentProfileId && (
+                          <Badge variant="outline" className="shrink-0">
+                            自分
+                          </Badge>
+                        )}
                         {t.isAdmin && (
                           <Badge variant="outline" className="shrink-0">
                             教室長兼任
@@ -376,11 +390,13 @@ export function TutorManager({
                             <Button
                               variant={t.isActive ? "outline" : "default"}
                               size="sm"
-                              disabled={isPending || t.id === currentProfileId}
+                              disabled={disableToggle}
                               title={
-                                t.id === currentProfileId
+                                isSelf
                                   ? "自分自身は変更できません"
-                                  : undefined
+                                  : wouldBeLastActive
+                                    ? "最後の有効な教室長は無効化できません"
+                                    : undefined
                               }
                               onClick={() =>
                                 run(
@@ -398,11 +414,13 @@ export function TutorManager({
                               {t.isActive ? "無効化" : "有効化"}
                             </Button>
                             <span className="text-xs text-muted-foreground">
-                              {t.id === currentProfileId
+                              {isSelf
                                 ? "自分自身の有効/無効は変更できません。"
-                                : t.isAdmin
-                                  ? "教室長兼任のため、無効化すると教室長としてもログインできなくなります（削除はできません）。"
-                                  : "無効化するとログインできなくなります（削除はできません）。"}
+                                : wouldBeLastActive
+                                  ? "最後の有効な教室長のため無効化できません（別の教室長を有効化してください）。"
+                                  : t.isAdmin
+                                    ? "教室長兼任のため、無効化すると教室長としてもログインできなくなります（削除はできません）。"
+                                    : "無効化するとログインできなくなります（削除はできません）。"}
                             </span>
                           </div>
                         )}
