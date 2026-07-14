@@ -27,30 +27,59 @@ export default async function FixedShiftPage() {
   const today = jstToday();
   const now = new Date();
 
-  // Issue #72 (β): 現在受付中の期 (regular_shift_periods) を先に取得する。
+  // Issue #72 (β): 現在受付中の期 (regular_shift_periods) を取得する。
   // submissionOpensAt <= now <= submissionDueAt の active な期を 1 件、
   // 期の開始日が新しい順 (= 直近の期) で取る。
   // #156: この期の開始日が「提出対象の起点 (effective_from)」を決めるため、
-  // 既存提出の復元クエリより前に解決しておく必要がある。
-  const activePeriodRows = await db
-    .select({
-      id: regularShiftPeriods.id,
-      label: regularShiftPeriods.label,
-      startDate: regularShiftPeriods.startDate,
-      endDate: regularShiftPeriods.endDate,
-      submissionOpensAt: regularShiftPeriods.submissionOpensAt,
-      submissionDueAt: regularShiftPeriods.submissionDueAt,
-    })
-    .from(regularShiftPeriods)
-    .where(
-      and(
-        eq(regularShiftPeriods.isArchived, false),
-        lte(regularShiftPeriods.submissionOpensAt, now),
-        gte(regularShiftPeriods.submissionDueAt, now),
+  // queryFrom に依存しない slots / confirmed とだけ並行取得し、queryFrom 依存の
+  // existing / submissionRows は activePeriod 解決後に別途投げる。
+  const [activePeriodRows, slotRows, confirmedRows] = await Promise.all([
+    db
+      .select({
+        id: regularShiftPeriods.id,
+        label: regularShiftPeriods.label,
+        startDate: regularShiftPeriods.startDate,
+        endDate: regularShiftPeriods.endDate,
+        submissionOpensAt: regularShiftPeriods.submissionOpensAt,
+        submissionDueAt: regularShiftPeriods.submissionDueAt,
+      })
+      .from(regularShiftPeriods)
+      .where(
+        and(
+          eq(regularShiftPeriods.isArchived, false),
+          lte(regularShiftPeriods.submissionOpensAt, now),
+          gte(regularShiftPeriods.submissionDueAt, now),
+        ),
+      )
+      .orderBy(desc(regularShiftPeriods.startDate))
+      .limit(1),
+    db
+      .select()
+      .from(slotDefinitions)
+      .where(eq(slotDefinitions.isActive, true))
+      .orderBy(asc(slotDefinitions.slotNumber)),
+    // Issue #74 (δ): 自分の確定済みレギュラー枠 (今日以降に有効な行のみ)。
+    // effective_from の早い順 + weekday 順で取り、UI で「期間ごとにグループ化して表示」する。
+    db
+      .select({
+        effectiveFrom: regularAssignments.effectiveFrom,
+        effectiveTo: regularAssignments.effectiveTo,
+        weekday: regularAssignments.weekday,
+        slotNumber: regularAssignments.slotNumber,
+      })
+      .from(regularAssignments)
+      .where(
+        and(
+          eq(regularAssignments.tutorId, profile.id),
+          gte(regularAssignments.effectiveTo, today),
+        ),
+      )
+      .orderBy(
+        asc(regularAssignments.effectiveFrom),
+        asc(regularAssignments.weekday),
+        asc(regularAssignments.slotNumber),
       ),
-    )
-    .orderBy(desc(regularShiftPeriods.startDate))
-    .limit(1);
+  ]);
   const activePeriod = activePeriodRows[0] ?? null;
 
   // #156: 既存提出/シフトの復元クエリ下限。通常は today だが、受付中の期の開始日が
@@ -60,12 +89,7 @@ export default async function FixedShiftPage() {
     today,
   });
 
-  const [slotRows, existing, submissionRows, confirmedRows] = await Promise.all([
-    db
-      .select()
-      .from(slotDefinitions)
-      .where(eq(slotDefinitions.isActive, true))
-      .orderBy(asc(slotDefinitions.slotNumber)),
+  const [existing, submissionRows] = await Promise.all([
     db
       .select({
         weekday: fixedShifts.weekday,
@@ -96,27 +120,6 @@ export default async function FixedShiftPage() {
           eq(fixedShiftSubmissions.tutorId, profile.id),
           gte(fixedShiftSubmissions.effectiveFrom, queryFrom),
         ),
-      ),
-    // Issue #74 (δ): 自分の確定済みレギュラー枠 (今日以降に有効な行のみ)。
-    // effective_from の早い順 + weekday 順で取り、UI で「期間ごとにグループ化して表示」する。
-    db
-      .select({
-        effectiveFrom: regularAssignments.effectiveFrom,
-        effectiveTo: regularAssignments.effectiveTo,
-        weekday: regularAssignments.weekday,
-        slotNumber: regularAssignments.slotNumber,
-      })
-      .from(regularAssignments)
-      .where(
-        and(
-          eq(regularAssignments.tutorId, profile.id),
-          gte(regularAssignments.effectiveTo, today),
-        ),
-      )
-      .orderBy(
-        asc(regularAssignments.effectiveFrom),
-        asc(regularAssignments.weekday),
-        asc(regularAssignments.slotNumber),
       ),
   ]);
 
