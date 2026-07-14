@@ -10,6 +10,7 @@ import {
   fixedShiftSubmissions,
   regularShiftPeriods,
 } from "@/db/schema";
+import { resolveServerEffectiveFrom } from "@/lib/regular-submission-target";
 
 // 日曜は教室休校 (Issue #56) のため入力対象外。サーバ側でも拒否する。
 // 'no' は「行不在」で表現するため Entry には含めない (Issue #55)。
@@ -66,6 +67,35 @@ export type RevertSubmissionResult =
  * 再探索する。期は日付単位 (start_date / end_date) なので、effective_from が
  * 範囲内の active な期 1 件 (期初降順、最新優先) を選ぶ。
  */
+/**
+ * Issue #156: 現在受付中の期 (submissionOpensAt <= now <= submissionDueAt) を
+ * 1 件 (期初降順) 返す。page.tsx の activePeriod 解決と同じ条件。
+ *
+ * 保存の起点 (effective_from) をサーバ側で期の開始日に強制するために使う。
+ * クライアントの effectiveFrom は disabled 属性のみでは改竄可能なので信頼せず、
+ * submitFixedShifts の B-2 と同じくサーバ導出に統一する。
+ */
+async function fetchActiveAcceptingPeriod(
+  now: Date,
+): Promise<{ id: string; startDate: string } | null> {
+  const rows = await db
+    .select({
+      id: regularShiftPeriods.id,
+      startDate: regularShiftPeriods.startDate,
+    })
+    .from(regularShiftPeriods)
+    .where(
+      and(
+        eq(regularShiftPeriods.isArchived, false),
+        lte(regularShiftPeriods.submissionOpensAt, now),
+        gte(regularShiftPeriods.submissionDueAt, now),
+      ),
+    )
+    .orderBy(desc(regularShiftPeriods.startDate))
+    .limit(1);
+  return rows[0] ?? null;
+}
+
 async function fetchPeriodWindow(
   effectiveFrom: string,
   now: Date,
@@ -107,7 +137,6 @@ export async function saveFixedShifts(
     return { ok: false, error: "入力値が正しくありません。" };
   }
   const {
-    effectiveFrom,
     effectiveTo = null,
     desiredDays = null,
     desiredSlots = null,
@@ -117,6 +146,26 @@ export async function saveFixedShifts(
 
   const { profile } = await requireRole("tutor");
   const now = new Date();
+
+  // Issue #156: 受付中の期があれば、起点はサーバ側で期の開始日に強制する。
+  // クライアント (disabled でも改竄可能) の effectiveFrom を信頼して期の途中日で
+  // 保存すると、復元 (page.tsx の期初厳密一致) から漏れた孤児行ができ、admin の
+  // submissionByTutor が「同月内で最大 effectiveFrom の行」を採る都合で表示と実体が
+  // ねじれる。起点を期初に固定すれば delete-forward で孤児も掃除される。
+  const activePeriod = await fetchActiveAcceptingPeriod(now);
+  const effectiveFrom = resolveServerEffectiveFrom({
+    activePeriodStartDate: activePeriod?.startDate ?? null,
+    clientEffectiveFrom: parsed.data.effectiveFrom,
+  });
+
+  // effectiveFrom をサーバ側で上書きした結果、任意入力の effectiveTo が起点より前に
+  // なる改竄ケースを弾く (通常 UI では min=effectiveFrom で防いでいる)。
+  if (effectiveTo != null && effectiveTo < effectiveFrom) {
+    return {
+      ok: false,
+      error: "適用終了日は適用開始日以降である必要があります。",
+    };
+  }
 
   // Issue #61 / R-1: 紐付き period の開始前・締切後は保存も拒否。これは period 側の
   // 確認なので transaction の外でやって問題ない (period の状態を保存中にロックする

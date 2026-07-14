@@ -11,6 +11,10 @@ import {
 import { DEFAULT_SLOTS, type InputWeekday } from "@/lib/shift-constants";
 import { jstToday } from "@/lib/week";
 import {
+  resolveSubmissionEffectiveFrom,
+  submissionQueryLowerBound,
+} from "@/lib/regular-submission-target";
+import {
   FixedShiftEditor,
   type FixedShiftSubmissionMeta,
 } from "./fixed-shift-editor";
@@ -23,46 +27,13 @@ export default async function FixedShiftPage() {
   const today = jstToday();
   const now = new Date();
 
-  const [slotRows, existing, submissionRows, activePeriodRows, confirmedRows] = await Promise.all([
-    db
-      .select()
-      .from(slotDefinitions)
-      .where(eq(slotDefinitions.isActive, true))
-      .orderBy(asc(slotDefinitions.slotNumber)),
-    db
-      .select({
-        weekday: fixedShifts.weekday,
-        slotNumber: fixedShifts.slotNumber,
-        effectiveFrom: fixedShifts.effectiveFrom,
-        availability: fixedShifts.availability,
-      })
-      .from(fixedShifts)
-      .where(
-        and(
-          eq(fixedShifts.tutorId, profile.id),
-          gte(fixedShifts.effectiveFrom, today),
-        ),
-      ),
-    db
-      .select({
-        effectiveFrom: fixedShiftSubmissions.effectiveFrom,
-        effectiveTo: fixedShiftSubmissions.effectiveTo,
-        desiredDays: fixedShiftSubmissions.desiredDays,
-        desiredSlots: fixedShiftSubmissions.desiredSlots,
-        note: fixedShiftSubmissions.note,
-        status: fixedShiftSubmissions.status,
-        submittedAt: fixedShiftSubmissions.submittedAt,
-      })
-      .from(fixedShiftSubmissions)
-      .where(
-        and(
-          eq(fixedShiftSubmissions.tutorId, profile.id),
-          gte(fixedShiftSubmissions.effectiveFrom, today),
-        ),
-      ),
-    // Issue #72 (β): 現在受付中の期 (regular_shift_periods) を取得。
-    // submissionOpensAt <= now <= submissionDueAt の active な期を 1 件、
-    // 期の開始日が新しい順 (= 直近の期) で取る。
+  // Issue #72 (β): 現在受付中の期 (regular_shift_periods) を取得する。
+  // submissionOpensAt <= now <= submissionDueAt の active な期を 1 件、
+  // 期の開始日が新しい順 (= 直近の期) で取る。
+  // #156: この期の開始日が「提出対象の起点 (effective_from)」を決めるため、
+  // queryFrom に依存しない slots / confirmed とだけ並行取得し、queryFrom 依存の
+  // existing / submissionRows は activePeriod 解決後に別途投げる。
+  const [activePeriodRows, slotRows, confirmedRows] = await Promise.all([
     db
       .select({
         id: regularShiftPeriods.id,
@@ -82,6 +53,11 @@ export default async function FixedShiftPage() {
       )
       .orderBy(desc(regularShiftPeriods.startDate))
       .limit(1),
+    db
+      .select()
+      .from(slotDefinitions)
+      .where(eq(slotDefinitions.isActive, true))
+      .orderBy(asc(slotDefinitions.slotNumber)),
     // Issue #74 (δ): 自分の確定済みレギュラー枠 (今日以降に有効な行のみ)。
     // effective_from の早い順 + weekday 順で取り、UI で「期間ごとにグループ化して表示」する。
     db
@@ -106,6 +82,47 @@ export default async function FixedShiftPage() {
   ]);
   const activePeriod = activePeriodRows[0] ?? null;
 
+  // #156: 既存提出/シフトの復元クエリ下限。通常は today だが、受付中の期の開始日が
+  // 過去日 (期の開始後の遅れ提出) の場合は期初まで下げて取りこぼしを防ぐ。
+  const queryFrom = submissionQueryLowerBound({
+    activePeriodStartDate: activePeriod?.startDate ?? null,
+    today,
+  });
+
+  const [existing, submissionRows] = await Promise.all([
+    db
+      .select({
+        weekday: fixedShifts.weekday,
+        slotNumber: fixedShifts.slotNumber,
+        effectiveFrom: fixedShifts.effectiveFrom,
+        availability: fixedShifts.availability,
+      })
+      .from(fixedShifts)
+      .where(
+        and(
+          eq(fixedShifts.tutorId, profile.id),
+          gte(fixedShifts.effectiveFrom, queryFrom),
+        ),
+      ),
+    db
+      .select({
+        effectiveFrom: fixedShiftSubmissions.effectiveFrom,
+        effectiveTo: fixedShiftSubmissions.effectiveTo,
+        desiredDays: fixedShiftSubmissions.desiredDays,
+        desiredSlots: fixedShiftSubmissions.desiredSlots,
+        note: fixedShiftSubmissions.note,
+        status: fixedShiftSubmissions.status,
+        submittedAt: fixedShiftSubmissions.submittedAt,
+      })
+      .from(fixedShiftSubmissions)
+      .where(
+        and(
+          eq(fixedShiftSubmissions.tutorId, profile.id),
+          gte(fixedShiftSubmissions.effectiveFrom, queryFrom),
+        ),
+      ),
+  ]);
+
   const slots =
     slotRows.length > 0
       ? slotRows.map((s) => ({
@@ -128,28 +145,35 @@ export default async function FixedShiftPage() {
       ? allEffectiveFromDates.reduce((acc, d) => (d > acc ? d : acc))
       : null;
 
+  // #156: 提出対象の起点 (effective_from)。受付中の期があれば必ずその期の開始日に
+  // 固定する。これを既存提出の復元キーと保存の起点 (initialEffectiveFrom) の両方に
+  // 使うことで、「表示は latestEffectiveFrom・保存は別の月」というズレを断つ。
+  const targetEffectiveFrom = resolveSubmissionEffectiveFrom({
+    activePeriodStartDate: activePeriod?.startDate ?? null,
+    latestEffectiveFrom,
+    today,
+  });
+
   // Issue #55/#56: sun は入力対象外、no は行不在で表現するため除外
-  const currentEntries = latestEffectiveFrom
-    ? existing
-        .filter(
-          (r) =>
-            r.effectiveFrom === latestEffectiveFrom &&
-            r.weekday !== "sun" &&
-            r.availability !== "no",
-        )
-        .map((r) => ({
-          weekday: r.weekday as InputWeekday,
-          slotNumber: r.slotNumber,
-          availability: r.availability as "yes" | "maybe",
-        }))
-    : [];
+  const currentEntries = existing
+    .filter(
+      (r) =>
+        r.effectiveFrom === targetEffectiveFrom &&
+        r.weekday !== "sun" &&
+        r.availability !== "no",
+    )
+    .map((r) => ({
+      weekday: r.weekday as InputWeekday,
+      slotNumber: r.slotNumber,
+      availability: r.availability as "yes" | "maybe",
+    }));
 
   // 提出単位メタ (Issue #57/#58/#59) は fixed_shift_submissions 側に全て寄せている。
   // 当初 effective_to は fixed_shifts 側だったが、entries 空 (全コマ不可) のとき
   // shifts 行が消えて終了日が復元できなくなる PR #65 レビュー指摘で submissions に移管。
-  const submissionRow = latestEffectiveFrom
-    ? submissionRows.find((r) => r.effectiveFrom === latestEffectiveFrom)
-    : undefined;
+  const submissionRow = submissionRows.find(
+    (r) => r.effectiveFrom === targetEffectiveFrom,
+  );
 
   // Issue #61 / PR #67 P1 #2: 締切超過は UI 上 frozen 表示に上書きする。
   // DB 状態 (draft/submitted) は触らないがフォームを完全 read-only にし、保存・提出ボタンを隠す。
@@ -157,15 +181,15 @@ export default async function FixedShiftPage() {
   // Issue #72 (β): 月別 period から期 (regular_shift_periods) へ参照先変更。
   // effective_from が範囲に含まれる active な期を検索する。
   let isPastDeadline = false;
-  if (submissionRow && latestEffectiveFrom) {
+  if (submissionRow) {
     const dueRows = await db
       .select({ submissionDueAt: regularShiftPeriods.submissionDueAt })
       .from(regularShiftPeriods)
       .where(
         and(
           eq(regularShiftPeriods.isArchived, false),
-          lte(regularShiftPeriods.startDate, latestEffectiveFrom),
-          gte(regularShiftPeriods.endDate, latestEffectiveFrom),
+          lte(regularShiftPeriods.startDate, targetEffectiveFrom),
+          gte(regularShiftPeriods.endDate, targetEffectiveFrom),
         ),
       )
       .limit(1);
@@ -290,15 +314,15 @@ export default async function FixedShiftPage() {
             slots={slots}
             initialEntries={currentEntries}
             /*
-              Issue #72 (β): 期単位提出。バナーに表示中の期を提出の起点に揃え、
-              save 側 (fetchPeriodWindow) が effective_from を含む期を検索して
-              period_id を解決できるよう、初期値は期の start_date とする。
-              既存提出ユーザは latestEffectiveFrom を尊重して編集を継続。
+              Issue #72 (β) / #156: 期単位提出。受付中の期があれば必ずその期の
+              開始日を起点にする (resolveSubmissionEffectiveFrom)。復元キーと同一の
+              targetEffectiveFrom を渡すことで、表示と保存先のズレを防ぐ。
+              期に紐づくときは periodLocked=true にして起点を編集不可にする。
             */
-            initialEffectiveFrom={
-              latestEffectiveFrom ?? activePeriod?.startDate ?? today
-            }
+            initialEffectiveFrom={targetEffectiveFrom}
             initialMeta={initialMeta}
+            periodLocked={activePeriod != null}
+            periodLabel={activePeriod?.label ?? null}
           />
         </CardContent>
       </Card>

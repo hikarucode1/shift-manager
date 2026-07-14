@@ -83,11 +83,19 @@ export function FixedShiftEditor({
   initialEntries,
   initialEffectiveFrom,
   initialMeta,
+  periodLocked = false,
+  periodLabel = null,
 }: {
   slots: Slot[];
   initialEntries: Entry[];
   initialEffectiveFrom: string;
   initialMeta: FixedShiftSubmissionMeta;
+  /**
+   * #156: 受付中の期に紐づく提出のとき true。適用開始日 (= 期の開始日) を
+   * 編集不可にし、提出が「どの期のものか」を明示する。
+   */
+  periodLocked?: boolean;
+  periodLabel?: string | null;
 }) {
   const [cellStates, setCellStates] = useState<Map<string, Availability>>(
     () => new Map(initialEntries.map((e) => [cellKey(e.weekday, e.slotNumber), e.availability])),
@@ -335,9 +343,13 @@ export function FixedShiftEditor({
               value={effectiveFrom}
               onChange={(e) => setEffectiveFrom(e.target.value)}
               className="w-44"
+              // #156: 期に紐づく提出では起点を期の開始日に固定 (改竄・取り違え防止)
+              disabled={periodLocked}
             />
             <p className="text-xs text-muted-foreground">
-              この日以降の週から新しい設定が適用されます。
+              {periodLocked
+                ? `${periodLabel ? `「${periodLabel}」` : "受付中の期"}の希望として、この開始日で保存されます。`
+                : "この日以降の週から新しい設定が適用されます。"}
             </p>
           </div>
           <div className="space-y-2">
