@@ -16,6 +16,8 @@ export type TutorRow = {
   displayName: string;
   email: string;
   isActive: boolean;
+  /** 教室長を兼任しているか (docs/design/dual-role.md) */
+  isAdmin: boolean;
   /** auth.users と連携済み (= ログイン可能) か */
   linked: boolean;
   createdAt: string;
@@ -26,7 +28,16 @@ type StatusFilter = "all" | "linked" | "unlinked";
 // 列幅: 氏名 / メール / 状態 / 担当科目 / 操作
 const COLS = "grid-cols-[1.2fr_1.6fr_.9fr_1.3fr_.8fr]";
 
-export function TutorManager({ tutors }: { tutors: TutorRow[] }) {
+export function TutorManager({
+  tutors,
+  currentProfileId,
+  activeAdminCount,
+}: {
+  tutors: TutorRow[];
+  currentProfileId: string;
+  /** 有効な教室長の総数 (兼任者の「最後の有効教室長」判定に使う) */
+  activeAdminCount: number;
+}) {
   const router = useRouter();
   const [isPending, startTransition] = useTransition();
   const [notice, setNotice] = useState<{
@@ -226,6 +237,12 @@ export function TutorManager({ tutors }: { tutors: TutorRow[] }) {
             ) : (
               filtered.map((t) => {
                 const editing = editingId === t.id;
+                const isSelf = t.id === currentProfileId;
+                // 兼任者が最後の有効な教室長のとき、無効化はサーバーで reject
+                // される。admin 一覧と同様に UI でも事前 disable する。
+                const wouldBeLastActive =
+                  t.isAdmin && t.isActive && activeAdminCount <= 1;
+                const disableToggle = isPending || isSelf || wouldBeLastActive;
                 return (
                   <div key={t.id} className="border-b last:border-b-0">
                     <div
@@ -249,6 +266,16 @@ export function TutorManager({ tutors }: { tutors: TutorRow[] }) {
                         <span className="truncate font-semibold">
                           {t.displayName}
                         </span>
+                        {t.id === currentProfileId && (
+                          <Badge variant="outline" className="shrink-0">
+                            自分
+                          </Badge>
+                        )}
+                        {t.isAdmin && (
+                          <Badge variant="outline" className="shrink-0">
+                            教室長兼任
+                          </Badge>
+                        )}
                       </div>
                       {/* メール */}
                       <div className="truncate px-3.5 py-2.5 text-muted-foreground">
@@ -363,7 +390,14 @@ export function TutorManager({ tutors }: { tutors: TutorRow[] }) {
                             <Button
                               variant={t.isActive ? "outline" : "default"}
                               size="sm"
-                              disabled={isPending}
+                              disabled={disableToggle}
+                              title={
+                                isSelf
+                                  ? "自分自身は変更できません"
+                                  : wouldBeLastActive
+                                    ? "最後の有効な教室長は無効化できません"
+                                    : undefined
+                              }
                               onClick={() =>
                                 run(
                                   () =>
@@ -380,7 +414,13 @@ export function TutorManager({ tutors }: { tutors: TutorRow[] }) {
                               {t.isActive ? "無効化" : "有効化"}
                             </Button>
                             <span className="text-xs text-muted-foreground">
-                              無効化するとログインできなくなります（削除はできません）。
+                              {isSelf
+                                ? "自分自身の有効/無効は変更できません。"
+                                : wouldBeLastActive
+                                  ? "最後の有効な教室長のため無効化できません（別の教室長を有効化してください）。"
+                                  : t.isAdmin
+                                    ? "教室長兼任のため、無効化すると教室長としてもログインできなくなります（削除はできません）。"
+                                    : "無効化するとログインできなくなります（削除はできません）。"}
                             </span>
                           </div>
                         )}

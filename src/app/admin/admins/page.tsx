@@ -13,6 +13,7 @@ export default async function AdminAdminsPage() {
       id: profiles.id,
       displayName: profiles.displayName,
       email: profiles.email,
+      roles: profiles.roles,
       isActive: profiles.isActive,
       createdAt: profiles.createdAt,
     })
@@ -25,6 +26,7 @@ export default async function AdminAdminsPage() {
     displayName: r.displayName,
     email: r.email,
     isActive: r.isActive,
+    isTutor: r.roles.includes("tutor"),
     createdAt: r.createdAt.toISOString(),
   }));
   const activeCount = adminRows.filter((r) => r.isActive).length;
