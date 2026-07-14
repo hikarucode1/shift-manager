@@ -10,6 +10,7 @@ import {
   fixedShiftSubmissions,
   regularShiftPeriods,
 } from "@/db/schema";
+import { resolveServerEffectiveFrom } from "@/lib/regular-submission-target";
 
 // 日曜は教室休校 (Issue #56) のため入力対象外。サーバ側でも拒否する。
 // 'no' は「行不在」で表現するため Entry には含めない (Issue #55)。
@@ -152,9 +153,10 @@ export async function saveFixedShifts(
   // submissionByTutor が「同月内で最大 effectiveFrom の行」を採る都合で表示と実体が
   // ねじれる。起点を期初に固定すれば delete-forward で孤児も掃除される。
   const activePeriod = await fetchActiveAcceptingPeriod(now);
-  const effectiveFrom = activePeriod
-    ? activePeriod.startDate
-    : parsed.data.effectiveFrom;
+  const effectiveFrom = resolveServerEffectiveFrom({
+    activePeriodStartDate: activePeriod?.startDate ?? null,
+    clientEffectiveFrom: parsed.data.effectiveFrom,
+  });
 
   // effectiveFrom をサーバ側で上書きした結果、任意入力の effectiveTo が起点より前に
   // なる改竄ケースを弾く (通常 UI では min=effectiveFrom で防いでいる)。

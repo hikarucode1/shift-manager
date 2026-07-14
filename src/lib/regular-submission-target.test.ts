@@ -1,5 +1,6 @@
 import { describe, it, expect } from "vitest";
 import {
+  resolveServerEffectiveFrom,
   resolveSubmissionEffectiveFrom,
   submissionQueryLowerBound,
 } from "./regular-submission-target";
@@ -55,6 +56,38 @@ describe("resolveSubmissionEffectiveFrom", () => {
         today: "2026-07-14",
       }),
     ).toBe("2026-07-14");
+  });
+});
+
+describe("resolveServerEffectiveFrom", () => {
+  it("受付中の期があれば、クライアント指定を無視して期の開始日を強制する (改竄防止)", () => {
+    // クライアントが disabled を迂回して7月の途中日を送っても、10月期が受付中なら
+    // 起点は 2026-10-01 に強制される。
+    expect(
+      resolveServerEffectiveFrom({
+        activePeriodStartDate: "2026-10-01",
+        clientEffectiveFrom: "2026-07-14",
+      }),
+    ).toBe("2026-10-01");
+  });
+
+  it("受付中の期が無ければクライアント指定を使う (アドホック提出)", () => {
+    expect(
+      resolveServerEffectiveFrom({
+        activePeriodStartDate: null,
+        clientEffectiveFrom: "2026-07-14",
+      }),
+    ).toBe("2026-07-14");
+  });
+
+  it("resolveSubmissionEffectiveFrom と違い latestEffectiveFrom フォールバックは持たない", () => {
+    // 期があれば必ず期初。無ければクライアント指定そのまま (今日への暗黙フォールバック無し)。
+    expect(
+      resolveServerEffectiveFrom({
+        activePeriodStartDate: "2026-10-01",
+        clientEffectiveFrom: "2026-10-15",
+      }),
+    ).toBe("2026-10-01");
   });
 });
 

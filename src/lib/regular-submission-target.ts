@@ -31,6 +31,25 @@ export function resolveSubmissionEffectiveFrom(params: {
 }
 
 /**
+ * Issue #156 (#160 review): 保存時 (saveFixedShifts) の起点をサーバ側で決める。
+ *
+ * 受付中の期があれば、その開始日を**サーバ権威で強制**する (クライアントの
+ * effectiveFrom は disabled 属性のみでは改竄可能なので信頼しない)。受付中の期が
+ * 無い場合のみ、クライアント指定の effectiveFrom を使う (アドホック提出)。
+ *
+ * resolveSubmissionEffectiveFrom (表示・復元用) と対になるが、こちらは
+ * latestEffectiveFrom フォールバックを持たない: 保存はその瞬間に受付中の期に
+ * 帰属させるか、明示指定のアドホックか、の二択で十分なため。
+ */
+export function resolveServerEffectiveFrom(params: {
+  activePeriodStartDate: string | null;
+  clientEffectiveFrom: string;
+}): string {
+  const { activePeriodStartDate, clientEffectiveFrom } = params;
+  return activePeriodStartDate ?? clientEffectiveFrom;
+}
+
+/**
  * 既存提出/シフトを復元するためのクエリ下限日 (inclusive)。
  *
  * 通常は today だが、受付中の期の開始日が過去日 (= 期の開始後に遅れて提出/修正する
