@@ -14,7 +14,11 @@ import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
 import { cn } from "@/lib/utils";
 import { shortDate } from "@/lib/week";
-import { saveTrainingNote, setTrainingSlot } from "./actions";
+import {
+  saveTrainingNote,
+  setTrainingSlot,
+  setTrainingSlotsBulk,
+} from "./actions";
 
 /** 曜日ラベルから色クラス (土=青 / 日=赤 / 平日=既定) を返す */
 function weekdayColor(weekdayLabel: string): string {
@@ -130,6 +134,55 @@ export function TrainingEditor({ data }: TrainingEditorProps) {
   // リクエスト中のコマ (連打ガード用)
   const pendingSlots = useRef<Set<string>>(new Set());
 
+  /**
+   * 1 日分の一括 ON/OFF (#159)。全コマ選択済みなら解除、そうでなければ全選択。
+   * 単一トグルと同じ楽観的更新 + 失敗時ロールバック。実行中はその日の
+   * 全キーを pendingSlots に入れ、単一タップとの並走を防ぐ。
+   */
+  const toggleDay = useCallback(
+    async (date: string) => {
+      if (!editable) return;
+      const dayKeys = slots.map((s) => key(date, s.slotNumber));
+      if (dayKeys.some((k) => pendingSlots.current.has(k))) return;
+      const turningOn = !dayKeys.every((k) => selected.has(k));
+
+      // ロールバック用にその日の操作前状態を保持
+      const prevDay = new Map(dayKeys.map((k) => [k, selected.has(k)]));
+      dayKeys.forEach((k) => pendingSlots.current.add(k));
+      setSelected((prev) => {
+        const next = new Set(prev);
+        dayKeys.forEach((k) => {
+          if (turningOn) next.add(k);
+          else next.delete(k);
+        });
+        return next;
+      });
+      setSavingCount((c) => c + 1);
+
+      const res = await setTrainingSlotsBulk({
+        periodId: period.id,
+        date,
+        slotNumbers: slots.map((s) => s.slotNumber),
+        on: turningOn,
+      }).catch(toFailedResult);
+      dayKeys.forEach((k) => pendingSlots.current.delete(k));
+      setSavingCount((c) => c - 1);
+
+      if (!res.ok) {
+        setSelected((prev) => {
+          const next = new Set(prev);
+          prevDay.forEach((was, k) => {
+            if (was) next.add(k);
+            else next.delete(k);
+          });
+          return next;
+        });
+        setNotice({ type: "error", text: res.error });
+      }
+    },
+    [editable, period.id, selected, slots],
+  );
+
   // 備考のデバウンス保存
   const noteTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const pendingNote = useRef<string | null>(null);
@@ -217,6 +270,9 @@ export function TrainingEditor({ data }: TrainingEditorProps) {
           const daySelected = slots.some((s) =>
             selected.has(key(d.date, s.slotNumber)),
           );
+          const dayAllSelected = slots.every((s) =>
+            selected.has(key(d.date, s.slotNumber)),
+          );
           return (
             <div key={d.date} className="rounded-xl border p-3">
               <div className="mb-2.5 flex items-center justify-between">
@@ -228,15 +284,29 @@ export function TrainingEditor({ data }: TrainingEditorProps) {
                 >
                   {shortDate(d.date)}（{d.weekdayLabel}）
                 </span>
-                {daySelected ? (
-                  <Badge className="border-transparent bg-green-50 text-green-700 hover:bg-green-50">
-                    選択済
-                  </Badge>
-                ) : (
-                  <Badge className="border-transparent bg-accent/15 text-accent hover:bg-accent/15">
-                    未選択
-                  </Badge>
-                )}
+                <div className="flex items-center gap-2">
+                  {daySelected ? (
+                    <Badge className="border-transparent bg-green-50 text-green-700 hover:bg-green-50">
+                      選択済
+                    </Badge>
+                  ) : (
+                    <Badge className="border-transparent bg-accent/15 text-accent hover:bg-accent/15">
+                      未選択
+                    </Badge>
+                  )}
+                  {/* #159: 1 タップでその日の全コマを選択/解除 */}
+                  {editable && (
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      className="h-9 px-3 text-xs"
+                      onClick={() => toggleDay(d.date)}
+                    >
+                      {dayAllSelected ? "全解除" : "全部選択"}
+                    </Button>
+                  )}
+                </div>
               </div>
               {/* #158: タップ領域 44px 以上 + 誤タップしにくい間隔の grid */}
               <div className="grid grid-cols-4 gap-2">

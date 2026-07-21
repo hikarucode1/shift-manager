@@ -1,7 +1,7 @@
 "use server";
 
 import { z } from "zod";
-import { and, eq } from "drizzle-orm";
+import { and, eq, inArray } from "drizzle-orm";
 import { requireRole } from "@/lib/auth";
 import { db } from "@/db/client";
 import { trainingPeriodNotes, trainingPreferences } from "@/db/schema";
@@ -59,6 +59,73 @@ export async function setTrainingSlot(input: unknown): Promise<ActionResult> {
           eq(trainingPreferences.tutorId, profile.id),
           eq(trainingPreferences.date, date),
           eq(trainingPreferences.slotNumber, slotNumber),
+        ),
+      );
+  }
+
+  return { ok: true };
+}
+
+const BulkSlotInput = z.object({
+  periodId: z.string().uuid(),
+  date: z.string().refine(isValidIsoDate, "日付が不正です。"),
+  slotNumbers: z.array(z.number().int().min(1).max(20)).min(1).max(20),
+  on: z.boolean(),
+});
+
+/**
+ * 1 日分のコマ希望をまとめて ON/OFF (#159)。
+ * setTrainingSlot の逐次呼び出しを避け、1 リクエストで冪等に適用する。
+ */
+export async function setTrainingSlotsBulk(
+  input: unknown,
+): Promise<ActionResult> {
+  const { profile } = await requireRole("tutor");
+
+  const parsed = BulkSlotInput.safeParse(input);
+  if (!parsed.success) return { ok: false, error: "入力が不正です。" };
+  const { periodId, date, slotNumbers, on } = parsed.data;
+
+  const gate = await assertTrainingEditable(periodId);
+  if (!gate.ok) return { ok: false, error: gate.reason };
+
+  // クライアントを信用しない: setTrainingSlot と同じサーバー側検証
+  if (date < gate.startDate || date > gate.endDate) {
+    return { ok: false, error: "対象期間外の日付です。" };
+  }
+  const validSlots = await validSlotNumbers();
+  if (!slotNumbers.every((n) => validSlots.has(n))) {
+    return { ok: false, error: "存在しないコマです。" };
+  }
+
+  if (on) {
+    await db
+      .insert(trainingPreferences)
+      .values(
+        slotNumbers.map((slotNumber) => ({
+          periodId,
+          tutorId: profile.id,
+          date,
+          slotNumber,
+        })),
+      )
+      .onConflictDoNothing({
+        target: [
+          trainingPreferences.periodId,
+          trainingPreferences.tutorId,
+          trainingPreferences.date,
+          trainingPreferences.slotNumber,
+        ],
+      });
+  } else {
+    await db
+      .delete(trainingPreferences)
+      .where(
+        and(
+          eq(trainingPreferences.periodId, periodId),
+          eq(trainingPreferences.tutorId, profile.id),
+          eq(trainingPreferences.date, date),
+          inArray(trainingPreferences.slotNumber, slotNumbers),
         ),
       );
   }
