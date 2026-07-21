@@ -53,6 +53,18 @@ export type TrainingEditorProps = {
 
 const key = (date: string, slot: number) => `${date}|${slot}`;
 
+/**
+ * action の reject (通信断・サーバー障害など) を通知用の失敗結果へ変換する。
+ * 原因はユーザーには区別できないため文言は中立にし、診断用に console へ残す。
+ */
+function toFailedResult(e: unknown): { ok: false; error: string } {
+  console.error("training action failed:", e);
+  return {
+    ok: false,
+    error: "保存に失敗しました。通信状況を確認して再度お試しください。",
+  };
+}
+
 export function TrainingEditor({ data }: TrainingEditorProps) {
   const { period, slots, days } = data;
   const editable = period.editable;
@@ -76,6 +88,10 @@ export function TrainingEditor({ data }: TrainingEditorProps) {
     async (date: string, slot: number) => {
       if (!editable) return;
       const k = key(date, slot);
+      // 連打ガード: 同一コマの先行リクエストが完了するまで無視する。
+      // on/off が並走すると適用順が保証されず UI と DB がズレるため。
+      if (pendingSlots.current.has(k)) return;
+      pendingSlots.current.add(k);
       const turningOn = !selected.has(k);
 
       // 楽観的更新
@@ -93,10 +109,8 @@ export function TrainingEditor({ data }: TrainingEditorProps) {
         date,
         slotNumber: slot,
         on: turningOn,
-      }).catch(() => ({
-        ok: false as const,
-        error: "通信に失敗しました。電波状況を確認して再度お試しください。",
-      }));
+      }).catch(toFailedResult);
+      pendingSlots.current.delete(k);
       setSavingCount((c) => c - 1);
 
       if (!res.ok) {
@@ -113,6 +127,9 @@ export function TrainingEditor({ data }: TrainingEditorProps) {
     [editable, period.id, selected],
   );
 
+  // リクエスト中のコマ (連打ガード用)
+  const pendingSlots = useRef<Set<string>>(new Set());
+
   // 備考のデバウンス保存
   const noteTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const pendingNote = useRef<string | null>(null);
@@ -128,12 +145,11 @@ export function TrainingEditor({ data }: TrainingEditorProps) {
     pendingNote.current = null;
     if (mounted.current) setSavingCount((c) => c + 1);
     const res = await saveTrainingNote({ periodId: period.id, note: v }).catch(
-      () => ({
-        ok: false as const,
-        error: "通信に失敗しました。電波状況を確認して再度お試しください。",
-      }),
+      toFailedResult,
     );
-    if (!mounted.current) return; // unmount 後は state 更新しない (保存自体は完了)
+    // unmount 後は state 更新できない (失敗していても通知は出せない。
+    // 失敗内容は toFailedResult が console に残す)
+    if (!mounted.current) return;
     setSavingCount((c) => c - 1);
     if (!res.ok) setNotice({ type: "error", text: res.error });
     else setNotice({ type: "ok", text: "保存しました" });
@@ -146,10 +162,11 @@ export function TrainingEditor({ data }: TrainingEditorProps) {
       mounted.current = false;
       if (noteTimer.current) clearTimeout(noteTimer.current);
       if (pendingNote.current !== null) {
+        // unmount 後は通知できないため、失敗は console 記録のみ
         void saveTrainingNote({
           periodId: period.id,
           note: pendingNote.current,
-        });
+        }).catch(toFailedResult);
       }
     };
   }, [period.id]);
@@ -234,7 +251,7 @@ export function TrainingEditor({ data }: TrainingEditorProps) {
                       title={`${s.startTime}〜${s.endTime}`}
                       aria-pressed={on}
                       className={cn(
-                        "min-h-11 rounded-md border text-sm font-medium transition-colors",
+                        "min-h-11 rounded-md border px-1 text-sm font-medium transition-colors",
                         on
                           ? "border-accent bg-accent text-accent-foreground"
                           : "border-input bg-background hover:bg-muted",
