@@ -13,6 +13,11 @@ import { cn } from "@/lib/utils";
  * 下部タブは 4 つ (デザイン準拠)。「申請」タブは欠勤/交代/代講をまとめた active
  * 範囲とし、ランディングは /tutor/absences。
  */
+/** SegmentedNav と同じ境界付き prefix 判定 (/tutor/swaps-history 等の誤マッチを防ぐ) */
+function underPath(pathname: string | null, href: string): boolean {
+  return pathname === href || (pathname?.startsWith(href + "/") ?? false);
+}
+
 const TABS: {
   href: string;
   label: string;
@@ -30,21 +35,21 @@ const TABS: {
     href: "/tutor/fixed-shifts",
     label: "シフト",
     icon: CalendarDays,
-    match: (p) => p?.startsWith("/tutor/fixed-shifts") ?? false,
+    match: (p) => underPath(p, "/tutor/fixed-shifts"),
   },
   {
     href: "/tutor/training",
     label: "希望提出",
     icon: ClipboardList,
-    match: (p) => p?.startsWith("/tutor/training") ?? false,
+    match: (p) => underPath(p, "/tutor/training"),
   },
   {
     href: "/tutor/absences",
     label: "申請",
     icon: Inbox,
     match: (p) =>
-      ["/tutor/absences", "/tutor/swaps", "/tutor/open-swaps"].some(
-        (r) => p?.startsWith(r) ?? false,
+      ["/tutor/absences", "/tutor/swaps", "/tutor/open-swaps"].some((r) =>
+        underPath(p, r),
       ),
   },
 ];

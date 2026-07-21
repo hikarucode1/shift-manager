@@ -45,8 +45,8 @@ export function TutorShell({
         </div>
       </header>
 
-      {/* pb-20 で固定下部タブ分の余白を確保 */}
-      <main className="mx-auto w-full max-w-screen-sm flex-1 p-4 pb-20">
+      {/* 固定下部タブ分の余白: タブ実高 + セーフエリア (ホームインジケータ) を確保 */}
+      <main className="mx-auto w-full max-w-screen-sm flex-1 p-4 pb-[calc(5rem+env(safe-area-inset-bottom))]">
         {children}
       </main>
 
