@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { cn } from "@/lib/utils";
+import { cn, underPath } from "@/lib/utils";
 
 export type SegmentedNavItem = { href: string; label: string };
 
@@ -16,13 +16,15 @@ export function SegmentedNav({ items }: { items: SegmentedNavItem[] }) {
   return (
     <nav className="flex gap-1 overflow-x-auto rounded-lg bg-muted p-1">
       {items.map((it) => {
-        const active =
-          pathname === it.href || (pathname?.startsWith(it.href + "/") ?? false);
+        const active = underPath(pathname, it.href);
         return (
           <Link
             key={it.href}
             href={it.href}
-            aria-current={active ? "page" : undefined}
+            // 配下ページ一致 (現在ページ ≠ href) は "page" だと SR に誤案内になる
+            aria-current={
+              !active ? undefined : pathname === it.href ? "page" : "true"
+            }
             className={cn(
               "flex-1 whitespace-nowrap rounded-md px-3 py-1.5 text-center text-sm transition-colors",
               active

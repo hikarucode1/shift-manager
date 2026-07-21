@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { cn } from "@/lib/utils";
+import { cn, underPath } from "@/lib/utils";
 
 /**
  * 教室長 (PC) 用トップナビ (#122, #163)。
@@ -16,7 +16,7 @@ import { cn } from "@/lib/utils";
 const startsWithAny =
   (roots: string[]) =>
   (p: string | null): boolean =>
-    roots.some((r) => p === r || (p?.startsWith(r + "/") ?? false));
+    roots.some((r) => underPath(p, r));
 
 const NAV: {
   href: string;
@@ -57,13 +57,15 @@ export function AdminTopNav() {
       {NAV.map((item) => {
         const active = item.match
           ? item.match(pathname)
-          : pathname === item.href ||
-            (pathname?.startsWith(item.href + "/") ?? false);
+          : underPath(pathname, item.href);
         return (
           <Link
             key={item.href}
             href={item.href}
-            aria-current={active ? "page" : undefined}
+            // グループ一致 (現在ページ ≠ href) は "page" だと SR に誤案内になる
+            aria-current={
+              !active ? undefined : pathname === item.href ? "page" : "true"
+            }
             className={cn(
               "rounded-md px-3 py-1.5 text-sm whitespace-nowrap transition-colors",
               active
