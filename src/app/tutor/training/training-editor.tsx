@@ -87,12 +87,16 @@ export function TrainingEditor({ data }: TrainingEditorProps) {
       });
       setSavingCount((c) => c + 1);
 
+      // action が例外で落ちた場合 (通信断など) もロールバック + エラー表示する
       const res = await setTrainingSlot({
         periodId: period.id,
         date,
         slotNumber: slot,
         on: turningOn,
-      });
+      }).catch(() => ({
+        ok: false as const,
+        error: "通信に失敗しました。電波状況を確認して再度お試しください。",
+      }));
       setSavingCount((c) => c - 1);
 
       if (!res.ok) {
@@ -123,7 +127,12 @@ export function TrainingEditor({ data }: TrainingEditorProps) {
     const v = pendingNote.current;
     pendingNote.current = null;
     if (mounted.current) setSavingCount((c) => c + 1);
-    const res = await saveTrainingNote({ periodId: period.id, note: v });
+    const res = await saveTrainingNote({ periodId: period.id, note: v }).catch(
+      () => ({
+        ok: false as const,
+        error: "通信に失敗しました。電波状況を確認して再度お試しください。",
+      }),
+    );
     if (!mounted.current) return; // unmount 後は state 更新しない (保存自体は完了)
     setSavingCount((c) => c - 1);
     if (!res.ok) setNotice({ type: "error", text: res.error });
@@ -177,6 +186,14 @@ export function TrainingEditor({ data }: TrainingEditorProps) {
         </p>
       )}
 
+      {/* 操作案内 (#157): 詳細画面には何をする画面かの説明が無かった */}
+      {editable && (
+        <p className="text-sm text-muted-foreground">
+          出勤できるコマをタップして選んでください。タップするたびに選択/解除が
+          切り替わり、自動で保存されます。締切までは何度でも変更できます。
+        </p>
+      )}
+
       {/* 日付カードの縦リスト */}
       <div className="space-y-2">
         {days.map((d) => {
@@ -204,7 +221,8 @@ export function TrainingEditor({ data }: TrainingEditorProps) {
                   </Badge>
                 )}
               </div>
-              <div className="flex flex-wrap gap-1.5">
+              {/* #158: タップ領域 44px 以上 + 誤タップしにくい間隔の grid */}
+              <div className="grid grid-cols-4 gap-2">
                 {slots.map((s) => {
                   const on = selected.has(key(d.date, s.slotNumber));
                   return (
@@ -216,7 +234,7 @@ export function TrainingEditor({ data }: TrainingEditorProps) {
                       title={`${s.startTime}〜${s.endTime}`}
                       aria-pressed={on}
                       className={cn(
-                        "rounded-md border px-2.5 py-1 text-xs font-medium transition-colors",
+                        "min-h-11 rounded-md border text-sm font-medium transition-colors",
                         on
                           ? "border-accent bg-accent text-accent-foreground"
                           : "border-input bg-background hover:bg-muted",
