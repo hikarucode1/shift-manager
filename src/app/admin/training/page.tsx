@@ -10,6 +10,7 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import { TrainingHeatmap } from "./training-heatmap";
+import { NotifyPublicationButton } from "./notify-publication-button";
 
 export default async function AdminTrainingPage({
   searchParams,
@@ -36,6 +37,9 @@ export default async function AdminTrainingPage({
               {data.period.startDate} 〜 {data.period.endDate} ／ 提出{" "}
               {data.submittedTutorCount} / {data.totalTutorCount} 名
             </p>
+            <div className="mt-2">
+              <NotifyPublicationButton periodId={period} />
+            </div>
           </div>
           <TrainingHeatmap data={data} />
         </div>

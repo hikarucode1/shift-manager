@@ -4,6 +4,7 @@ import { z } from "zod";
 import { and, eq, sql } from "drizzle-orm";
 import { revalidatePath } from "next/cache";
 import { requireRole } from "@/lib/auth";
+import { notify } from "@/lib/notifications";
 import { db } from "@/db/client";
 import { courseConfirmations, periods } from "@/db/schema";
 
@@ -133,4 +134,51 @@ export async function saveCourseConfirmations(
   revalidatePath(`/admin/training/${periodId}`);
   revalidatePath("/tutor/training");
   return { ok: true, inserted: dedupedTutors.length };
+}
+
+const NotifyInput = z.object({ periodId: z.string().uuid() });
+
+/**
+ * Issue #155: 期の確定シフト公開を、確定済みの全講師へアプリ内通知する。
+ * saveCourseConfirmations はセル単位で何度も呼ばれるため自動通知にはせず、
+ * 教室長が確定作業を終えたタイミングで明示的にこのアクションを呼ぶ。
+ */
+export async function notifyCoursePublication(
+  input: unknown,
+): Promise<{ ok: true; notified: number } | { ok: false; error: string }> {
+  const parsed = NotifyInput.safeParse(input);
+  if (!parsed.success) {
+    return { ok: false, error: "入力値が正しくありません。" };
+  }
+  const { periodId } = parsed.data;
+  await requireRole("admin");
+
+  const periodRows = await db
+    .select({ name: periods.name })
+    .from(periods)
+    .where(eq(periods.id, periodId))
+    .limit(1);
+  if (!periodRows[0]) {
+    return { ok: false, error: "対象の講習期間が見つかりません。" };
+  }
+
+  const rows = await db
+    .selectDistinct({ tutorId: courseConfirmations.tutorId })
+    .from(courseConfirmations)
+    .where(eq(courseConfirmations.periodId, periodId));
+  if (rows.length === 0) {
+    return { ok: false, error: "確定済みの講師がいません。" };
+  }
+
+  await notify(
+    rows.map((r) => r.tutorId),
+    {
+      type: "shifts_published",
+      title: `「${periodRows[0].name}」の確定シフトが公開されました`,
+      body: "確定シフトを確認してください。",
+      href: "/tutor/training",
+    },
+  );
+
+  return { ok: true, notified: rows.length };
 }

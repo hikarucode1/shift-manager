@@ -4,6 +4,7 @@ import { revalidatePath } from "next/cache";
 import { z } from "zod";
 import { and, eq, inArray, isNull } from "drizzle-orm";
 import { requireRole } from "@/lib/auth";
+import { notify } from "@/lib/notifications";
 import { db } from "@/db/client";
 import {
   absenceRequests,
@@ -74,17 +75,37 @@ export async function decideSwapRequest(
           eq(swapRequests.status, "pending"),
         ),
       )
-      .returning({ id: swapRequests.id });
+      .returning({
+        id: swapRequests.id,
+        requesterId: swapRequests.requesterId,
+        date: swapRequests.date,
+        slotNumber: swapRequests.slotNumber,
+      });
     if (updated.length === 0) {
       return { ok: false, error: "処理できませんでした（対応済みの可能性）。" };
     }
+    await notify([updated[0].requesterId], {
+      type: "swap_result",
+      title: "交代・代講申請が却下されました",
+      body: `対象: ${updated[0].date} ${updated[0].slotNumber}限 ／ ${data.decisionNote}`,
+      href: "/tutor/swaps",
+    });
     revalidateAll();
     return { ok: true };
   }
 
   // ---- 承認 ----
+  // 通知はトランザクション確定後に送るため、tx の戻り値で情報を持ち出す
+  let approvedInfo: {
+    requesterId: string;
+    applicantId: string;
+    requesterName: string;
+    applicantName: string;
+    date: string;
+    slotNumber: number;
+  } | null = null;
   try {
-    await db.transaction(async (tx) => {
+    approvedInfo = await db.transaction(async (tx) => {
       const reqRows = await tx
         .select({
           requesterId: swapRequests.requesterId,
@@ -199,6 +220,15 @@ export async function decideSwapRequest(
             inArray(absenceRequests.status, ["pending", "approved"]),
           ),
         );
+
+      return {
+        requesterId: req.requesterId,
+        applicantId,
+        requesterName: nameOf(req.requesterId),
+        applicantName: nameOf(applicantId),
+        date: req.date,
+        slotNumber: req.slotNumber,
+      };
     });
   } catch (e) {
     console.error("decideSwapRequest approve failed", e);
@@ -210,6 +240,22 @@ export async function decideSwapRequest(
       ok: false,
       error: "承認に失敗しました。時間をおいて再度お試しください。",
     };
+  }
+
+  if (approvedInfo) {
+    const a = approvedInfo;
+    await notify([a.requesterId], {
+      type: "swap_result",
+      title: "交代・代講申請が承認されました",
+      body: `対象: ${a.date} ${a.slotNumber}限 ／ 代講: ${a.applicantName}さん`,
+      href: "/tutor/swaps",
+    });
+    await notify([a.applicantId], {
+      type: "swap_result",
+      title: "代講が確定しました",
+      body: `対象: ${a.date} ${a.slotNumber}限 (${a.requesterName}さんの代講)`,
+      href: "/tutor",
+    });
   }
 
   revalidateAll();
