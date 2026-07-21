@@ -4,9 +4,9 @@ import { z } from "zod";
 import { and, eq, sql } from "drizzle-orm";
 import { revalidatePath } from "next/cache";
 import { requireRole } from "@/lib/auth";
-import { notify } from "@/lib/notifications";
+import { insertNotifications } from "@/lib/notifications";
 import { db } from "@/db/client";
-import { courseConfirmations, periods } from "@/db/schema";
+import { courseConfirmations, notifications, periods } from "@/db/schema";
 
 type ActionResult =
   | { ok: true; inserted: number }
@@ -153,32 +153,61 @@ export async function notifyCoursePublication(
   const { periodId } = parsed.data;
   await requireRole("admin");
 
-  const periodRows = await db
-    .select({ name: periods.name })
-    .from(periods)
-    .where(eq(periods.id, periodId))
-    .limit(1);
+  const [periodRows, rows] = await Promise.all([
+    db
+      .select({ name: periods.name })
+      .from(periods)
+      .where(eq(periods.id, periodId))
+      .limit(1),
+    db
+      .selectDistinct({ tutorId: courseConfirmations.tutorId })
+      .from(courseConfirmations)
+      .where(eq(courseConfirmations.periodId, periodId)),
+  ]);
   if (!periodRows[0]) {
     return { ok: false, error: "対象の講習期間が見つかりません。" };
   }
-
-  const rows = await db
-    .selectDistinct({ tutorId: courseConfirmations.tutorId })
-    .from(courseConfirmations)
-    .where(eq(courseConfirmations.periodId, periodId));
   if (rows.length === 0) {
     return { ok: false, error: "確定済みの講師がいません。" };
   }
 
-  await notify(
-    rows.map((r) => r.tutorId),
-    {
+  const title = `「${periodRows[0].name}」の確定シフトが公開されました`;
+
+  // 重複送信ガード: 同タイトルの公開通知を既に受け取った講師は除外する。
+  // ボタン再押下やセル追加後の再通知では未通知の講師にだけ届く。
+  // (期名を変更した場合は別通知として全員に再送される点は許容)
+  const notifiedRows = await db
+    .selectDistinct({ recipientId: notifications.recipientId })
+    .from(notifications)
+    .where(
+      and(
+        eq(notifications.type, "shifts_published"),
+        eq(notifications.title, title),
+      ),
+    );
+  const alreadyNotified = new Set(notifiedRows.map((r) => r.recipientId));
+  const targets = rows
+    .map((r) => r.tutorId)
+    .filter((id) => !alreadyNotified.has(id));
+  if (targets.length === 0) {
+    return { ok: false, error: "確定済みの全講師に通知済みです。" };
+  }
+
+  // この action は通知の送信自体が目的のため、失敗を握りつぶさず結果を返す
+  try {
+    await insertNotifications(targets, {
       type: "shifts_published",
-      title: `「${periodRows[0].name}」の確定シフトが公開されました`,
+      title,
       body: "確定シフトを確認してください。",
       href: "/tutor/training",
-    },
-  );
+    });
+  } catch (e) {
+    console.error("notifyCoursePublication failed:", e);
+    return {
+      ok: false,
+      error: "通知の送信に失敗しました。時間をおいて再度お試しください。",
+    };
+  }
 
-  return { ok: true, notified: rows.length };
+  return { ok: true, notified: targets.length };
 }

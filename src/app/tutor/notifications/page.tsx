@@ -6,11 +6,10 @@ import { NotificationList } from "./notification-list";
 export default async function TutorNotificationsPage() {
   const { profile } = await requireRole("tutor");
   const items = await getNotifications(profile.id);
-  const unreadIds = items.filter((n) => !n.readAt).map((n) => n.id);
 
   return (
     <div className="space-y-5">
-      <MarkReadOnMount ids={unreadIds} />
+      <MarkReadOnMount />
 
       {/* ネイビー hero (#130/#131 と統一) */}
       <section className="rounded-xl bg-primary p-4 text-primary-foreground">

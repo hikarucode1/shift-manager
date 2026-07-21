@@ -244,18 +244,20 @@ export async function decideSwapRequest(
 
   if (approvedInfo) {
     const a = approvedInfo;
-    await notify([a.requesterId], {
-      type: "swap_result",
-      title: "交代・代講申請が承認されました",
-      body: `対象: ${a.date} ${a.slotNumber}限 ／ 代講: ${a.applicantName}さん`,
-      href: "/tutor/swaps",
-    });
-    await notify([a.applicantId], {
-      type: "swap_result",
-      title: "代講が確定しました",
-      body: `対象: ${a.date} ${a.slotNumber}限 (${a.requesterName}さんの代講)`,
-      href: "/tutor",
-    });
+    await Promise.all([
+      notify([a.requesterId], {
+        type: "swap_result",
+        title: "交代・代講申請が承認されました",
+        body: `対象: ${a.date} ${a.slotNumber}限 ／ 代講: ${a.applicantName}さん`,
+        href: "/tutor/swaps",
+      }),
+      notify([a.applicantId], {
+        type: "swap_result",
+        title: "代講が確定しました",
+        body: `対象: ${a.date} ${a.slotNumber}限 (${a.requesterName}さんの代講)`,
+        href: "/tutor",
+      }),
+    ]);
   }
 
   revalidateAll();
