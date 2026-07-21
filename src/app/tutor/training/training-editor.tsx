@@ -53,6 +53,18 @@ export type TrainingEditorProps = {
 
 const key = (date: string, slot: number) => `${date}|${slot}`;
 
+/**
+ * action の reject (通信断・サーバー障害など) を通知用の失敗結果へ変換する。
+ * 原因はユーザーには区別できないため文言は中立にし、診断用に console へ残す。
+ */
+function toFailedResult(e: unknown): { ok: false; error: string } {
+  console.error("training action failed:", e);
+  return {
+    ok: false,
+    error: "保存に失敗しました。通信状況を確認して再度お試しください。",
+  };
+}
+
 export function TrainingEditor({ data }: TrainingEditorProps) {
   const { period, slots, days } = data;
   const editable = period.editable;
@@ -76,6 +88,10 @@ export function TrainingEditor({ data }: TrainingEditorProps) {
     async (date: string, slot: number) => {
       if (!editable) return;
       const k = key(date, slot);
+      // 連打ガード: 同一コマの先行リクエストが完了するまで無視する。
+      // on/off が並走すると適用順が保証されず UI と DB がズレるため。
+      if (pendingSlots.current.has(k)) return;
+      pendingSlots.current.add(k);
       const turningOn = !selected.has(k);
 
       // 楽観的更新
@@ -87,12 +103,14 @@ export function TrainingEditor({ data }: TrainingEditorProps) {
       });
       setSavingCount((c) => c + 1);
 
+      // action が例外で落ちた場合 (通信断など) もロールバック + エラー表示する
       const res = await setTrainingSlot({
         periodId: period.id,
         date,
         slotNumber: slot,
         on: turningOn,
-      });
+      }).catch(toFailedResult);
+      pendingSlots.current.delete(k);
       setSavingCount((c) => c - 1);
 
       if (!res.ok) {
@@ -109,6 +127,9 @@ export function TrainingEditor({ data }: TrainingEditorProps) {
     [editable, period.id, selected],
   );
 
+  // リクエスト中のコマ (連打ガード用)
+  const pendingSlots = useRef<Set<string>>(new Set());
+
   // 備考のデバウンス保存
   const noteTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const pendingNote = useRef<string | null>(null);
@@ -123,8 +144,12 @@ export function TrainingEditor({ data }: TrainingEditorProps) {
     const v = pendingNote.current;
     pendingNote.current = null;
     if (mounted.current) setSavingCount((c) => c + 1);
-    const res = await saveTrainingNote({ periodId: period.id, note: v });
-    if (!mounted.current) return; // unmount 後は state 更新しない (保存自体は完了)
+    const res = await saveTrainingNote({ periodId: period.id, note: v }).catch(
+      toFailedResult,
+    );
+    // unmount 後は state 更新できない (失敗していても通知は出せない。
+    // 失敗内容は toFailedResult が console に残す)
+    if (!mounted.current) return;
     setSavingCount((c) => c - 1);
     if (!res.ok) setNotice({ type: "error", text: res.error });
     else setNotice({ type: "ok", text: "保存しました" });
@@ -137,10 +162,11 @@ export function TrainingEditor({ data }: TrainingEditorProps) {
       mounted.current = false;
       if (noteTimer.current) clearTimeout(noteTimer.current);
       if (pendingNote.current !== null) {
+        // unmount 後は通知できないため、失敗は console 記録のみ
         void saveTrainingNote({
           periodId: period.id,
           note: pendingNote.current,
-        });
+        }).catch(toFailedResult);
       }
     };
   }, [period.id]);
@@ -177,6 +203,14 @@ export function TrainingEditor({ data }: TrainingEditorProps) {
         </p>
       )}
 
+      {/* 操作案内 (#157): 詳細画面には何をする画面かの説明が無かった */}
+      {editable && (
+        <p className="text-sm text-muted-foreground">
+          出勤できるコマをタップして選んでください。タップするたびに選択/解除が
+          切り替わり、自動で保存されます。締切までは何度でも変更できます。
+        </p>
+      )}
+
       {/* 日付カードの縦リスト */}
       <div className="space-y-2">
         {days.map((d) => {
@@ -204,7 +238,8 @@ export function TrainingEditor({ data }: TrainingEditorProps) {
                   </Badge>
                 )}
               </div>
-              <div className="flex flex-wrap gap-1.5">
+              {/* #158: タップ領域 44px 以上 + 誤タップしにくい間隔の grid */}
+              <div className="grid grid-cols-4 gap-2">
                 {slots.map((s) => {
                   const on = selected.has(key(d.date, s.slotNumber));
                   return (
@@ -216,7 +251,7 @@ export function TrainingEditor({ data }: TrainingEditorProps) {
                       title={`${s.startTime}〜${s.endTime}`}
                       aria-pressed={on}
                       className={cn(
-                        "rounded-md border px-2.5 py-1 text-xs font-medium transition-colors",
+                        "min-h-11 rounded-md border px-1 text-sm font-medium transition-colors",
                         on
                           ? "border-accent bg-accent text-accent-foreground"
                           : "border-input bg-background hover:bg-muted",
