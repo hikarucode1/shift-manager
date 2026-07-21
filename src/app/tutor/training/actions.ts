@@ -17,14 +17,22 @@ const SlotInput = z.object({
   on: z.boolean(),
 });
 
-/** 1 コマの希望 ON/OFF。締切判定はサーバーで厳密に行う */
-export async function setTrainingSlot(input: unknown): Promise<ActionResult> {
-  const { profile } = await requireRole("tutor");
+const BulkSlotInput = SlotInput.omit({ slotNumber: true }).extend({
+  slotNumbers: z.array(SlotInput.shape.slotNumber).min(1).max(20),
+});
 
-  const parsed = SlotInput.safeParse(input);
-  if (!parsed.success) return { ok: false, error: "入力が不正です。" };
-  const { periodId, date, slotNumber, on } = parsed.data;
-
+/**
+ * 単一/一括共通の検証 + 書き込み。締切判定はサーバーで厳密に行う。
+ * コマ定義が提出中に変更された場合、無効になったコマは除外して
+ * 有効分のみ適用する (全体拒否だと一括ボタンが操作不能になるため)。
+ */
+async function applyTrainingSlots(
+  tutorId: string,
+  periodId: string,
+  date: string,
+  slotNumbers: number[],
+  on: boolean,
+): Promise<ActionResult> {
   const gate = await assertTrainingEditable(periodId);
   if (!gate.ok) return { ok: false, error: gate.reason };
 
@@ -32,69 +40,10 @@ export async function setTrainingSlot(input: unknown): Promise<ActionResult> {
   if (date < gate.startDate || date > gate.endDate) {
     return { ok: false, error: "対象期間外の日付です。" };
   }
-  // slotNumber が実コマ定義に存在するか検証
+  // 実コマ定義に存在するものだけ適用
   const validSlots = await validSlotNumbers();
-  if (!validSlots.has(slotNumber)) {
-    return { ok: false, error: "存在しないコマです。" };
-  }
-
-  if (on) {
-    await db
-      .insert(trainingPreferences)
-      .values({ periodId, tutorId: profile.id, date, slotNumber })
-      .onConflictDoNothing({
-        target: [
-          trainingPreferences.periodId,
-          trainingPreferences.tutorId,
-          trainingPreferences.date,
-          trainingPreferences.slotNumber,
-        ],
-      });
-  } else {
-    await db
-      .delete(trainingPreferences)
-      .where(
-        and(
-          eq(trainingPreferences.periodId, periodId),
-          eq(trainingPreferences.tutorId, profile.id),
-          eq(trainingPreferences.date, date),
-          eq(trainingPreferences.slotNumber, slotNumber),
-        ),
-      );
-  }
-
-  return { ok: true };
-}
-
-const BulkSlotInput = z.object({
-  periodId: z.string().uuid(),
-  date: z.string().refine(isValidIsoDate, "日付が不正です。"),
-  slotNumbers: z.array(z.number().int().min(1).max(20)).min(1).max(20),
-  on: z.boolean(),
-});
-
-/**
- * 1 日分のコマ希望をまとめて ON/OFF (#159)。
- * setTrainingSlot の逐次呼び出しを避け、1 リクエストで冪等に適用する。
- */
-export async function setTrainingSlotsBulk(
-  input: unknown,
-): Promise<ActionResult> {
-  const { profile } = await requireRole("tutor");
-
-  const parsed = BulkSlotInput.safeParse(input);
-  if (!parsed.success) return { ok: false, error: "入力が不正です。" };
-  const { periodId, date, slotNumbers, on } = parsed.data;
-
-  const gate = await assertTrainingEditable(periodId);
-  if (!gate.ok) return { ok: false, error: gate.reason };
-
-  // クライアントを信用しない: setTrainingSlot と同じサーバー側検証
-  if (date < gate.startDate || date > gate.endDate) {
-    return { ok: false, error: "対象期間外の日付です。" };
-  }
-  const validSlots = await validSlotNumbers();
-  if (!slotNumbers.every((n) => validSlots.has(n))) {
+  const targets = slotNumbers.filter((n) => validSlots.has(n));
+  if (targets.length === 0) {
     return { ok: false, error: "存在しないコマです。" };
   }
 
@@ -102,9 +51,9 @@ export async function setTrainingSlotsBulk(
     await db
       .insert(trainingPreferences)
       .values(
-        slotNumbers.map((slotNumber) => ({
+        targets.map((slotNumber) => ({
           periodId,
-          tutorId: profile.id,
+          tutorId,
           date,
           slotNumber,
         })),
@@ -123,14 +72,41 @@ export async function setTrainingSlotsBulk(
       .where(
         and(
           eq(trainingPreferences.periodId, periodId),
-          eq(trainingPreferences.tutorId, profile.id),
+          eq(trainingPreferences.tutorId, tutorId),
           eq(trainingPreferences.date, date),
-          inArray(trainingPreferences.slotNumber, slotNumbers),
+          inArray(trainingPreferences.slotNumber, targets),
         ),
       );
   }
 
   return { ok: true };
+}
+
+/** 1 コマの希望 ON/OFF */
+export async function setTrainingSlot(input: unknown): Promise<ActionResult> {
+  const { profile } = await requireRole("tutor");
+
+  const parsed = SlotInput.safeParse(input);
+  if (!parsed.success) return { ok: false, error: "入力が不正です。" };
+  const { periodId, date, slotNumber, on } = parsed.data;
+
+  return applyTrainingSlots(profile.id, periodId, date, [slotNumber], on);
+}
+
+/**
+ * 1 日分のコマ希望をまとめて ON/OFF (#159)。
+ * setTrainingSlot の逐次呼び出しを避け、1 リクエストで冪等に適用する。
+ */
+export async function setTrainingSlotsBulk(
+  input: unknown,
+): Promise<ActionResult> {
+  const { profile } = await requireRole("tutor");
+
+  const parsed = BulkSlotInput.safeParse(input);
+  if (!parsed.success) return { ok: false, error: "入力が不正です。" };
+  const { periodId, date, slotNumbers, on } = parsed.data;
+
+  return applyTrainingSlots(profile.id, periodId, date, slotNumbers, on);
 }
 
 const NoteInput = z.object({

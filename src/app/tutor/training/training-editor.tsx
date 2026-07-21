@@ -88,70 +88,33 @@ export function TrainingEditor({ data }: TrainingEditorProps) {
     return () => clearTimeout(t);
   }, [notice]);
 
-  const toggle = useCallback(
-    async (date: string, slot: number) => {
-      if (!editable) return;
-      const k = key(date, slot);
-      // 連打ガード: 同一コマの先行リクエストが完了するまで無視する。
-      // on/off が並走すると適用順が保証されず UI と DB がズレるため。
-      if (pendingSlots.current.has(k)) return;
-      pendingSlots.current.add(k);
-      const turningOn = !selected.has(k);
-
-      // 楽観的更新
-      setSelected((prev) => {
-        const next = new Set(prev);
-        if (turningOn) next.add(k);
-        else next.delete(k);
-        return next;
-      });
-      setSavingCount((c) => c + 1);
-
-      // action が例外で落ちた場合 (通信断など) もロールバック + エラー表示する
-      const res = await setTrainingSlot({
-        periodId: period.id,
-        date,
-        slotNumber: slot,
-        on: turningOn,
-      }).catch(toFailedResult);
-      pendingSlots.current.delete(k);
-      setSavingCount((c) => c - 1);
-
-      if (!res.ok) {
-        // 失敗 → ロールバック
-        setSelected((prev) => {
-          const next = new Set(prev);
-          if (turningOn) next.delete(k);
-          else next.add(k);
-          return next;
-        });
-        setNotice({ type: "error", text: res.error });
-      }
-    },
-    [editable, period.id, selected],
-  );
-
-  // リクエスト中のコマ (連打ガード用)
+  // リクエスト中のコマ (連打・並走ガード用)
   const pendingSlots = useRef<Set<string>>(new Set());
 
   /**
-   * 1 日分の一括 ON/OFF (#159)。全コマ選択済みなら解除、そうでなければ全選択。
-   * 単一トグルと同じ楽観的更新 + 失敗時ロールバック。実行中はその日の
-   * 全キーを pendingSlots に入れ、単一タップとの並走を防ぐ。
+   * 単一/一括共通の楽観的更新 + 保存 + 失敗時ロールバック。
+   * 対象コマのいずれかがリクエスト中なら受け付けず通知する
+   * (on/off が並走すると適用順が保証されず UI と DB がズレるため)。
    */
-  const toggleDay = useCallback(
-    async (date: string) => {
-      if (!editable) return;
-      const dayKeys = slots.map((s) => key(date, s.slotNumber));
-      if (dayKeys.some((k) => pendingSlots.current.has(k))) return;
-      const turningOn = !dayKeys.every((k) => selected.has(k));
+  const applySlots = useCallback(
+    async (date: string, slotNums: number[], turningOn: boolean) => {
+      const keys = slotNums.map((n) => key(date, n));
+      if (keys.some((k) => pendingSlots.current.has(k))) {
+        setNotice({
+          type: "error",
+          text: "保存中です。少し待ってからもう一度お試しください。",
+        });
+        return;
+      }
+      keys.forEach((k) => pendingSlots.current.add(k));
 
-      // ロールバック用にその日の操作前状態を保持
-      const prevDay = new Map(dayKeys.map((k) => [k, selected.has(k)]));
-      dayKeys.forEach((k) => pendingSlots.current.add(k));
+      // 楽観的更新。ロールバック用スナップショットは updater 内で
+      // 実際の直前状態から取る (render 時の closure だと古い場合がある)
+      let prevState = new Map<string, boolean>();
       setSelected((prev) => {
+        prevState = new Map(keys.map((k) => [k, prev.has(k)]));
         const next = new Set(prev);
-        dayKeys.forEach((k) => {
+        keys.forEach((k) => {
           if (turningOn) next.add(k);
           else next.delete(k);
         });
@@ -159,19 +122,30 @@ export function TrainingEditor({ data }: TrainingEditorProps) {
       });
       setSavingCount((c) => c + 1);
 
-      const res = await setTrainingSlotsBulk({
-        periodId: period.id,
-        date,
-        slotNumbers: slots.map((s) => s.slotNumber),
-        on: turningOn,
-      }).catch(toFailedResult);
-      dayKeys.forEach((k) => pendingSlots.current.delete(k));
+      // action が例外で落ちた場合 (通信断など) もロールバック + エラー表示する
+      const res = await (
+        slotNums.length === 1
+          ? setTrainingSlot({
+              periodId: period.id,
+              date,
+              slotNumber: slotNums[0],
+              on: turningOn,
+            })
+          : setTrainingSlotsBulk({
+              periodId: period.id,
+              date,
+              slotNumbers: slotNums,
+              on: turningOn,
+            })
+      ).catch(toFailedResult);
+      keys.forEach((k) => pendingSlots.current.delete(k));
       setSavingCount((c) => c - 1);
 
       if (!res.ok) {
+        // 失敗 → 操作前の状態へロールバック
         setSelected((prev) => {
           const next = new Set(prev);
-          prevDay.forEach((was, k) => {
+          prevState.forEach((was, k) => {
             if (was) next.add(k);
             else next.delete(k);
           });
@@ -180,7 +154,29 @@ export function TrainingEditor({ data }: TrainingEditorProps) {
         setNotice({ type: "error", text: res.error });
       }
     },
-    [editable, period.id, selected, slots],
+    [period.id],
+  );
+
+  const toggle = useCallback(
+    (date: string, slot: number) => {
+      if (!editable) return;
+      void applySlots(date, [slot], !selected.has(key(date, slot)));
+    },
+    [editable, selected, applySlots],
+  );
+
+  /** 1 日分の一括 ON/OFF (#159)。全コマ選択済みなら解除、そうでなければ全選択 */
+  const toggleDay = useCallback(
+    (date: string) => {
+      if (!editable) return;
+      const allOn = slots.every((s) => selected.has(key(date, s.slotNumber)));
+      void applySlots(
+        date,
+        slots.map((s) => s.slotNumber),
+        !allOn,
+      );
+    },
+    [editable, selected, slots, applySlots],
   );
 
   // 備考のデバウンス保存
@@ -267,12 +263,11 @@ export function TrainingEditor({ data }: TrainingEditorProps) {
       {/* 日付カードの縦リスト */}
       <div className="space-y-2">
         {days.map((d) => {
-          const daySelected = slots.some((s) =>
+          const dayOnCount = slots.filter((s) =>
             selected.has(key(d.date, s.slotNumber)),
-          );
-          const dayAllSelected = slots.every((s) =>
-            selected.has(key(d.date, s.slotNumber)),
-          );
+          ).length;
+          const daySelected = dayOnCount > 0;
+          const dayAllSelected = dayOnCount === slots.length;
           return (
             <div key={d.date} className="rounded-xl border p-3">
               <div className="mb-2.5 flex items-center justify-between">
