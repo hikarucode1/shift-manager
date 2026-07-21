@@ -8,7 +8,7 @@ import { cn } from "@/lib/utils";
 /**
  * 講師 (スマホ) 用の固定下部タブ (#122, #154)。
  * 共有レイアウトはクライアント遷移で再レンダリングされないため、active 判定は
- * サーバー側の x-pathname ではなく usePathname() で行う (SegmentedNav と同方式)。
+ * usePathname() で行う (SegmentedNav / AdminTopNav と同方式)。
  *
  * 下部タブは 4 つ (デザイン準拠)。「申請」タブは欠勤/交代/代講をまとめた active
  * 範囲とし、ランディングは /tutor/absences。
