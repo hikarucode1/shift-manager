@@ -1,4 +1,4 @@
-import { and, asc, desc, eq, gte, lte } from "drizzle-orm";
+import { and, asc, desc, eq, gte, lt, lte } from "drizzle-orm";
 import { requireRole } from "@/lib/auth";
 import { db } from "@/db/client";
 import {
@@ -196,11 +196,83 @@ export default async function FixedShiftPage() {
     const due = dueRows[0]?.submissionDueAt;
     if (due && now > due) isPastDeadline = true;
   }
+  // #161: 新しい期を開いた直後 (当期の提出が一切ない) は、前期の提出内容を
+  // プリフィルする。表示のみの初期値で、保存時はサーバーが当期の期初を強制する
+  // (#160 の不変条件は維持)。「全コマ不可」で提出済み (submissionRow あり・
+  // entries 空) の場合は本人の意思なので発動しない。
+  let prefill: {
+    entries: typeof currentEntries;
+    desiredDays: number | null;
+    desiredSlots: number | null;
+    sourceFrom: string;
+  } | null = null;
+  if (activePeriod && !submissionRow && currentEntries.length === 0) {
+    const prevFromRows = await db
+      .select({ effectiveFrom: fixedShifts.effectiveFrom })
+      .from(fixedShifts)
+      .where(
+        and(
+          eq(fixedShifts.tutorId, profile.id),
+          lt(fixedShifts.effectiveFrom, targetEffectiveFrom),
+        ),
+      )
+      .orderBy(desc(fixedShifts.effectiveFrom))
+      .limit(1);
+    const sourceFrom = prevFromRows[0]?.effectiveFrom;
+    if (sourceFrom) {
+      const [prevShiftRows, prevMetaRows] = await Promise.all([
+        db
+          .select({
+            weekday: fixedShifts.weekday,
+            slotNumber: fixedShifts.slotNumber,
+            availability: fixedShifts.availability,
+          })
+          .from(fixedShifts)
+          .where(
+            and(
+              eq(fixedShifts.tutorId, profile.id),
+              eq(fixedShifts.effectiveFrom, sourceFrom),
+            ),
+          ),
+        db
+          .select({
+            desiredDays: fixedShiftSubmissions.desiredDays,
+            desiredSlots: fixedShiftSubmissions.desiredSlots,
+          })
+          .from(fixedShiftSubmissions)
+          .where(
+            and(
+              eq(fixedShiftSubmissions.tutorId, profile.id),
+              eq(fixedShiftSubmissions.effectiveFrom, sourceFrom),
+            ),
+          )
+          .limit(1),
+      ]);
+      const entries = prevShiftRows
+        .filter((r) => r.weekday !== "sun" && r.availability !== "no")
+        .map((r) => ({
+          weekday: r.weekday as InputWeekday,
+          slotNumber: r.slotNumber,
+          availability: r.availability as "yes" | "maybe",
+        }));
+      if (entries.length > 0) {
+        prefill = {
+          entries,
+          desiredDays: prevMetaRows[0]?.desiredDays ?? null,
+          desiredSlots: prevMetaRows[0]?.desiredSlots ?? null,
+          sourceFrom,
+        };
+      }
+    }
+  }
+
   const dbStatus = submissionRow?.status ?? "none";
   const initialMeta: FixedShiftSubmissionMeta = {
     effectiveTo: submissionRow?.effectiveTo ?? null,
-    desiredDays: submissionRow?.desiredDays ?? null,
-    desiredSlots: submissionRow?.desiredSlots ?? null,
+    // #161: プリフィル時は希望日数/コマ数も前期値を初期表示 (note と終了日は
+    // 期固有の内容になりがちなので引き継がない)
+    desiredDays: submissionRow?.desiredDays ?? prefill?.desiredDays ?? null,
+    desiredSlots: submissionRow?.desiredSlots ?? prefill?.desiredSlots ?? null,
     note: submissionRow?.note ?? null,
     status: isPastDeadline ? "frozen" : dbStatus,
     submittedAt: submissionRow?.submittedAt
@@ -312,7 +384,8 @@ export default async function FixedShiftPage() {
         <CardContent className="px-3 sm:px-6">
           <FixedShiftEditor
             slots={slots}
-            initialEntries={currentEntries}
+            initialEntries={prefill ? prefill.entries : currentEntries}
+            prefilledFrom={prefill?.sourceFrom ?? null}
             /*
               Issue #72 (β) / #156: 期単位提出。受付中の期があれば必ずその期の
               開始日を起点にする (resolveSubmissionEffectiveFrom)。復元キーと同一の
