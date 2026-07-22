@@ -2,6 +2,7 @@ import "server-only";
 import { and, arrayContains, eq, gte, inArray, lte } from "drizzle-orm";
 import { db } from "@/db/client";
 import {
+  profiles,
   shiftAssignments,
   shiftUploads,
   students,
@@ -11,6 +12,17 @@ import type { ParsedShiftCsv } from "@/lib/shift-csv-parser";
 import { findMappingDuplicates } from "@/lib/mapping-validation";
 
 export type TeacherMapping = Record<string, string>; // teacherName → profileId
+
+/**
+ * コミット時のユーザー向け業務エラー (対応付け未完了・重複・無効な講師など)。
+ * #165: DB の生エラーと区別し、これだけ UI に文言を返す (呼び出し側で判定)。
+ */
+export class UploadCommitError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "UploadCommitError";
+  }
+}
 
 export type CommitUploadArgs = {
   parsed: ParsedShiftCsv;
@@ -48,7 +60,7 @@ export async function commitShiftUpload(
   // Validate mappings
   const missing = parsed.uniqueTeacherNames.filter((n) => !mappings[n]);
   if (missing.length > 0) {
-    throw new Error(
+    throw new UploadCommitError(
       `講師の対応付けが未完了です: ${missing.join(", ")}`,
     );
   }
@@ -60,13 +72,37 @@ export async function commitShiftUpload(
     scopedMappings[name] = mappings[name];
   }
 
+  // #165: 割当先が「有効な講師 (roles に tutor を含み is_active)」か検証する。
+  // FK だけでは無効化済み講師・admin・stub にコマが割り当たり、ログイン
+  // できない人が担当になる。fetchActiveTutors と同じ条件で存在確認する。
+  const mappedIds = [...new Set(Object.values(scopedMappings))];
+  const validRows = await db
+    .select({ id: profiles.id })
+    .from(profiles)
+    .where(
+      and(
+        inArray(profiles.id, mappedIds),
+        arrayContains(profiles.roles, ["tutor"]),
+        eq(profiles.isActive, true),
+      ),
+    );
+  const validIds = new Set(validRows.map((r) => r.id));
+  const invalidNames = parsed.uniqueTeacherNames.filter(
+    (n) => !validIds.has(scopedMappings[n]),
+  );
+  if (invalidNames.length > 0) {
+    throw new UploadCommitError(
+      `割り当て先が有効な講師ではありません (無効化済み / 講師以外): ${invalidNames.join(", ")}`,
+    );
+  }
+
   // 同一アカウントへの重複割当を拒否 (DB の unique 制約に当たる前に明示エラー)
   const dups = findMappingDuplicates(scopedMappings);
   if (dups.length > 0) {
     const detail = dups
       .map((d) => `「${d.csvNames.join("」「")}」`)
       .join(", ");
-    throw new Error(
+    throw new UploadCommitError(
       `同じ講師アカウントに複数の CSV 名が割り当てられています: ${detail}。1 名につき 1 アカウントにしてください。`,
     );
   }
@@ -95,7 +131,7 @@ export async function commitShiftUpload(
   }
   if (collisions.length > 0) {
     const uniq = [...new Set(collisions)];
-    throw new Error(
+    throw new UploadCommitError(
       `同じ講師が同じ日・同じコマに重複しています: ${uniq.join(" / ")}。CSV を確認してください。`,
     );
   }
@@ -157,7 +193,8 @@ export async function commitShiftUpload(
       if (day.isHoliday) continue;
       for (const slot of day.slots) {
         for (const a of slot.assignments) {
-          const tutorId = mappings[a.teacherName];
+          // #165: 検証済みの scopedMappings を使う (生の mappings は検証を迂回する)
+          const tutorId = scopedMappings[a.teacherName];
           if (!tutorId) continue; // validated above, but be defensive
 
           const [shiftRow] = await tx

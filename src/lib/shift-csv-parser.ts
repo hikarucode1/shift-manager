@@ -187,8 +187,25 @@ export function parseShiftCsvText(text: string): ParsedShiftCsv {
       "ヘッダーから表示期間を読み取れませんでした。1行目に「座席表,表示期間,YYYY/MM/DD〜YYYY/MM/DD」が必要です。",
     );
   }
+  // narrowing を closure に持ち込むため const に固定
+  const ws = weekStart;
+  const we = weekEnd;
 
-  const year = Number(weekStart.slice(0, 4));
+  // #165 H1: 日付行は月/日しか持たないため、年はヘッダーの表示期間から決める。
+  // 週が年を跨ぐ (例 2026/12/28〜2027/01/03) と weekStart 先頭4桁固定では
+  // 1月分が前年になり過去週へ紛れ込む。表示期間に収まる年を選ぶ。
+  const startYear = Number(ws.slice(0, 4));
+  const endYear = Number(we.slice(0, 4));
+  const startMonth = Number(ws.slice(5, 7));
+  const resolveYear = (month: number, day: number): number => {
+    if (startYear === endYear) return startYear;
+    const asStart = isoDate(startYear, month, day);
+    if (asStart >= ws && asStart <= we) return startYear;
+    const asEnd = isoDate(endYear, month, day);
+    if (asEnd >= ws && asEnd <= we) return endYear;
+    // 範囲外 (異常入力) は月で寄せる: 開始月以降=開始年、未満=終了年
+    return month >= startMonth ? startYear : endYear;
+  };
 
   // --- 日ブロック ---
   const days: ParsedDay[] = [];
@@ -213,7 +230,7 @@ export function parseShiftCsvText(text: string): ParsedShiftCsv {
           cursor + 1,
         );
       }
-      const date = isoDate(year, md.month, md.day);
+      const date = isoDate(resolveYear(md.month, md.day), md.month, md.day);
       const weekday: Weekday =
         weekdayKey ?? inferWeekdayFromDate(date);
       cursor++;
@@ -232,6 +249,32 @@ export function parseShiftCsvText(text: string): ParsedShiftCsv {
 
     // 想定外行はスキップ
     cursor++;
+  }
+
+  // #165 H2: 座席表は必ず 1 週間 (月〜日)。表示期間が不正/過大な CSV で
+  // コミット時の weekly_shifts 一括削除 (範囲 [weekStart, weekEnd]) が暴走
+  // しないよう parser 段でガードする。コミット時はこの parser で rawContent を
+  // 再解析するため、クライアント改竄値では突破できない。
+  if (ws > we) {
+    throw new ShiftCsvParseError(
+      `表示期間の開始日 (${ws}) が終了日 (${we}) より後です。`,
+    );
+  }
+  const spanDays = Math.round(
+    (Date.parse(`${we}T12:00:00.000Z`) - Date.parse(`${ws}T12:00:00.000Z`)) /
+      86_400_000,
+  );
+  if (spanDays > 7) {
+    throw new ShiftCsvParseError(
+      `表示期間が 1 週間を超えています (${ws}〜${we})。座席表の CSV を確認してください。`,
+    );
+  }
+  for (const d of days) {
+    if (d.date < ws || d.date > we) {
+      throw new ShiftCsvParseError(
+        `日付 ${d.date} が表示期間 (${ws}〜${we}) の範囲外です。`,
+      );
+    }
   }
 
   return {

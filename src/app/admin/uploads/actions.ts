@@ -5,10 +5,15 @@ import iconv from "iconv-lite";
 import { requireRole } from "@/lib/auth";
 import {
   parseShiftCsvBuffer,
+  parseShiftCsvText,
   ShiftCsvParseError,
   type ParsedShiftCsv,
 } from "@/lib/shift-csv-parser";
-import { commitShiftUpload, type TeacherMapping } from "@/lib/upload-commit";
+import {
+  commitShiftUpload,
+  UploadCommitError,
+  type TeacherMapping,
+} from "@/lib/upload-commit";
 
 /* ------------------------------------------------------------------ */
 /*  Parse (dry run) — no DB writes                                     */
@@ -75,7 +80,11 @@ export async function parseUploadedCsv(
 /* ------------------------------------------------------------------ */
 
 export type CommitUploadInput = {
-  parsed: ParsedShiftCsv;
+  /**
+   * #165 H2: parsed はもう受け取らない。コミット時に rawContent をサーバーで
+   * 再解析して信頼された値を使う (クライアント往復の parsed は改竄可能で、
+   * 削除範囲 weekStart/weekEnd を任意化できた)。
+   */
   rawContent: string;
   originalFilename: string;
   fileBytes: number;
@@ -98,13 +107,30 @@ export async function commitUploadedCsv(
   const { profile } = await requireRole("admin");
 
   // Basic shape check
-  if (!input?.parsed?.weekStart || !input.rawContent || !input.mappings) {
+  if (!input?.rawContent || !input.mappings) {
     return { ok: false, error: "送信データが不正です。" };
+  }
+
+  // #165 H2: クライアント往復の parsed は信頼せず rawContent を再解析する。
+  // これで削除範囲 (weekStart/weekEnd) と各 day.date が parser の検証
+  // (1週間以内・範囲内) を必ず通り、改竄値での weekly_shifts 全削除を防ぐ。
+  let parsed: ParsedShiftCsv;
+  try {
+    parsed = parseShiftCsvText(input.rawContent);
+  } catch (err) {
+    if (err instanceof ShiftCsvParseError) {
+      return {
+        ok: false,
+        error: `CSV 解析エラー${err.rowNumber ? `(行 ${err.rowNumber})` : ""}: ${err.message}`,
+      };
+    }
+    console.error("commitUploadedCsv re-parse failed", err);
+    return { ok: false, error: "CSV の再解析に失敗しました。" };
   }
 
   try {
     const result = await commitShiftUpload({
-      parsed: input.parsed,
+      parsed,
       mappings: input.mappings,
       rawContent: input.rawContent,
       originalFilename: input.originalFilename,
@@ -123,7 +149,14 @@ export async function commitUploadedCsv(
     };
   } catch (err) {
     console.error("commitUploadedCsv failed", err);
-    const msg = err instanceof Error ? err.message : "保存に失敗しました。";
-    return { ok: false, error: msg };
+    // #165: 業務エラー (対応付け未完了等) のみ文言を返す。DB の生エラーは
+    // 内部情報を露出しないよう汎用文言にする。
+    if (err instanceof UploadCommitError) {
+      return { ok: false, error: err.message };
+    }
+    return {
+      ok: false,
+      error: "取り込みに失敗しました。時間をおいて再度お試しください。",
+    };
   }
 }
