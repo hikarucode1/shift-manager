@@ -1,30 +1,20 @@
 import Link from "next/link";
 import { LogOut } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { cn } from "@/lib/utils";
+import { AdminTopNav } from "@/components/admin-top-nav";
 import type { SessionProfile } from "@/lib/auth";
-
-type NavItem = {
-  href: string;
-  label: string;
-  /** active 判定 (グループ化したナビで複数ルートを束ねる場合に指定) */
-  match?: (path: string | undefined) => boolean;
-};
 
 /**
  * 教室長 (PC) 用シェル (#122)。
  * sticky ネイビーヘッダー + 横ナビ + `max-w-6xl` 本文。PC 管理前提で横ナビは
  * `overflow-x-auto`。講師は別シェル (TutorShell, 下部タブ) を使う。
+ * ナビは AdminTopNav (client) に分離 (#163)。
  */
 export function AdminShell({
   profile,
-  nav,
-  currentPath,
   children,
 }: {
   profile: SessionProfile;
-  nav: NavItem[];
-  currentPath?: string;
   children: React.ReactNode;
 }) {
   return (
@@ -52,28 +42,7 @@ export function AdminShell({
             </form>
           </div>
         </div>
-        <nav className="mx-auto flex max-w-6xl gap-1 overflow-x-auto px-2 pb-2">
-          {nav.map((item) => {
-            const active = item.match
-              ? item.match(currentPath)
-              : currentPath === item.href ||
-                (currentPath?.startsWith(item.href + "/") ?? false);
-            return (
-              <Link
-                key={item.href}
-                href={item.href}
-                className={cn(
-                  "rounded-md px-3 py-1.5 text-sm whitespace-nowrap transition-colors",
-                  active
-                    ? "bg-primary-foreground/15 text-primary-foreground"
-                    : "text-primary-foreground/80 hover:bg-primary-foreground/10",
-                )}
-              >
-                {item.label}
-              </Link>
-            );
-          })}
-        </nav>
+        <AdminTopNav />
       </header>
       <main className="mx-auto w-full max-w-6xl flex-1 p-4 sm:p-6">
         {children}
