@@ -204,6 +204,20 @@
       "when": 1782204620907,
       "tag": "0028_multi_role",
       "breakpoints": true
+    },
+    {
+      "idx": 29,
+      "version": "7",
+      "when": 1784646076026,
+      "tag": "0029_brainy_la_nuit",
+      "breakpoints": true
+    },
+    {
+      "idx": 30,
+      "version": "7",
+      "when": 1784714480198,
+      "tag": "0030_special_firedrake",
+      "breakpoints": true
     }
   ]
 }

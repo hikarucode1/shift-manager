@@ -62,6 +62,15 @@ export const shiftSubmissionStatusEnum = pgEnum("shift_submission_status", [
   "frozen",
 ]);
 
+// アプリ内通知の種別 (Issue #155 第一段階)。
+// absence_result: 欠勤申請の承認/却下、swap_result: 交代・代講申請の結果、
+// shifts_published: 確定シフトの公開
+export const notificationTypeEnum = pgEnum("notification_type", [
+  "absence_result",
+  "swap_result",
+  "shifts_published",
+]);
+
 /* ------------------------------------------------------------------ */
 /*  profiles — Supabase auth.users を 1:1 で拡張                        */
 /* ------------------------------------------------------------------ */
@@ -913,6 +922,63 @@ export const swapApplicationsRelations = relations(swapApplications, ({ one }) =
   }),
   applicant: one(profiles, {
     fields: [swapApplications.applicantId],
+    references: [profiles.id],
+  }),
+}));
+
+/* ------------------------------------------------------------------ */
+/*  notifications — アプリ内通知 (Issue #155)                           */
+/* ------------------------------------------------------------------ */
+
+export const notifications = pgTable(
+  "notifications",
+  {
+    id: uuid().primaryKey().defaultRandom(),
+    recipientId: uuid("recipient_id")
+      .notNull()
+      .references(() => profiles.id, { onDelete: "cascade" }),
+    type: notificationTypeEnum().notNull(),
+    title: text().notNull(),
+    body: text(),
+    /** タップ時の遷移先 (アプリ内パス) */
+    href: text(),
+    /**
+     * #155 review: 重複送信を冪等に防ぐためのキー (例: 確定シフト公開の periodId)。
+     * title 文字列だと同名期で衝突するため専用列に分離。null の通知 (申請結果など)
+     * は重複排除しない — Postgres の unique index は NULL を distinct 扱いするため
+     * 下の uniqueIndex には引っかからない。
+     */
+    dedupKey: text("dedup_key"),
+    /** null = 未読 */
+    readAt: timestamp("read_at", { withTimezone: true }),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (t) => ({
+    // 未読件数の取得 (recipient_id + read_at IS NULL) と一覧 (新着順) 用
+    recipientReadIdx: index("notifications_recipient_read_idx").on(
+      t.recipientId,
+      t.readAt,
+    ),
+    recipientCreatedIdx: index("notifications_recipient_created_idx").on(
+      t.recipientId,
+      t.createdAt,
+    ),
+    // #155 review: (宛先, 種別, dedupKey) で冪等化。check-then-insert では
+    // 2 管理者の同時押下で二重通知になるため、DB unique + onConflictDoNothing で
+    // アトミックに防ぐ。dedupKey NULL の行は distinct 扱いで重複可 (申請結果など)。
+    dedupUniq: uniqueIndex("notifications_dedup_uniq").on(
+      t.recipientId,
+      t.type,
+      t.dedupKey,
+    ),
+  }),
+);
+
+export const notificationsRelations = relations(notifications, ({ one }) => ({
+  recipient: one(profiles, {
+    fields: [notifications.recipientId],
     references: [profiles.id],
   }),
 }));

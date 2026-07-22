@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { LogOut } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { NotificationBell } from "@/components/notification-bell";
 import { TutorBottomNav } from "@/components/tutor-bottom-nav";
 import type { SessionProfile } from "@/lib/auth";
 
@@ -27,6 +28,7 @@ export function TutorShell({
             <span className="text-xs text-primary-foreground/70">講師</span>
           </Link>
           <div className="flex items-center gap-2">
+            <NotificationBell />
             <span className="max-w-[40vw] truncate text-sm text-primary-foreground/80">
               {profile.displayName}
             </span>

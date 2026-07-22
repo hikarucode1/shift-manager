@@ -4,6 +4,7 @@ import { revalidatePath } from "next/cache";
 import { z } from "zod";
 import { and, eq, inArray } from "drizzle-orm";
 import { requireRole } from "@/lib/auth";
+import { notify } from "@/lib/notifications";
 import { db } from "@/db/client";
 import { absenceRequests, swapRequests, weeklyShifts } from "@/db/schema";
 import { isUniqueViolation } from "@/lib/db-errors";
@@ -198,7 +199,11 @@ export async function decideAbsenceRequest(
         eq(absenceRequests.status, "pending"),
       ),
     )
-    .returning({ id: absenceRequests.id });
+    .returning({
+      id: absenceRequests.id,
+      tutorId: absenceRequests.tutorId,
+      date: absenceRequests.date,
+    });
 
   if (updated.length === 0) {
     return {
@@ -206,6 +211,18 @@ export async function decideAbsenceRequest(
       error: "処理できませんでした（既に対応済みの可能性があります）。",
     };
   }
+
+  await notify([updated[0].tutorId], {
+    type: "absence_result",
+    title:
+      decision === "approved"
+        ? "欠勤申請が承認されました"
+        : "欠勤申請が却下されました",
+    body:
+      `対象日: ${updated[0].date}` +
+      (decisionNote.length > 0 ? ` ／ ${decisionNote}` : ""),
+    href: "/tutor/absences",
+  });
 
   revalidatePath("/admin/requests");
   revalidatePath("/tutor/absences");
