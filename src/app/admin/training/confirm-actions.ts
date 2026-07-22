@@ -6,7 +6,7 @@ import { revalidatePath } from "next/cache";
 import { requireRole } from "@/lib/auth";
 import { insertNotifications } from "@/lib/notifications";
 import { db } from "@/db/client";
-import { courseConfirmations, notifications, periods } from "@/db/schema";
+import { courseConfirmations, periods } from "@/db/schema";
 
 type ActionResult =
   | { ok: true; inserted: number }
@@ -173,34 +173,23 @@ export async function notifyCoursePublication(
 
   const title = `「${periodRows[0].name}」の確定シフトが公開されました`;
 
-  // 重複送信ガード: 同タイトルの公開通知を既に受け取った講師は除外する。
-  // ボタン再押下やセル追加後の再通知では未通知の講師にだけ届く。
-  // (期名を変更した場合は別通知として全員に再送される点は許容)
-  const notifiedRows = await db
-    .selectDistinct({ recipientId: notifications.recipientId })
-    .from(notifications)
-    .where(
-      and(
-        eq(notifications.type, "shifts_published"),
-        eq(notifications.title, title),
-      ),
-    );
-  const alreadyNotified = new Set(notifiedRows.map((r) => r.recipientId));
-  const targets = rows
-    .map((r) => r.tutorId)
-    .filter((id) => !alreadyNotified.has(id));
-  if (targets.length === 0) {
-    return { ok: false, error: "確定済みの全講師に通知済みです。" };
-  }
-
-  // この action は通知の送信自体が目的のため、失敗を握りつぶさず結果を返す
+  // 重複送信ガード (#155 review): dedupKey=periodId で (宛先, 種別, periodId) を
+  // 冪等化。以前は title 文字列で判定していたが periods.name は一意でなく同名期で
+  // 衝突する。また check-then-insert は 2 管理者の同時押下で二重通知になるため、
+  // DB unique + onConflictDoNothing でアトミックに防ぐ。挿入された件数が
+  // 実際に新規通知された講師数 (既通知はスキップされ 0 件差分)。
+  let notified: number;
   try {
-    await insertNotifications(targets, {
-      type: "shifts_published",
-      title,
-      body: "確定シフトを確認してください。",
-      href: "/tutor/training",
-    });
+    notified = await insertNotifications(
+      rows.map((r) => r.tutorId),
+      {
+        type: "shifts_published",
+        title,
+        body: "確定シフトを確認してください。",
+        href: "/tutor/training",
+        dedupKey: periodId,
+      },
+    );
   } catch (e) {
     console.error("notifyCoursePublication failed:", e);
     return {
@@ -209,5 +198,8 @@ export async function notifyCoursePublication(
     };
   }
 
-  return { ok: true, notified: targets.length };
+  if (notified === 0) {
+    return { ok: false, error: "確定済みの全講師に通知済みです。" };
+  }
+  return { ok: true, notified };
 }

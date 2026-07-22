@@ -942,6 +942,13 @@ export const notifications = pgTable(
     body: text(),
     /** タップ時の遷移先 (アプリ内パス) */
     href: text(),
+    /**
+     * #155 review: 重複送信を冪等に防ぐためのキー (例: 確定シフト公開の periodId)。
+     * title 文字列だと同名期で衝突するため専用列に分離。null の通知 (申請結果など)
+     * は重複排除しない — Postgres の unique index は NULL を distinct 扱いするため
+     * 下の uniqueIndex には引っかからない。
+     */
+    dedupKey: text("dedup_key"),
     /** null = 未読 */
     readAt: timestamp("read_at", { withTimezone: true }),
     createdAt: timestamp("created_at", { withTimezone: true })
@@ -957,6 +964,14 @@ export const notifications = pgTable(
     recipientCreatedIdx: index("notifications_recipient_created_idx").on(
       t.recipientId,
       t.createdAt,
+    ),
+    // #155 review: (宛先, 種別, dedupKey) で冪等化。check-then-insert では
+    // 2 管理者の同時押下で二重通知になるため、DB unique + onConflictDoNothing で
+    // アトミックに防ぐ。dedupKey NULL の行は distinct 扱いで重複可 (申請結果など)。
+    dedupUniq: uniqueIndex("notifications_dedup_uniq").on(
+      t.recipientId,
+      t.type,
+      t.dedupKey,
     ),
   }),
 );

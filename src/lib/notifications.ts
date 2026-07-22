@@ -12,28 +12,48 @@ export type NotificationInput = {
   body?: string;
   /** タップ時の遷移先 (アプリ内パス) */
   href?: string;
+  /**
+   * #155 review: 冪等化キー (例: 確定シフト公開の periodId)。指定すると
+   * (宛先, 種別, dedupKey) が重複する行は onConflictDoNothing で挿入されない。
+   * 未指定 (申請結果など各イベントが一意) は毎回挿入される。
+   */
+  dedupKey?: string;
 };
 
 /**
- * 通知を insert する (失敗時は throw)。
+ * 通知を insert し、実際に挿入された件数を返す (失敗時は throw)。
+ * dedupKey 指定時は (宛先, 種別, dedupKey) の重複をアトミックにスキップする。
  * 「通知を送ること自体が目的」のアクション (notifyCoursePublication 等) は
  * こちらを使い、失敗をユーザーに返すこと。
  */
 export async function insertNotifications(
   recipientIds: string[],
   input: NotificationInput,
-): Promise<void> {
+): Promise<number> {
   const targets = [...new Set(recipientIds)];
-  if (targets.length === 0) return;
-  await db.insert(notifications).values(
-    targets.map((recipientId) => ({
-      recipientId,
-      type: input.type,
-      title: input.title,
-      body: input.body,
-      href: input.href,
-    })),
-  );
+  if (targets.length === 0) return 0;
+  const inserted = await db
+    .insert(notifications)
+    .values(
+      targets.map((recipientId) => ({
+        recipientId,
+        type: input.type,
+        title: input.title,
+        body: input.body,
+        href: input.href,
+        dedupKey: input.dedupKey ?? null,
+      })),
+    )
+    // dedupKey NULL の行は unique index 上で distinct 扱いのため常に挿入される
+    .onConflictDoNothing({
+      target: [
+        notifications.recipientId,
+        notifications.type,
+        notifications.dedupKey,
+      ],
+    })
+    .returning({ id: notifications.id });
+  return inserted.length;
 }
 
 /**
