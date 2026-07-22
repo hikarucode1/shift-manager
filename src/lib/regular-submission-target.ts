@@ -50,6 +50,53 @@ export function resolveServerEffectiveFrom(params: {
 }
 
 /**
+ * Issue #161: 新しい期の初回表示で「前期パターン」を引き継ぐ元の提出を選ぶ。
+ *
+ * 元は fixed_shifts 行の max(effective_from) で「前期」を近似していたが、
+ * それだと (a) 全コマ不可 (メタのみ・fixed_shifts 行なし) の直近提出を飛ばして
+ * さらに古い期を拾う、(b) 期に紐づかないアドホックな fixed_shifts 行を前期と
+ * 誤認する、という問題があった。提出単位 (fixed_shift_submissions) で選ぶことで
+ * 「本人が最後に提出した内容」を正しく起点にする。
+ */
+export type PrefillSourceCandidate = {
+  effectiveFrom: string;
+  effectiveTo: string | null;
+  desiredDays: number | null;
+  desiredSlots: number | null;
+};
+
+export function selectPrefillSourceSubmission(params: {
+  candidates: PrefillSourceCandidate[];
+  targetEffectiveFrom: string;
+}): PrefillSourceCandidate | null {
+  const { candidates, targetEffectiveFrom } = params;
+  const prior = candidates
+    .filter((c) => c.effectiveFrom < targetEffectiveFrom)
+    .sort((a, b) => (a.effectiveFrom < b.effectiveFrom ? 1 : -1));
+  const source = prior[0] ?? null;
+  if (!source) return null;
+  // 本人が適用終了日を新期開始より前に設定していた = そのパターンを明示的に
+  // 終了させた意思。引き継がない (空フォーム = #161 前の挙動に戻す)。
+  if (source.effectiveTo && source.effectiveTo < targetEffectiveFrom) {
+    return null;
+  }
+  return source;
+}
+
+/**
+ * Issue #161: 当期に既にデータがあるか (プリフィル可否)。
+ * currentEntries は availability="no" を除外するため、全コマ不可で提出済みの
+ * 当期行を「未提出」と誤判定してプリフィルで上書きしないよう、提出行の有無と
+ * 生の fixed_shifts 行の有無で判断する。
+ */
+export function hasCurrentPeriodData(params: {
+  hasSubmissionRow: boolean;
+  hasAnyRawFixedShiftRow: boolean;
+}): boolean {
+  return params.hasSubmissionRow || params.hasAnyRawFixedShiftRow;
+}
+
+/**
  * 既存提出/シフトを復元するためのクエリ下限日 (inclusive)。
  *
  * 通常は today だが、受付中の期の開始日が過去日 (= 期の開始後に遅れて提出/修正する

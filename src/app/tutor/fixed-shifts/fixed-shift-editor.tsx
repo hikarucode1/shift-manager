@@ -85,6 +85,7 @@ export function FixedShiftEditor({
   initialMeta,
   periodLocked = false,
   periodLabel = null,
+  prefilledFrom = null,
 }: {
   slots: Slot[];
   initialEntries: Entry[];
@@ -96,6 +97,11 @@ export function FixedShiftEditor({
    */
   periodLocked?: boolean;
   periodLabel?: string | null;
+  /**
+   * #161: initialEntries が前期の提出内容のプリフィルである場合、その前期の
+   * effective_from ("YYYY-MM-DD")。未保存の間だけ引き継ぎバナーを表示する。
+   */
+  prefilledFrom?: string | null;
 }) {
   const [cellStates, setCellStates] = useState<Map<string, Availability>>(
     () => new Map(initialEntries.map((e) => [cellKey(e.weekday, e.slotNumber), e.availability])),
@@ -212,6 +218,17 @@ export function FixedShiftEditor({
 
   return (
     <div className="space-y-6">
+      {/* #161: 前期プリフィルの引き継ぎバナー。保存 (draft 化) すると消える */}
+      {prefilledFrom && status === "none" && (
+        <div
+          role="status"
+          className="rounded-md border border-accent/50 bg-accent/5 px-3 py-2 text-sm"
+        >
+          前期 ({prefilledFrom} 開始分) の提出内容を引き継いで表示しています。
+          内容を確認し、必要に応じて修正してから保存・提出してください。
+        </div>
+      )}
+
       {/* Issue #61: 状態バッジ */}
       <div className="flex flex-wrap items-center gap-2">
         {status === "none" && (

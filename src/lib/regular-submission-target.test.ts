@@ -1,8 +1,11 @@
 import { describe, it, expect } from "vitest";
 import {
+  hasCurrentPeriodData,
   resolveServerEffectiveFrom,
   resolveSubmissionEffectiveFrom,
+  selectPrefillSourceSubmission,
   submissionQueryLowerBound,
+  type PrefillSourceCandidate,
 } from "./regular-submission-target";
 
 describe("resolveSubmissionEffectiveFrom", () => {
@@ -126,5 +129,97 @@ describe("submissionQueryLowerBound", () => {
         today: "2026-07-14",
       }),
     ).toBe("2026-07-14");
+  });
+});
+
+describe("selectPrefillSourceSubmission (#161)", () => {
+  const cand = (
+    effectiveFrom: string,
+    effectiveTo: string | null = null,
+  ): PrefillSourceCandidate => ({
+    effectiveFrom,
+    effectiveTo,
+    desiredDays: null,
+    desiredSlots: null,
+  });
+
+  it("target より前の提出のうち最新を選ぶ", () => {
+    const src = selectPrefillSourceSubmission({
+      candidates: [cand("2026-04-01"), cand("2026-07-01"), cand("2026-01-01")],
+      targetEffectiveFrom: "2026-10-01",
+    });
+    expect(src?.effectiveFrom).toBe("2026-07-01");
+  });
+
+  it("全コマ不可 (メタのみ) の直近提出も候補に含み、古い期を飛ばさない", () => {
+    // 7月に全コマ不可で提出 (fixed_shifts 行なし) → その提出が最新なら 7月を選ぶ。
+    // 呼び出し側は entries 空なら prefill しないので、結果として「引き継がない」。
+    const src = selectPrefillSourceSubmission({
+      candidates: [cand("2026-04-01"), cand("2026-07-01")],
+      targetEffectiveFrom: "2026-10-01",
+    });
+    expect(src?.effectiveFrom).toBe("2026-07-01");
+  });
+
+  it("target 以降の提出は候補にしない", () => {
+    const src = selectPrefillSourceSubmission({
+      candidates: [cand("2026-10-01"), cand("2026-12-01")],
+      targetEffectiveFrom: "2026-10-01",
+    });
+    expect(src).toBeNull();
+  });
+
+  it("適用終了日が新期開始より前 = 明示的に終了させたパターンは引き継がない", () => {
+    const src = selectPrefillSourceSubmission({
+      candidates: [cand("2026-07-01", "2026-08-31")],
+      targetEffectiveFrom: "2026-10-01",
+    });
+    expect(src).toBeNull();
+  });
+
+  it("適用終了日が新期開始以降なら引き継ぐ", () => {
+    const src = selectPrefillSourceSubmission({
+      candidates: [cand("2026-07-01", "2026-12-31")],
+      targetEffectiveFrom: "2026-10-01",
+    });
+    expect(src?.effectiveFrom).toBe("2026-07-01");
+  });
+
+  it("候補が無ければ null", () => {
+    expect(
+      selectPrefillSourceSubmission({
+        candidates: [],
+        targetEffectiveFrom: "2026-10-01",
+      }),
+    ).toBeNull();
+  });
+});
+
+describe("hasCurrentPeriodData (#161)", () => {
+  it("提出行があれば true", () => {
+    expect(
+      hasCurrentPeriodData({
+        hasSubmissionRow: true,
+        hasAnyRawFixedShiftRow: false,
+      }),
+    ).toBe(true);
+  });
+
+  it("全コマ不可の生行だけでも true (プリフィルで上書きしない)", () => {
+    expect(
+      hasCurrentPeriodData({
+        hasSubmissionRow: false,
+        hasAnyRawFixedShiftRow: true,
+      }),
+    ).toBe(true);
+  });
+
+  it("どちらも無ければ false (プリフィル可)", () => {
+    expect(
+      hasCurrentPeriodData({
+        hasSubmissionRow: false,
+        hasAnyRawFixedShiftRow: false,
+      }),
+    ).toBe(false);
   });
 });
