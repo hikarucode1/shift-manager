@@ -11,7 +11,9 @@ import {
 import { DEFAULT_SLOTS, type InputWeekday } from "@/lib/shift-constants";
 import { jstToday } from "@/lib/week";
 import {
+  hasCurrentPeriodData,
   resolveSubmissionEffectiveFrom,
+  selectPrefillSourceSubmission,
   submissionQueryLowerBound,
 } from "@/lib/regular-submission-target";
 import {
@@ -154,19 +156,32 @@ export default async function FixedShiftPage() {
     today,
   });
 
-  // Issue #55/#56: sun は入力対象外、no は行不在で表現するため除外
-  const currentEntries = existing
-    .filter(
-      (r) =>
-        r.effectiveFrom === targetEffectiveFrom &&
-        r.weekday !== "sun" &&
-        r.availability !== "no",
-    )
-    .map((r) => ({
-      weekday: r.weekday as InputWeekday,
-      slotNumber: r.slotNumber,
-      availability: r.availability as "yes" | "maybe",
-    }));
+  // アクティブなコマ番号。無効化済みコマの行は編集グリッドに描画できず、
+  // 初期値に混ぜると「見えないが保存される」幽霊行になるため除外する (#161 レビュー)。
+  const activeSlotNumbers = new Set(slots.map((s) => s.slotNumber));
+
+  // fixed_shifts 行 → 編集可能エントリへの変換 (currentEntries / prefill 共通)。
+  // Issue #55/#56: sun は入力対象外、no は行不在で表現するため除外。
+  const toEditableEntries = (
+    rows: { weekday: string; slotNumber: number; availability: string }[],
+  ) =>
+    rows
+      .filter(
+        (r) =>
+          r.weekday !== "sun" &&
+          r.availability !== "no" &&
+          activeSlotNumbers.has(r.slotNumber),
+      )
+      .map((r) => ({
+        weekday: r.weekday as InputWeekday,
+        slotNumber: r.slotNumber,
+        availability: r.availability as "yes" | "maybe",
+      }));
+
+  const currentPeriodRows = existing.filter(
+    (r) => r.effectiveFrom === targetEffectiveFrom,
+  );
+  const currentEntries = toEditableEntries(currentPeriodRows);
 
   // 提出単位メタ (Issue #57/#58/#59) は fixed_shift_submissions 側に全て寄せている。
   // 当初 effective_to は fixed_shifts 側だったが、entries 空 (全コマ不可) のとき
@@ -196,71 +211,73 @@ export default async function FixedShiftPage() {
     const due = dueRows[0]?.submissionDueAt;
     if (due && now > due) isPastDeadline = true;
   }
-  // #161: 新しい期を開いた直後 (当期の提出が一切ない) は、前期の提出内容を
+  // #161: 新しい期を開いた直後 (当期のデータが一切ない) は、前期の提出内容を
   // プリフィルする。表示のみの初期値で、保存時はサーバーが当期の期初を強制する
-  // (#160 の不変条件は維持)。「全コマ不可」で提出済み (submissionRow あり・
-  // entries 空) の場合は本人の意思なので発動しない。
+  // (#160 の不変条件は維持)。
+  //
+  // 前期の特定は fixed_shifts 行の max ではなく「提出単位 (fixed_shift_submissions)」
+  // で行う: そうしないと (a) 全コマ不可のメタのみ提出を飛ばして古い期を拾う、
+  // (b) 期に紐づかないアドホック行を前期と誤認する (#161 レビュー)。
   let prefill: {
     entries: typeof currentEntries;
     desiredDays: number | null;
     desiredSlots: number | null;
     sourceFrom: string;
   } | null = null;
-  if (activePeriod && !submissionRow && currentEntries.length === 0) {
-    const prevFromRows = await db
-      .select({ effectiveFrom: fixedShifts.effectiveFrom })
-      .from(fixedShifts)
-      .where(
-        and(
-          eq(fixedShifts.tutorId, profile.id),
-          lt(fixedShifts.effectiveFrom, targetEffectiveFrom),
-        ),
-      )
-      .orderBy(desc(fixedShifts.effectiveFrom))
-      .limit(1);
-    const sourceFrom = prevFromRows[0]?.effectiveFrom;
-    if (sourceFrom) {
-      const [prevShiftRows, prevMetaRows] = await Promise.all([
-        db
-          .select({
-            weekday: fixedShifts.weekday,
-            slotNumber: fixedShifts.slotNumber,
-            availability: fixedShifts.availability,
-          })
-          .from(fixedShifts)
-          .where(
-            and(
-              eq(fixedShifts.tutorId, profile.id),
-              eq(fixedShifts.effectiveFrom, sourceFrom),
-            ),
+  const currentDataExists = hasCurrentPeriodData({
+    hasSubmissionRow: submissionRow != null,
+    hasAnyRawFixedShiftRow: currentPeriodRows.length > 0,
+  });
+  if (activePeriod && !currentDataExists) {
+    // 前期の提出候補とその fixed_shifts 行を 1 回の Promise.all で並行取得
+    const [prevSubs, prevShiftRows] = await Promise.all([
+      db
+        .select({
+          effectiveFrom: fixedShiftSubmissions.effectiveFrom,
+          effectiveTo: fixedShiftSubmissions.effectiveTo,
+          desiredDays: fixedShiftSubmissions.desiredDays,
+          desiredSlots: fixedShiftSubmissions.desiredSlots,
+        })
+        .from(fixedShiftSubmissions)
+        .where(
+          and(
+            eq(fixedShiftSubmissions.tutorId, profile.id),
+            lt(fixedShiftSubmissions.effectiveFrom, targetEffectiveFrom),
           ),
-        db
-          .select({
-            desiredDays: fixedShiftSubmissions.desiredDays,
-            desiredSlots: fixedShiftSubmissions.desiredSlots,
-          })
-          .from(fixedShiftSubmissions)
-          .where(
-            and(
-              eq(fixedShiftSubmissions.tutorId, profile.id),
-              eq(fixedShiftSubmissions.effectiveFrom, sourceFrom),
-            ),
-          )
-          .limit(1),
-      ]);
-      const entries = prevShiftRows
-        .filter((r) => r.weekday !== "sun" && r.availability !== "no")
-        .map((r) => ({
-          weekday: r.weekday as InputWeekday,
-          slotNumber: r.slotNumber,
-          availability: r.availability as "yes" | "maybe",
-        }));
+        )
+        .orderBy(desc(fixedShiftSubmissions.effectiveFrom))
+        .limit(12),
+      db
+        .select({
+          effectiveFrom: fixedShifts.effectiveFrom,
+          weekday: fixedShifts.weekday,
+          slotNumber: fixedShifts.slotNumber,
+          availability: fixedShifts.availability,
+        })
+        .from(fixedShifts)
+        .where(
+          and(
+            eq(fixedShifts.tutorId, profile.id),
+            lt(fixedShifts.effectiveFrom, targetEffectiveFrom),
+          ),
+        ),
+    ]);
+    const source = selectPrefillSourceSubmission({
+      candidates: prevSubs,
+      targetEffectiveFrom,
+    });
+    if (source) {
+      const entries = toEditableEntries(
+        prevShiftRows.filter((r) => r.effectiveFrom === source.effectiveFrom),
+      );
+      // entries 空 = 前期が全コマ不可 (メタのみ) の提出。引き継ぐ内容が無いので
+      // プリフィルしない (= 本人の「出られない」意思を尊重し空フォームにする)。
       if (entries.length > 0) {
         prefill = {
           entries,
-          desiredDays: prevMetaRows[0]?.desiredDays ?? null,
-          desiredSlots: prevMetaRows[0]?.desiredSlots ?? null,
-          sourceFrom,
+          desiredDays: source.desiredDays,
+          desiredSlots: source.desiredSlots,
+          sourceFrom: source.effectiveFrom,
         };
       }
     }
