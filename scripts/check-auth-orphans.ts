@@ -18,18 +18,20 @@ import { db } from "../src/db/client";
 async function main() {
   const fix = process.argv.includes("--fix");
 
+  // #165 / 0028: role 単一列は roles 配列に置換済み。旧 p.role 参照は
+  // undefined_column で即死し、fail-open 孤児トリガの安全網が死んでいた。
   const orphans = (await db.execute(sql`
-    select p.id, p.display_name, p.role, p.email, p.auth_user_id
+    select p.id, p.display_name, array_to_string(p.roles, '/') as roles, p.email, p.auth_user_id
     from public.profiles p
     where p.auth_user_id is not null
       and not exists (
         select 1 from auth.users u where u.id = p.auth_user_id
       )
-    order by p.role, p.display_name
+    order by p.display_name
   `)) as unknown as {
     id: string;
     display_name: string;
-    role: string;
+    roles: string;
     email: string;
     auth_user_id: string;
   }[];
@@ -37,7 +39,7 @@ async function main() {
   console.log(`孤児プロファイル: ${orphans.length} 件`);
   for (const o of orphans) {
     console.log(
-      `  [${o.role}] ${o.display_name} <${o.email}> auth_user_id=${o.auth_user_id}`,
+      `  [${o.roles}] ${o.display_name} <${o.email}> auth_user_id=${o.auth_user_id}`,
     );
   }
 
