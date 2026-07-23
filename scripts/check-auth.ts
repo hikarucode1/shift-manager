@@ -23,22 +23,26 @@ async function main() {
   }
 
   console.log("\n=== profiles cross-check ===");
+  // #165 / 0028: p.role → p.roles (配列)。あわせて join を p.auth_user_id に
+  // 修正 (profiles.id は auth と独立な内部 ID で、getProfile も auth_user_id で
+  // 解決する。p.id = au.id では常に NO PROFILE 判定になっていた)。
   const profileMatch = await db.execute(
-    sql`select au.email, au.id as auth_id, p.id as profile_id, p.role, p.display_name, p.is_active
+    sql`select au.email, au.id as auth_id, p.id as profile_id,
+               array_to_string(p.roles, '/') as roles, p.display_name, p.is_active
         from auth.users au
-        left join public.profiles p on p.id = au.id
+        left join public.profiles p on p.auth_user_id = au.id
         order by au.created_at`,
   );
   for (const r of profileMatch as unknown as {
     email: string;
     auth_id: string;
     profile_id: string | null;
-    role: string | null;
+    roles: string | null;
     display_name: string | null;
     is_active: boolean | null;
   }[]) {
     const status = r.profile_id
-      ? `✓ profile (role: ${r.role}, name: ${r.display_name}, active: ${r.is_active})`
+      ? `✓ profile (roles: ${r.roles}, name: ${r.display_name}, active: ${r.is_active})`
       : "✗ NO PROFILE — login will redirect to /login";
     console.log(`  ${r.email}  →  ${status}`);
   }

@@ -1,7 +1,8 @@
 import "server-only";
-import { and, arrayContains, eq, gte, inArray, lte } from "drizzle-orm";
+import { and, arrayContains, eq, inArray } from "drizzle-orm";
 import { db } from "@/db/client";
 import {
+  profiles,
   shiftAssignments,
   shiftUploads,
   students,
@@ -11,6 +12,17 @@ import type { ParsedShiftCsv } from "@/lib/shift-csv-parser";
 import { findMappingDuplicates } from "@/lib/mapping-validation";
 
 export type TeacherMapping = Record<string, string>; // teacherName → profileId
+
+/**
+ * コミット時のユーザー向け業務エラー (対応付け未完了・重複・無効な講師など)。
+ * #165: DB の生エラーと区別し、これだけ UI に文言を返す (呼び出し側で判定)。
+ */
+export class UploadCommitError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "UploadCommitError";
+  }
+}
 
 export type CommitUploadArgs = {
   parsed: ParsedShiftCsv;
@@ -48,7 +60,7 @@ export async function commitShiftUpload(
   // Validate mappings
   const missing = parsed.uniqueTeacherNames.filter((n) => !mappings[n]);
   if (missing.length > 0) {
-    throw new Error(
+    throw new UploadCommitError(
       `講師の対応付けが未完了です: ${missing.join(", ")}`,
     );
   }
@@ -60,13 +72,22 @@ export async function commitShiftUpload(
     scopedMappings[name] = mappings[name];
   }
 
+  // #165: 割当先 ID の形式検証。改竄クライアントが非 uuid を送ると後続の
+  // profiles クエリが "invalid input syntax for type uuid" で不透明に落ちるため、
+  // 先に明確な業務エラーにする (pure・DB 到達前)。
+  const UUID_RE =
+    /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+  if (parsed.uniqueTeacherNames.some((n) => !UUID_RE.test(scopedMappings[n]))) {
+    throw new UploadCommitError("講師の割り当てが不正です。");
+  }
+
   // 同一アカウントへの重複割当を拒否 (DB の unique 制約に当たる前に明示エラー)
   const dups = findMappingDuplicates(scopedMappings);
   if (dups.length > 0) {
     const detail = dups
       .map((d) => `「${d.csvNames.join("」「")}」`)
       .join(", ");
-    throw new Error(
+    throw new UploadCommitError(
       `同じ講師アカウントに複数の CSV 名が割り当てられています: ${detail}。1 名につき 1 アカウントにしてください。`,
     );
   }
@@ -76,10 +97,12 @@ export async function commitShiftUpload(
   // (upload_id, tutor_id, date, slot_number) 違反になるため事前に弾く。
   const seen = new Set<string>();
   const collisions: string[] = [];
+  let totalAssignments = 0;
   for (const day of parsed.days) {
     if (day.isHoliday) continue;
     for (const slot of day.slots) {
       for (const a of slot.assignments) {
+        totalAssignments++;
         const tutorId = scopedMappings[a.teacherName];
         if (!tutorId) continue;
         const key = `${day.date}|${slot.slotNumber}|${tutorId}`;
@@ -95,8 +118,45 @@ export async function commitShiftUpload(
   }
   if (collisions.length > 0) {
     const uniq = [...new Set(collisions)];
-    throw new Error(
+    throw new UploadCommitError(
       `同じ講師が同じ日・同じコマに重複しています: ${uniq.join(" / ")}。CSV を確認してください。`,
+    );
+  }
+
+  // #165: 出勤データが 1 件も無い CSV は、置換のため週の公開済みシフトを削除する
+  // 一方で何も挿入せず、無言でその週を全消去してしまう (truncated / 破損ファイル)。
+  // 明示エラーにしてデータ消失を防ぐ (全休講週は公開対象が無いので上げない想定)。
+  if (totalAssignments === 0) {
+    throw new UploadCommitError(
+      "CSV に出勤データ (講師の割り当て) が見つかりません。ファイルが正しいか確認してください。",
+    );
+  }
+
+  // #165: 割当先が「講師ロールを持つアカウント」か検証する。FK だけでは admin
+  // 専用アカウント等にコマが割り当たりうるため tutor ロールを必須にする。
+  //
+  // 設計判断 (#171 レビューで確定): is_active は敢えて条件にしない。マッピング用
+  // ドロップダウン (fetchActiveTutors) が既に active な講師しか提示せず選択時点で
+  // 担保されるため、commit で再度 is_active 必須にすると「マッピング〜commit 間に
+  // 1 名無効化されただけで週全体が公開不能 (対象はドロップダウンに出ず再マッピング
+  // 不可)」「休職中で座席表に残る講師も塞ぐ」弊害の方が大きい。無効化の競合は許容。
+  const mappedIds = [...new Set(Object.values(scopedMappings))];
+  const validRows = await db
+    .select({ id: profiles.id })
+    .from(profiles)
+    .where(
+      and(
+        inArray(profiles.id, mappedIds),
+        arrayContains(profiles.roles, ["tutor"]),
+      ),
+    );
+  const validIds = new Set(validRows.map((r) => r.id));
+  const invalidNames = parsed.uniqueTeacherNames.filter(
+    (n) => !validIds.has(scopedMappings[n]),
+  );
+  if (invalidNames.length > 0) {
+    throw new UploadCommitError(
+      `割り当て先が講師アカウントではありません: ${invalidNames.join(", ")}`,
     );
   }
 
@@ -139,15 +199,14 @@ export async function commitShiftUpload(
       : [];
     const studentIdByName = new Map(studentRows.map((s) => [s.nameKey, s.id]));
 
-    // 3) Delete any existing weekly_shifts in this week range (cascades to assignments)
-    await tx
-      .delete(weeklyShifts)
-      .where(
-        and(
-          gte(weeklyShifts.date, parsed.weekStart),
-          lte(weeklyShifts.date, parsed.weekEnd),
-        ),
-      );
+    // 3) Delete existing weekly_shifts for the dates this CSV actually covers
+    //    (cascades to assignments). #165: 以前は [weekStart, weekEnd] 全域を消して
+    //    いたため、truncated CSV で day-block が欠落した日の公開済みシフトまで
+    //    巻き添え削除された。CSV に含まれる日付だけを置換対象にする。
+    const uploadedDates = [...new Set(parsed.days.map((d) => d.date))];
+    if (uploadedDates.length > 0) {
+      await tx.delete(weeklyShifts).where(inArray(weeklyShifts.date, uploadedDates));
+    }
 
     // 4) Insert new weekly_shifts + shift_assignments
     let insertedShiftRows = 0;
@@ -157,7 +216,8 @@ export async function commitShiftUpload(
       if (day.isHoliday) continue;
       for (const slot of day.slots) {
         for (const a of slot.assignments) {
-          const tutorId = mappings[a.teacherName];
+          // #165: 検証済みの scopedMappings を使う (生の mappings は検証を迂回する)
+          const tutorId = scopedMappings[a.teacherName];
           if (!tutorId) continue; // validated above, but be defensive
 
           const [shiftRow] = await tx

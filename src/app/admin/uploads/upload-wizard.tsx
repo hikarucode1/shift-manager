@@ -182,7 +182,7 @@ export function UploadWizard({ tutors }: { tutors: Tutor[] }) {
     }
     startCommit(async () => {
       const res = await commitUploadedCsv({
-        parsed: bundle.parsed,
+        // #165 H2: parsed は送らない。サーバーが rawContent を再解析する。
         rawContent: bundle.rawContent,
         originalFilename: bundle.originalFilename,
         fileBytes: bundle.fileBytes,

@@ -10,7 +10,10 @@
 import { readFileSync } from "node:fs";
 import { db } from "../src/db/client";
 import { profiles } from "../src/db/schema";
-import { parseShiftCsvBuffer } from "../src/lib/shift-csv-parser";
+import {
+  parseShiftCsvBuffer,
+  ShiftCsvParseError,
+} from "../src/lib/shift-csv-parser";
 
 const csvPath = process.argv[2];
 if (!csvPath) {
@@ -20,7 +23,20 @@ if (!csvPath) {
 
 async function main() {
   const buf = readFileSync(csvPath);
-  const parsed = parseShiftCsvBuffer(buf);
+  // #165: parser は不正な表示期間/範囲外日付で throw する。1 週間分の座席表 CSV を
+  // 前提とするため、失敗時は分かりやすく案内して終了する。
+  let parsed;
+  try {
+    parsed = parseShiftCsvBuffer(buf);
+  } catch (e) {
+    if (e instanceof ShiftCsvParseError) {
+      console.error(
+        `CSV 解析エラー: ${e.message}\n1 週間分 (月〜日) の座席表 CSV を指定してください。`,
+      );
+      process.exit(1);
+    }
+    throw e;
+  }
 
   // role を問わず display_name で突き合わせる。
   // (admin が CSV の講師名と同名だった場合に二重登録しないため)
@@ -45,7 +61,8 @@ async function main() {
       // profiles.id は PK だが defaultRandom() を付けていないため明示生成
       id: crypto.randomUUID(),
       displayName: name,
-      role: "tutor" as const,
+      // #165 / 0028: role 列は削除済み (roles 配列のデフォルト ["tutor"] が入る)。
+      // 死んだ role キーを渡していた (無視されて偶然動作) のを除去。
       // 実在しないダミーメール (.invalid は RFC 2606 予約 TLD)
       email: `stub-${name.replace(/\s/g, "")}@example.invalid`,
       isActive: true,
