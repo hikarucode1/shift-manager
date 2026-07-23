@@ -131,6 +131,26 @@ function isoDate(year: number, month: number, day: number): string {
   return `${year}-${p(month)}-${p(day)}`;
 }
 
+/**
+ * "YYYY-MM-DD" が実在するカレンダー日か。#165: splitDateRange / parseMonthDay の
+ * 正規表現は 13月/45日 のような値を通してしまい、Date.parse が NaN を返すと
+ * スパン検証 (NaN > n = false) をすり抜けて commit 時に不透明な失敗になる。
+ * 月/日のオーバーフロー (2026-13-45, 2026-02-30 等) をここで弾く。
+ */
+function isRealIsoDate(iso: string): boolean {
+  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(iso);
+  if (!m) return false;
+  const y = Number(m[1]);
+  const mo = Number(m[2]);
+  const d = Number(m[3]);
+  const dt = new Date(Date.UTC(y, mo - 1, d));
+  return (
+    dt.getUTCFullYear() === y &&
+    dt.getUTCMonth() === mo - 1 &&
+    dt.getUTCDate() === d
+  );
+}
+
 /* ------------------------------------------------------------------ */
 /*  Main parser                                                        */
 /* ------------------------------------------------------------------ */
@@ -187,8 +207,33 @@ export function parseShiftCsvText(text: string): ParsedShiftCsv {
       "ヘッダーから表示期間を読み取れませんでした。1行目に「座席表,表示期間,YYYY/MM/DD〜YYYY/MM/DD」が必要です。",
     );
   }
+  // narrowing を closure に持ち込むため const に固定
+  const ws = weekStart;
+  const we = weekEnd;
 
-  const year = Number(weekStart.slice(0, 4));
+  // #165: 表示期間が実在する日付か検証 (2026/13/45 等の NaN すり抜けを防ぐ)。
+  if (!isRealIsoDate(ws) || !isRealIsoDate(we)) {
+    throw new ShiftCsvParseError(
+      `表示期間の日付が不正です (${ws}〜${we})。YYYY/MM/DD 形式の実在する日付が必要です。`,
+    );
+  }
+
+  // #165 H1: 日付行は月/日しか持たないため、年はヘッダーの表示期間から決める。
+  // 週が年を跨ぐ (例 2026/12/28〜2027/01/03) と weekStart 先頭4桁固定では
+  // 1月分が前年になり過去週へ紛れ込む。表示期間に収まる年を選ぶ。
+  const startYear = Number(ws.slice(0, 4));
+  const endYear = Number(we.slice(0, 4));
+  const resolveYear = (month: number, day: number): number => {
+    if (startYear === endYear) return startYear;
+    const asStart = isoDate(startYear, month, day);
+    if (asStart >= ws && asStart <= we) return startYear;
+    const asEnd = isoDate(endYear, month, day);
+    if (asEnd >= ws && asEnd <= we) return endYear;
+    // どちらの年でも表示期間に収まらない = 異常な月/日。ここで返す日付は後段の
+    // day.date 範囲チェックで必ず弾かれる (返り値は結果に影響しない) ので、
+    // 分かりやすさのため startYear を返す。
+    return startYear;
+  };
 
   // --- 日ブロック ---
   const days: ParsedDay[] = [];
@@ -213,7 +258,7 @@ export function parseShiftCsvText(text: string): ParsedShiftCsv {
           cursor + 1,
         );
       }
-      const date = isoDate(year, md.month, md.day);
+      const date = isoDate(resolveYear(md.month, md.day), md.month, md.day);
       const weekday: Weekday =
         weekdayKey ?? inferWeekdayFromDate(date);
       cursor++;
@@ -232,6 +277,38 @@ export function parseShiftCsvText(text: string): ParsedShiftCsv {
 
     // 想定外行はスキップ
     cursor++;
+  }
+
+  // #165 H2: 座席表は必ず 1 週間 (月〜日)。表示期間が不正/過大な CSV で
+  // コミット時の weekly_shifts 一括削除 (範囲 [weekStart, weekEnd]) が暴走
+  // しないよう parser 段でガードする。コミット時はこの parser で rawContent を
+  // 再解析するため、クライアント改竄値では突破できない。
+  if (ws > we) {
+    throw new ShiftCsvParseError(
+      `表示期間の開始日 (${ws}) が終了日 (${we}) より後です。`,
+    );
+  }
+  // Mon〜Sun の正規週は差 6 日 (7 日間)。差 6 日超を弾く。
+  // #165 レビュー: 以前は +1 日許容 (>7) にしていたが、8 日 (差 7) の表示期間を
+  // 通すと commit の削除範囲 [ws, we] が隣週の公開済み初日 (we) まで及び、その日の
+  // シフトを黙って消しうる。削除範囲を厳密に 1 週間へ収めるため許容を外す。
+  // ws/we は上で実在日付を検証済みなので spanDays が NaN になることはない。
+  const spanDays = Math.round(
+    (Date.parse(`${we}T12:00:00.000Z`) - Date.parse(`${ws}T12:00:00.000Z`)) /
+      86_400_000,
+  );
+  if (spanDays > 6) {
+    throw new ShiftCsvParseError(
+      `表示期間が 1 週間を超えています (${ws}〜${we})。座席表の CSV を確認してください。`,
+    );
+  }
+  for (const d of days) {
+    // #165: 範囲外 + 実在しない日付 (2026-02-30 等、範囲内に紛れ込むケース) を弾く
+    if (d.date < ws || d.date > we || !isRealIsoDate(d.date)) {
+      throw new ShiftCsvParseError(
+        `日付 ${d.date} が不正、または表示期間 (${ws}〜${we}) の範囲外です。`,
+      );
+    }
   }
 
   return {

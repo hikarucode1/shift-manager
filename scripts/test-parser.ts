@@ -1,5 +1,8 @@
 import { readFileSync } from "node:fs";
-import { parseShiftCsvBuffer } from "../src/lib/shift-csv-parser";
+import {
+  parseShiftCsvBuffer,
+  ShiftCsvParseError,
+} from "../src/lib/shift-csv-parser";
 
 const path = process.argv[2];
 if (!path) {
@@ -8,7 +11,20 @@ if (!path) {
 }
 
 const buf = readFileSync(path);
-const parsed = parseShiftCsvBuffer(buf);
+// #165: parser は不正な表示期間/範囲外日付で throw するようになった。診断ツール
+// なので、失敗理由を分かりやすく表示して終了する (スタックトレースで潰さない)。
+let parsed;
+try {
+  parsed = parseShiftCsvBuffer(buf);
+} catch (e) {
+  if (e instanceof ShiftCsvParseError) {
+    console.error(
+      `CSV 解析エラー${e.rowNumber ? ` (行 ${e.rowNumber})` : ""}: ${e.message}`,
+    );
+    process.exit(1);
+  }
+  throw e;
+}
 
 console.log("=== Summary ===");
 console.log("Week:", parsed.weekStart, "〜", parsed.weekEnd);
