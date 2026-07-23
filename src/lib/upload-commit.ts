@@ -75,6 +75,14 @@ export async function commitShiftUpload(
   // #165: 割当先が「有効な講師 (roles に tutor を含み is_active)」か検証する。
   // FK だけでは無効化済み講師・admin・stub にコマが割り当たり、ログイン
   // できない人が担当になる。fetchActiveTutors と同じ条件で存在確認する。
+  //
+  // ⚠️ TOCTOU (受容): この検証は tx 前で、check→insert 間に対象講師が
+  // 無効化される競合は防げない。ただし weekly_shifts.tutor_id の FK は
+  // onDelete: restrict で参照整合性が保たれ (講師行は消えない・is_active が
+  // 落ちるだけ)、最悪ケースは「直前に無効化された講師に 1 週間分の枠が付く」
+  // だけで破損しない (次回アップロードで是正)。本検証の主目的 (admin/stub/
+  // 既存の無効講師の排除) は tx 前チェックで満たされるため、行ロック
+  // (SELECT FOR UPDATE) は過剰として掛けない。
   const mappedIds = [...new Set(Object.values(scopedMappings))];
   const validRows = await db
     .select({ id: profiles.id })

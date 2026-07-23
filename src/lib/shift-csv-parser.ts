@@ -203,7 +203,9 @@ export function parseShiftCsvText(text: string): ParsedShiftCsv {
     if (asStart >= ws && asStart <= we) return startYear;
     const asEnd = isoDate(endYear, month, day);
     if (asEnd >= ws && asEnd <= we) return endYear;
-    // 範囲外 (異常入力) は月で寄せる: 開始月以降=開始年、未満=終了年
+    // どちらの年でも表示期間に収まらない = 異常な月/日。ここで返す日付は
+    // 後段の day.date 範囲チェックで必ず弾かれる (= CSV 自体が拒否される)。
+    // 月で寄せるのは万一到達した場合の穏当な既定値。
     return month >= startMonth ? startYear : endYear;
   };
 
@@ -260,6 +262,9 @@ export function parseShiftCsvText(text: string): ParsedShiftCsv {
       `表示期間の開始日 (${ws}) が終了日 (${we}) より後です。`,
     );
   }
+  // Mon〜Sun の正規週は差 6 日 (7 日間)。運用ブレを吸収するため +1 日の許容を
+  // 持たせ「差 7 日 (8 日間) 超」を異常として弾く。目的は削除範囲の暴走防止
+  // (2000〜2099 のような値で全削除されるのを防ぐ) なので厳密な週境界は要求しない。
   const spanDays = Math.round(
     (Date.parse(`${we}T12:00:00.000Z`) - Date.parse(`${ws}T12:00:00.000Z`)) /
       86_400_000,

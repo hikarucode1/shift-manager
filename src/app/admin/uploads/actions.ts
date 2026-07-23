@@ -128,13 +128,24 @@ export async function commitUploadedCsv(
     return { ok: false, error: "CSV の再解析に失敗しました。" };
   }
 
+  // #165: originalFilename / fileBytes は監査メタのみ (削除範囲やデータ整合には
+  // 無関係) だが、クライアント値をそのまま保存しないよう軽く正規化する。
+  const originalFilename =
+    typeof input.originalFilename === "string"
+      ? input.originalFilename.slice(0, 255)
+      : "unknown.csv";
+  const fileBytes =
+    Number.isFinite(input.fileBytes) && input.fileBytes >= 0
+      ? Math.min(Math.trunc(input.fileBytes), 2 * 1024 * 1024)
+      : Buffer.byteLength(input.rawContent, "utf8");
+
   try {
     const result = await commitShiftUpload({
       parsed,
       mappings: input.mappings,
       rawContent: input.rawContent,
-      originalFilename: input.originalFilename,
-      fileBytes: input.fileBytes,
+      originalFilename,
+      fileBytes,
       uploadedBy: profile.id,
     });
     revalidatePath("/admin/uploads");
