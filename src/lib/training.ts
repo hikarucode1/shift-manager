@@ -7,7 +7,7 @@ import {
   trainingPreferences,
 } from "@/db/schema";
 import { getSlotMeta, slotNumbers } from "@/lib/slot-meta";
-import { weekdayOf } from "@/lib/week";
+import { jstToday, weekdayOf } from "@/lib/week";
 
 export type TrainingPeriodSummary = {
   id: string;
@@ -111,7 +111,9 @@ export async function getActiveTrainingPeriods(): Promise<
     .where(eq(periods.isArchived, false))
     .orderBy(desc(periods.startDate));
 
-  const cutoff = addDaysIso(jstStartOfToday().toISOString().slice(0, 10), -ENDED_VISIBLE_DAYS);
+  // #165: jstStartOfToday().toISOString() は UTC 変換で JST 15:00 未満だと前日に
+  // なる。表示カットオフが 1 日ズレるため、JST カレンダー日を返す jstToday() を使う。
+  const cutoff = addDaysIso(jstToday(), -ENDED_VISIBLE_DAYS);
 
   return rows
     .filter((r) => r.submissionDeadline !== null)

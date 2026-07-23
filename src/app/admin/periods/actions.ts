@@ -242,10 +242,16 @@ export async function setPeriodArchived(
   const parsed = ToggleInput.safeParse(input);
   if (!parsed.success) return { ok: false, error: "入力が不正です。" };
 
-  await db
+  // #165: 更新件数を確認 (兄弟の setPeriodReopened と同様)。存在しない ID でも
+  // ok:true を返していたのを修正。
+  const updated = await db
     .update(periods)
     .set({ isArchived: parsed.data.value, updatedAt: new Date() })
-    .where(eq(periods.id, parsed.data.id));
+    .where(eq(periods.id, parsed.data.id))
+    .returning({ id: periods.id });
+  if (updated.length === 0) {
+    return { ok: false, error: "対象の期間が見つかりません。" };
+  }
 
   revalidatePath("/admin/periods");
   return { ok: true };

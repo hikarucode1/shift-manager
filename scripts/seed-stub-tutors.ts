@@ -61,7 +61,8 @@ async function main() {
       // profiles.id は PK だが defaultRandom() を付けていないため明示生成
       id: crypto.randomUUID(),
       displayName: name,
-      role: "tutor" as const,
+      // #165 / 0028: role 列は削除済み (roles 配列のデフォルト ["tutor"] が入る)。
+      // 死んだ role キーを渡していた (無視されて偶然動作) のを除去。
       // 実在しないダミーメール (.invalid は RFC 2606 予約 TLD)
       email: `stub-${name.replace(/\s/g, "")}@example.invalid`,
       isActive: true,
