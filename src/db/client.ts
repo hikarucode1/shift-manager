@@ -14,8 +14,18 @@ if (!process.env.DATABASE_URL) {
 
 const connectionString = process.env.DATABASE_URL!;
 
-// Supabase の pooler(ポート 6543)経由のセッションは prepare を無効化
-const client = postgres(connectionString, { prepare: false });
+// Supabase の pooler(ポート 6543)経由のセッションは prepare を無効化。
+// #165: プール上限を明示。デフォルト max:10 のままだと、サーバーレス
+// (Vercel) の同時起動インスタンス × 10 で Supavisor の接続上限を食い潰しうる。
+// 各インスタンスは小さめに抑える (pooler 側が実接続をプールする)。
+// tx 中に別接続を要求する箇所は無い (transaction は tx 引数で完結) ため
+// 小さい max でデッドロックしない。idle は早めに解放し、接続待ちは短時間で失敗。
+const client = postgres(connectionString, {
+  prepare: false,
+  max: 3,
+  idle_timeout: 20,
+  connect_timeout: 10,
+});
 
 export const db = drizzle(client, { schema });
 export type Database = typeof db;

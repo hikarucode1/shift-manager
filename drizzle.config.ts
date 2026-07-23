@@ -10,7 +10,11 @@ export default defineConfig({
   out: "./drizzle",
   dialect: "postgresql",
   dbCredentials: {
-    url: process.env.DATABASE_URL!,
+    // #165: migrate は direct connection (5432) を使う。DATABASE_URL は
+    // transaction pooler (6543) を指しており、drizzle-kit migrate が
+    // pooler 経由だと half-applied で失敗する (docs/migration-policy.md 参照)。
+    // DIRECT_URL があればそれを優先し、無ければ従来どおり DATABASE_URL。
+    url: process.env.DIRECT_URL ?? process.env.DATABASE_URL!,
   },
   verbose: true,
   strict: true,
