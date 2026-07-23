@@ -58,6 +58,9 @@ CHECK / trigger / NOT NULL すべてオブジェクト単位で存在確認)。�
 | 0024 | `regular_assignments.effective_to` を backfill 後 NOT NULL 化 (#87) | **破壊的** (ALTER NOT NULL、NULL 行があれば失敗。LOCK + backfill 同梱) | `effective_to IS NULL` 件数を確認後に適用 (2026-06-23 適用済、0 行) |
 | 0025 | NOT NULL 化後の range trigger 関数から NULL 分岐を除去 (#87 follow-up) | 非破壊 (CREATE OR REPLACE FUNCTION) | 0024 適用後に適用 (2026-06-23 適用済) |
 | 0026 | 親 period 更新時に child 範囲外を検出する BEFORE UPDATE trigger (#97) | 非破壊 (trigger 追加) | 任意 (2026-06-23 適用済) |
+| 0031 | `fixed_shift_submissions` の effective_to>=effective_from CHECK + `training_preferences` 日付範囲 trigger + 0010 関数の search_path hardening (#165) | **CHECK 追加** (違反行があれば失敗) + trigger/関数追加 | CHECK は `effective_to < effective_from` の行が 0 件であることを確認後に適用。trigger/関数は非破壊 |
+
+<!-- 注: 0027-0030 の行は別 PR (#173 infra) で追記。マージ順で本行と近接するため軽微な conflict が出たら両方残す -->
 
 ## 破壊的 migration の判定基準
 
