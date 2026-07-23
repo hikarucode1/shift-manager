@@ -223,17 +223,16 @@ export function parseShiftCsvText(text: string): ParsedShiftCsv {
   // 1月分が前年になり過去週へ紛れ込む。表示期間に収まる年を選ぶ。
   const startYear = Number(ws.slice(0, 4));
   const endYear = Number(we.slice(0, 4));
-  const startMonth = Number(ws.slice(5, 7));
   const resolveYear = (month: number, day: number): number => {
     if (startYear === endYear) return startYear;
     const asStart = isoDate(startYear, month, day);
     if (asStart >= ws && asStart <= we) return startYear;
     const asEnd = isoDate(endYear, month, day);
     if (asEnd >= ws && asEnd <= we) return endYear;
-    // どちらの年でも表示期間に収まらない = 異常な月/日。ここで返す日付は
-    // 後段の day.date 範囲チェックで必ず弾かれる (= CSV 自体が拒否される)。
-    // 月で寄せるのは万一到達した場合の穏当な既定値。
-    return month >= startMonth ? startYear : endYear;
+    // どちらの年でも表示期間に収まらない = 異常な月/日。ここで返す日付は後段の
+    // day.date 範囲チェックで必ず弾かれる (返り値は結果に影響しない) ので、
+    // 分かりやすさのため startYear を返す。
+    return startYear;
   };
 
   // --- 日ブロック ---

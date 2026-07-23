@@ -111,6 +111,13 @@ export async function commitUploadedCsv(
     return { ok: false, error: "送信データが不正です。" };
   }
 
+  // #165: parse-time の 2MB ガードは File にしか掛からず、commit は rawContent
+  // 文字列しか見ないため、直接/リプレイ呼び出しで巨大な rawContent を再パース
+  // させられる。commit 側でもサイズを制限する。
+  if (Buffer.byteLength(input.rawContent, "utf8") > 2 * 1024 * 1024) {
+    return { ok: false, error: "データが大きすぎます (2MB 上限)。" };
+  }
+
   // #165 H2: クライアント往復の parsed は信頼せず rawContent を再解析する。
   // これで削除範囲 (weekStart/weekEnd) と各 day.date が parser の検証
   // (1週間以内・範囲内) を必ず通り、改竄値での weekly_shifts 全削除を防ぐ。
@@ -161,13 +168,16 @@ export async function commitUploadedCsv(
   } catch (err) {
     console.error("commitUploadedCsv failed", err);
     // #165: 業務エラー (対応付け未完了等) のみ文言を返す。DB の生エラーは
-    // 内部情報を露出しないよう汎用文言にする。
+    // 内部情報を露出しないよう汎用文言にする。ただし「時間をおいて再度」だと
+    // 決定論的失敗 (制約違反等) を transient と誤認させ無限リトライを招くため、
+    // 原因確認と管理者連絡を促す文言にする (詳細は console.error に残る)。
     if (err instanceof UploadCommitError) {
       return { ok: false, error: err.message };
     }
     return {
       ok: false,
-      error: "取り込みに失敗しました。時間をおいて再度お試しください。",
+      error:
+        "取り込みに失敗しました。CSV の内容と講師の割り当てをご確認ください。解決しない場合は管理者へご連絡ください。",
     };
   }
 }
