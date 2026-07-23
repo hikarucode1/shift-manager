@@ -1,12 +1,12 @@
 "use server";
 
 import { z } from "zod";
-import { and, eq, sql } from "drizzle-orm";
+import { and, arrayContains, eq, inArray, sql } from "drizzle-orm";
 import { revalidatePath } from "next/cache";
 import { requireRole } from "@/lib/auth";
 import { insertNotifications } from "@/lib/notifications";
 import { db } from "@/db/client";
-import { courseConfirmations, periods } from "@/db/schema";
+import { courseConfirmations, periods, profiles } from "@/db/schema";
 
 type ActionResult =
   | { ok: true; inserted: number }
@@ -75,6 +75,27 @@ export async function saveCourseConfirmations(
 
   // 入力 tutor_id を dedup
   const dedupedTutors = Array.from(new Set(tutorIds));
+
+  // #165: 割当先が講師ロールのアカウントか検証する。FK だけでは admin 等にも
+  // コマを確定できてしまうため。CSV 取り込み (upload-commit) と同方針で role のみ
+  // を必須にし、is_active は課さない (無効化の競合で確定不能になるのを避ける)。
+  if (dedupedTutors.length > 0) {
+    const validRows = await db
+      .select({ id: profiles.id })
+      .from(profiles)
+      .where(
+        and(
+          inArray(profiles.id, dedupedTutors),
+          arrayContains(profiles.roles, ["tutor"]),
+        ),
+      );
+    if (validRows.length !== dedupedTutors.length) {
+      return {
+        ok: false,
+        error: "講師ではないアカウントは確定対象にできません。",
+      };
+    }
+  }
 
   try {
     await db.transaction(async (tx) => {
