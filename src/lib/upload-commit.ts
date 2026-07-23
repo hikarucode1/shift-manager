@@ -132,14 +132,14 @@ export async function commitShiftUpload(
     );
   }
 
-  // #165: 割当先が「有効な講師 (tutor ロール + is_active)」か検証する。FK だけでは
-  // admin 専用・無効化済み講師にコマが割り当たり、ログインできない人が担当になる
-  // (監査 #165)。
+  // #165: 割当先が「講師ロールを持つアカウント」か検証する。FK だけでは admin
+  // 専用アカウント等にコマが割り当たりうるため tutor ロールを必須にする。
   //
-  // 設計判断: is_active を必須にすると、マッピング〜commit 間に 1 名でも無効化される
-  // と週全体を公開できないが、これは「無効な担当を公開させない」ための正しい強制
-  // (データ整合 > 利便性)。無効化された講師はドロップダウンに出ず再マッピングでき
-  // ないため、対象名と対処 (再有効化 / CSV の担当修正) をエラーで具体的に案内する。
+  // 設計判断 (#171 レビューで確定): is_active は敢えて条件にしない。マッピング用
+  // ドロップダウン (fetchActiveTutors) が既に active な講師しか提示せず選択時点で
+  // 担保されるため、commit で再度 is_active 必須にすると「マッピング〜commit 間に
+  // 1 名無効化されただけで週全体が公開不能 (対象はドロップダウンに出ず再マッピング
+  // 不可)」「休職中で座席表に残る講師も塞ぐ」弊害の方が大きい。無効化の競合は許容。
   const mappedIds = [...new Set(Object.values(scopedMappings))];
   const validRows = await db
     .select({ id: profiles.id })
@@ -148,7 +148,6 @@ export async function commitShiftUpload(
       and(
         inArray(profiles.id, mappedIds),
         arrayContains(profiles.roles, ["tutor"]),
-        eq(profiles.isActive, true),
       ),
     );
   const validIds = new Set(validRows.map((r) => r.id));
@@ -157,7 +156,7 @@ export async function commitShiftUpload(
   );
   if (invalidNames.length > 0) {
     throw new UploadCommitError(
-      `割り当て先が有効な講師アカウントではありません (無効化済み / 講師以外): ${invalidNames.join(", ")}。対象講師を有効化するか CSV の担当を修正してください。`,
+      `割り当て先が講師アカウントではありません: ${invalidNames.join(", ")}`,
     );
   }
 
