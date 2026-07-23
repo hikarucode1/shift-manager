@@ -230,9 +230,10 @@ export async function getOpenSwapsForTutor(
   tutorId: string,
 ): Promise<OpenSwap[]> {
   const meta = await getSlotMeta();
-  // #165: 過去日の pending 募集は一覧から除外する。実施済みコマの募集に応募/承認
-  // できると、確定済みシフトが事後に「代講(承認済)」へ書き換わってしまう。
-  const today = jstToday();
+  // #165: 過去日 pending の実害 (実施済みコマの再割当) は承認側 (decideSwapRequest)
+  // で塞ぐ。一覧から過去日を除外すると、応募済みの過去 pending が withdraw 導線ごと
+  // 消えて取り下げ不能になるため、ここでは日付で絞らない (応募/承認は各アクションで
+  // ガード)。
   const rows = await db
     .select({
       id: swapRequests.id,
@@ -249,7 +250,6 @@ export async function getOpenSwapsForTutor(
       and(
         eq(swapRequests.status, "pending"),
         ne(swapRequests.requesterId, tutorId),
-        gte(swapRequests.date, today),
       ),
     )
     .orderBy(asc(swapRequests.date), asc(swapRequests.slotNumber));

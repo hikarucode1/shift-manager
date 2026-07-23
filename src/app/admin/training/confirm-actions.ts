@@ -1,12 +1,13 @@
 "use server";
 
 import { z } from "zod";
-import { and, arrayContains, eq, inArray, sql } from "drizzle-orm";
+import { and, eq, sql } from "drizzle-orm";
 import { revalidatePath } from "next/cache";
 import { requireRole } from "@/lib/auth";
 import { insertNotifications } from "@/lib/notifications";
+import { findNonTutorIds } from "@/lib/tutor-validation";
 import { db } from "@/db/client";
-import { courseConfirmations, periods, profiles } from "@/db/schema";
+import { courseConfirmations, periods } from "@/db/schema";
 
 type ActionResult =
   | { ok: true; inserted: number }
@@ -76,23 +77,29 @@ export async function saveCourseConfirmations(
   // 入力 tutor_id を dedup
   const dedupedTutors = Array.from(new Set(tutorIds));
 
-  // #165: 割当先が講師ロールのアカウントか検証する。FK だけでは admin 等にも
-  // コマを確定できてしまうため。CSV 取り込み (upload-commit) と同方針で role のみ
-  // を必須にし、is_active は課さない (無効化の競合で確定不能になるのを避ける)。
+  // #165: 割当先が講師ロールのアカウントか検証する (findNonTutorIds に集約)。
+  // ただし「今回新たに追加された」id のみを対象にする。既に確定済みで残す
+  // orphan (かつて tutor だったが今は非 tutor) を含めると、その cell を編集する
+  // だけで保存全体が弾かれてしまう (heatmap は orphan を再表示するため)。
+  // 既存確定分は role 変化があってもそのまま保持を許し、新規追加分だけ検証する。
   if (dedupedTutors.length > 0) {
-    const validRows = await db
-      .select({ id: profiles.id })
-      .from(profiles)
+    const existingRows = await db
+      .select({ tutorId: courseConfirmations.tutorId })
+      .from(courseConfirmations)
       .where(
         and(
-          inArray(profiles.id, dedupedTutors),
-          arrayContains(profiles.roles, ["tutor"]),
+          eq(courseConfirmations.periodId, periodId),
+          eq(courseConfirmations.date, date),
+          eq(courseConfirmations.slotNumber, slotNumber),
         ),
       );
-    if (validRows.length !== dedupedTutors.length) {
+    const alreadyConfirmed = new Set(existingRows.map((r) => r.tutorId));
+    const newlyAdded = dedupedTutors.filter((id) => !alreadyConfirmed.has(id));
+    const nonTutor = await findNonTutorIds(newlyAdded);
+    if (nonTutor.length > 0) {
       return {
         ok: false,
-        error: "講師ではないアカウントは確定対象にできません。",
+        error: "講師ではないアカウントを新たに確定対象にはできません。",
       };
     }
   }

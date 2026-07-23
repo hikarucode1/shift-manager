@@ -307,10 +307,13 @@ export async function withdrawApplication(
       if (req.length === 0) {
         return { ok: false, error: "募集が見つかりません。" };
       }
-      if (req[0].status !== "pending") {
+      // #165: 承認済み募集だけ取り下げを塞ぐ (承認された応募 = weekly_shift 付替え
+      // 済みを取り下げると整合が崩れるため)。却下/取消済みは応募が無効なだけで
+      // 取り下げても害は無く、塞ぐと「取り下げられない残存応募」になり混乱するので許可。
+      if (req[0].status === "approved") {
         return {
           ok: false,
-          error: "確定・終了した募集の応募は取り下げられません。",
+          error: "確定済みの募集のため取り下げできません。",
         };
       }
       const updated = await tx
