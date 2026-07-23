@@ -1,6 +1,7 @@
 import { describe, it, expect } from "vitest";
 import {
   hasCurrentPeriodData,
+  resolveSaveScope,
   resolveServerEffectiveFrom,
   resolveSubmissionEffectiveFrom,
   selectPrefillSourceSubmission,
@@ -221,5 +222,27 @@ describe("hasCurrentPeriodData (#161)", () => {
         hasAnyRawFixedShiftRow: false,
       }),
     ).toBe(false);
+  });
+});
+
+describe("resolveSaveScope (#165 H3)", () => {
+  it("受付中の期があれば削除範囲は期の日付範囲に限定される", () => {
+    expect(
+      resolveSaveScope({
+        activePeriod: { startDate: "2026-10-01", endDate: "2026-12-31" },
+        effectiveFrom: "2026-10-01",
+      }),
+    ).toEqual({ kind: "period", from: "2026-10-01", to: "2026-12-31" });
+  });
+
+  it("受付中の期が無ければ effectiveFrom 単一日のみ (前方一括削除しない)", () => {
+    // 攻撃ケース: 受付中の期が無い状態で過去日を送っても、その1日しか対象に
+    // ならず他期の draft を巻き添え削除できない。
+    expect(
+      resolveSaveScope({
+        activePeriod: null,
+        effectiveFrom: "2020-01-01",
+      }),
+    ).toEqual({ kind: "exact", date: "2020-01-01" });
   });
 });

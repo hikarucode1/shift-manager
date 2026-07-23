@@ -50,6 +50,35 @@ export function resolveServerEffectiveFrom(params: {
 }
 
 /**
+ * Issue #165 (H3): saveFixedShifts の delete / ロック範囲を決める。
+ *
+ * 以前は「effectiveFrom 以降すべて」を削除していたが、締切チェック
+ * (fetchPeriodWindow) は effectiveFrom 1 点の期しか検証しないため、受付中の期が
+ * 無いとき (resolveServerEffectiveFrom がクライアント日付を素通し) に過去の未来
+ * 日付を送ると、締切超過済み / 未開放の別期の draft 行まで巻き添え削除できた。
+ *
+ * effectiveFrom が「データキー」と「認可スコープ」を兼ねていたのが原因。ここで
+ * 認可済みの範囲だけに削除を限定する:
+ * - 受付中の期がある: effectiveFrom は期初に強制されるので、その期の日付範囲
+ *   [startDate, endDate] のみ (= その期の提出を置換。期外は触らない)。
+ * - 受付中の期が無い (アドホック): effectiveFrom 単一日のみ (前方一括削除しない)。
+ */
+export type SaveScope =
+  | { kind: "period"; from: string; to: string }
+  | { kind: "exact"; date: string };
+
+export function resolveSaveScope(params: {
+  activePeriod: { startDate: string; endDate: string } | null;
+  effectiveFrom: string;
+}): SaveScope {
+  const { activePeriod, effectiveFrom } = params;
+  if (activePeriod) {
+    return { kind: "period", from: activePeriod.startDate, to: activePeriod.endDate };
+  }
+  return { kind: "exact", date: effectiveFrom };
+}
+
+/**
  * Issue #161: 新しい期の初回表示で「前期パターン」を引き継ぐ元の提出を選ぶ。
  *
  * 元は fixed_shifts 行の max(effective_from) で「前期」を近似していたが、

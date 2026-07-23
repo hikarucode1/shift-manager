@@ -1,7 +1,8 @@
 "use server";
 
 import { z } from "zod";
-import { and, desc, eq, gte, lte, sql } from "drizzle-orm";
+import { and, desc, eq, gte, lte, sql, type SQL } from "drizzle-orm";
+import type { AnyPgColumn } from "drizzle-orm/pg-core";
 import { revalidatePath } from "next/cache";
 import { requireRole } from "@/lib/auth";
 import { db } from "@/db/client";
@@ -10,7 +11,10 @@ import {
   fixedShiftSubmissions,
   regularShiftPeriods,
 } from "@/db/schema";
-import { resolveServerEffectiveFrom } from "@/lib/regular-submission-target";
+import {
+  resolveSaveScope,
+  resolveServerEffectiveFrom,
+} from "@/lib/regular-submission-target";
 
 // 日曜は教室休校 (Issue #56) のため入力対象外。サーバ側でも拒否する。
 // 'no' は「行不在」で表現するため Entry には含めない (Issue #55)。
@@ -77,11 +81,12 @@ export type RevertSubmissionResult =
  */
 async function fetchActiveAcceptingPeriod(
   now: Date,
-): Promise<{ id: string; startDate: string } | null> {
+): Promise<{ id: string; startDate: string; endDate: string } | null> {
   const rows = await db
     .select({
       id: regularShiftPeriods.id,
       startDate: regularShiftPeriods.startDate,
+      endDate: regularShiftPeriods.endDate,
     })
     .from(regularShiftPeriods)
     .where(
@@ -193,18 +198,33 @@ export async function saveFixedShifts(
   //  → 本 save が delete でその行を消す」競合を遮断する。submit/revert 側は
   // 同じ行に対する UPDATE で行ロック待ちになり、本 transaction が commit して
   // delete 済みになった行への UPDATE は WHERE で 0 件となり安全に弾かれる。
+  // #165 H3: delete / ロックのスコープを認可済み範囲に限定する。以前は
+  // 「effectiveFrom 以降すべて」で、締切チェックの及ばない別期の draft まで
+  // 巻き添え削除できた。受付中の期があればその期の日付範囲、無ければ
+  // effectiveFrom 単一日に限定する。
+  const scope = resolveSaveScope({
+    activePeriod: activePeriod
+      ? { startDate: activePeriod.startDate, endDate: activePeriod.endDate }
+      : null,
+    effectiveFrom,
+  });
+  const inScope = (col: AnyPgColumn): SQL | undefined =>
+    scope.kind === "period"
+      ? and(gte(col, scope.from), lte(col, scope.to))
+      : eq(col, scope.date);
+
   type SaveOutcome = { kind: "ok" } | { kind: "blocked"; status: "submitted" | "frozen" };
   let outcome: SaveOutcome;
   try {
     outcome = await db.transaction(async (tx) => {
-      // gte スコープの既存提出行をロック。draft 以外があれば save 不可。
+      // スコープ内の既存提出行をロック。draft 以外があれば save 不可。
       const existing = await tx
         .select({ status: fixedShiftSubmissions.status })
         .from(fixedShiftSubmissions)
         .where(
           and(
             eq(fixedShiftSubmissions.tutorId, profile.id),
-            gte(fixedShiftSubmissions.effectiveFrom, effectiveFrom),
+            inScope(fixedShiftSubmissions.effectiveFrom),
           ),
         )
         .for("update");
@@ -219,14 +239,14 @@ export async function saveFixedShifts(
         };
       }
 
-      // 今後分 (effectiveFrom 以降) の既存レコードを削除し、今回の内容で置換。
+      // スコープ内の既存レコードを削除し、今回の内容で置換。
       // shifts とメタを同じスコープで揃えないと、将来分の古いメタが孤立する (#65 P2)。
       await tx
         .delete(fixedShifts)
         .where(
           and(
             eq(fixedShifts.tutorId, profile.id),
-            gte(fixedShifts.effectiveFrom, effectiveFrom),
+            inScope(fixedShifts.effectiveFrom),
           ),
         );
       await tx
@@ -234,7 +254,7 @@ export async function saveFixedShifts(
         .where(
           and(
             eq(fixedShiftSubmissions.tutorId, profile.id),
-            gte(fixedShiftSubmissions.effectiveFrom, effectiveFrom),
+            inScope(fixedShiftSubmissions.effectiveFrom),
           ),
         );
 
