@@ -54,6 +54,20 @@ describe("parseShiftCsvText 表示期間の検証 (#165 H2)", () => {
     ).toThrow(/1 週間/);
   });
 
+  it("8 日 (差 7) の表示期間も拒否 (隣週の初日を巻き添え削除しない)", () => {
+    // 2026/04/20〜2026/04/27 = 8 日間。旧 >7 では通っていたが、we=04-27 は
+    // 翌週の公開済み初日なので削除範囲に含めてはいけない。
+    expect(() =>
+      parseShiftCsvText(csv("2026/04/20〜2026/04/27", [])),
+    ).toThrow(/1 週間/);
+  });
+
+  it("実在しない表示期間日付 (13月/45日) は NaN すり抜けせず拒否", () => {
+    expect(() =>
+      parseShiftCsvText(csv("2026/01/01〜2026/13/45", [])),
+    ).toThrow(/日付が不正/);
+  });
+
   it("表示期間外の日付を含む CSV は拒否", () => {
     const text = csv("2026/04/20〜2026/04/26", [
       ...oneAssignmentDay("5月1日", "金"),
@@ -61,7 +75,7 @@ describe("parseShiftCsvText 表示期間の検証 (#165 H2)", () => {
     expect(() => parseShiftCsvText(text)).toThrow(/範囲外/);
   });
 
-  it("ちょうど 1 週間 (月〜日) は通る", () => {
+  it("ちょうど 1 週間 (月〜日, 差 6) は通る", () => {
     const text = csv("2026/04/20〜2026/04/26", [
       ...oneAssignmentDay("4月20日", "月"),
     ]);

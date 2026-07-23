@@ -131,6 +131,26 @@ function isoDate(year: number, month: number, day: number): string {
   return `${year}-${p(month)}-${p(day)}`;
 }
 
+/**
+ * "YYYY-MM-DD" が実在するカレンダー日か。#165: splitDateRange / parseMonthDay の
+ * 正規表現は 13月/45日 のような値を通してしまい、Date.parse が NaN を返すと
+ * スパン検証 (NaN > n = false) をすり抜けて commit 時に不透明な失敗になる。
+ * 月/日のオーバーフロー (2026-13-45, 2026-02-30 等) をここで弾く。
+ */
+function isRealIsoDate(iso: string): boolean {
+  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(iso);
+  if (!m) return false;
+  const y = Number(m[1]);
+  const mo = Number(m[2]);
+  const d = Number(m[3]);
+  const dt = new Date(Date.UTC(y, mo - 1, d));
+  return (
+    dt.getUTCFullYear() === y &&
+    dt.getUTCMonth() === mo - 1 &&
+    dt.getUTCDate() === d
+  );
+}
+
 /* ------------------------------------------------------------------ */
 /*  Main parser                                                        */
 /* ------------------------------------------------------------------ */
@@ -190,6 +210,13 @@ export function parseShiftCsvText(text: string): ParsedShiftCsv {
   // narrowing を closure に持ち込むため const に固定
   const ws = weekStart;
   const we = weekEnd;
+
+  // #165: 表示期間が実在する日付か検証 (2026/13/45 等の NaN すり抜けを防ぐ)。
+  if (!isRealIsoDate(ws) || !isRealIsoDate(we)) {
+    throw new ShiftCsvParseError(
+      `表示期間の日付が不正です (${ws}〜${we})。YYYY/MM/DD 形式の実在する日付が必要です。`,
+    );
+  }
 
   // #165 H1: 日付行は月/日しか持たないため、年はヘッダーの表示期間から決める。
   // 週が年を跨ぐ (例 2026/12/28〜2027/01/03) と weekStart 先頭4桁固定では
@@ -262,22 +289,25 @@ export function parseShiftCsvText(text: string): ParsedShiftCsv {
       `表示期間の開始日 (${ws}) が終了日 (${we}) より後です。`,
     );
   }
-  // Mon〜Sun の正規週は差 6 日 (7 日間)。運用ブレを吸収するため +1 日の許容を
-  // 持たせ「差 7 日 (8 日間) 超」を異常として弾く。目的は削除範囲の暴走防止
-  // (2000〜2099 のような値で全削除されるのを防ぐ) なので厳密な週境界は要求しない。
+  // Mon〜Sun の正規週は差 6 日 (7 日間)。差 6 日超を弾く。
+  // #165 レビュー: 以前は +1 日許容 (>7) にしていたが、8 日 (差 7) の表示期間を
+  // 通すと commit の削除範囲 [ws, we] が隣週の公開済み初日 (we) まで及び、その日の
+  // シフトを黙って消しうる。削除範囲を厳密に 1 週間へ収めるため許容を外す。
+  // ws/we は上で実在日付を検証済みなので spanDays が NaN になることはない。
   const spanDays = Math.round(
     (Date.parse(`${we}T12:00:00.000Z`) - Date.parse(`${ws}T12:00:00.000Z`)) /
       86_400_000,
   );
-  if (spanDays > 7) {
+  if (spanDays > 6) {
     throw new ShiftCsvParseError(
       `表示期間が 1 週間を超えています (${ws}〜${we})。座席表の CSV を確認してください。`,
     );
   }
   for (const d of days) {
-    if (d.date < ws || d.date > we) {
+    // #165: 範囲外 + 実在しない日付 (2026-02-30 等、範囲内に紛れ込むケース) を弾く
+    if (d.date < ws || d.date > we || !isRealIsoDate(d.date)) {
       throw new ShiftCsvParseError(
-        `日付 ${d.date} が表示期間 (${ws}〜${we}) の範囲外です。`,
+        `日付 ${d.date} が不正、または表示期間 (${ws}〜${we}) の範囲外です。`,
       );
     }
   }

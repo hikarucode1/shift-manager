@@ -72,17 +72,15 @@ export async function commitShiftUpload(
     scopedMappings[name] = mappings[name];
   }
 
-  // #165: 割当先が「有効な講師 (roles に tutor を含み is_active)」か検証する。
-  // FK だけでは無効化済み講師・admin・stub にコマが割り当たり、ログイン
-  // できない人が担当になる。fetchActiveTutors と同じ条件で存在確認する。
+  // #165: 割当先が「講師ロールを持つアカウント」か検証する。FK だけでは
+  // admin 専用アカウント等にコマが割り当たりうるため、tutor ロールを必須にする。
   //
-  // ⚠️ TOCTOU (受容): この検証は tx 前で、check→insert 間に対象講師が
-  // 無効化される競合は防げない。ただし weekly_shifts.tutor_id の FK は
-  // onDelete: restrict で参照整合性が保たれ (講師行は消えない・is_active が
-  // 落ちるだけ)、最悪ケースは「直前に無効化された講師に 1 週間分の枠が付く」
-  // だけで破損しない (次回アップロードで是正)。本検証の主目的 (admin/stub/
-  // 既存の無効講師の排除) は tx 前チェックで満たされるため、行ロック
-  // (SELECT FOR UPDATE) は過剰として掛けない。
+  // is_active は敢えて条件にしない (#165 レビュー): マッピング用ドロップダウン
+  // (fetchActiveTutors) が既に active な講師しか提示しないため選択時点で担保され、
+  // ここで再度 is_active を必須にすると「マッピング後〜commit の間に 1 名が無効化
+  // されただけで週全体が公開不能」になる (無効化された講師はドロップダウンに出ず
+  // 再マッピングもできない)。休職等で一時的に無効化された講師が週の座席表に
+  // 残るケースも塞いでしまう。tutor ロールの確認に留め、無効化の競合は許容する。
   const mappedIds = [...new Set(Object.values(scopedMappings))];
   const validRows = await db
     .select({ id: profiles.id })
@@ -91,7 +89,6 @@ export async function commitShiftUpload(
       and(
         inArray(profiles.id, mappedIds),
         arrayContains(profiles.roles, ["tutor"]),
-        eq(profiles.isActive, true),
       ),
     );
   const validIds = new Set(validRows.map((r) => r.id));
@@ -100,7 +97,7 @@ export async function commitShiftUpload(
   );
   if (invalidNames.length > 0) {
     throw new UploadCommitError(
-      `割り当て先が有効な講師ではありません (無効化済み / 講師以外): ${invalidNames.join(", ")}`,
+      `割り当て先が講師アカウントではありません: ${invalidNames.join(", ")}`,
     );
   }
 
