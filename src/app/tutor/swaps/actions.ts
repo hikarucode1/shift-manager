@@ -1,8 +1,9 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
+import { after } from "next/server";
 import { z } from "zod";
-import { and, arrayContains, eq, inArray, isNull, ne } from "drizzle-orm";
+import { and, arrayContains, eq, inArray, isNull } from "drizzle-orm";
 import { requireRole } from "@/lib/auth";
 import { notify } from "@/lib/notifications";
 import { db } from "@/db/client";
@@ -14,6 +15,7 @@ import {
   weeklyShifts,
 } from "@/db/schema";
 import { isUniqueViolation } from "@/lib/db-errors";
+import { getActiveTutorsExcept } from "@/lib/swaps";
 import { isValidIsoDate, jstToday } from "@/lib/week";
 
 type ActionResult = { ok: true } | { ok: false; error: string };
@@ -136,38 +138,47 @@ export async function createSwapRequest(
     return { ok: false, error: "申請に失敗しました。時間をおいてお試しください。" };
   }
 
-  // #155: 新規募集を関連講師へ通知する。open は応募資格のある全講師 (自分以外の
-  // 現役講師)、named は指名先のみ。通知は補助情報なので、宛先解決の失敗が申請
-  // 成功を巻き込まないよう try/catch で隔離する (notify 自体も fire-and-forget)。
-  try {
-    let recipientIds: string[];
-    if (kind === "open") {
-      const rows = await db
-        .select({ id: profiles.id })
-        .from(profiles)
-        .where(
-          and(
-            arrayContains(profiles.roles, ["tutor"]),
-            eq(profiles.isActive, true),
-            ne(profiles.id, profile.id),
-          ),
-        );
-      recipientIds = rows.map((r) => r.id);
-    } else {
-      recipientIds = nominatedTutorId ? [nominatedTutorId] : [];
+  // #155: 新規募集を関連講師へ通知する。応答をブロックしないよう after() で
+  // レスポンス確定後に実行する (募集自体は上で commit 済み。after なら bare な
+  // un-awaited promise と違いサーバーレスでも完了が保証される)。
+  after(async () => {
+    try {
+      let recipientIds: string[];
+      if (kind === "open") {
+        // 応募資格のある現役講師 = getActiveTutorsExcept(自分) から、その日その
+        // コマに既に出勤予定 (= applyToSwap の clash で応募不可) の講師を除外する。
+        const [candidates, assigned] = await Promise.all([
+          getActiveTutorsExcept(profile.id),
+          db
+            .select({ tutorId: weeklyShifts.tutorId })
+            .from(weeklyShifts)
+            .where(
+              and(
+                eq(weeklyShifts.date, date),
+                eq(weeklyShifts.slotNumber, slotNumber),
+              ),
+            ),
+        ]);
+        const busy = new Set(assigned.map((r) => r.tutorId));
+        recipientIds = candidates
+          .map((t) => t.id)
+          .filter((id) => !busy.has(id));
+      } else {
+        recipientIds = nominatedTutorId ? [nominatedTutorId] : [];
+      }
+      await notify(recipientIds, {
+        type: "swap_posted",
+        title:
+          kind === "open"
+            ? "代講募集が追加されました"
+            : "交代の指名がありました",
+        body: `${date} ${slotNumber}限${kind === "named" ? "（あなた宛の指名）" : ""}`,
+        href: "/tutor/open-swaps",
+      });
+    } catch (e) {
+      console.error("createSwapRequest notify failed", e);
     }
-    await notify(recipientIds, {
-      type: "swap_posted",
-      title:
-        kind === "open"
-          ? "代講募集が追加されました"
-          : "交代の指名がありました",
-      body: `${date} ${slotNumber}限${kind === "named" ? "（あなた宛の指名）" : ""}`,
-      href: "/tutor/open-swaps",
-    });
-  } catch (e) {
-    console.error("createSwapRequest notify failed", e);
-  }
+  });
 
   revalidateAll();
   return { ok: true };
