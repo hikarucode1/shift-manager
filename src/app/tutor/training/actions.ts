@@ -6,6 +6,7 @@ import { requireRole } from "@/lib/auth";
 import { db } from "@/db/client";
 import { trainingPeriodNotes, trainingPreferences } from "@/db/schema";
 import { assertTrainingEditable, validSlotNumbers } from "@/lib/training";
+import { pgErrorCode } from "@/lib/db-errors";
 import { isValidIsoDate } from "@/lib/week";
 
 type ActionResult = { ok: true } | { ok: false; error: string };
@@ -81,12 +82,9 @@ async function applyTrainingSlots(
     }
   } catch (err) {
     // #165 (0031): 教室長の期範囲縮小と競合すると、日付範囲 trigger が 23514 を
-    // 投げる (旧来は範囲外行が黙って入っていた경路)。saveCourseConfirmations と
-    // 同じく業務エラー文言に変換する (生エラーを UI に出さない)。
-    const code =
-      typeof err === "object" && err !== null && "code" in err
-        ? String((err as { code: unknown }).code)
-        : null;
+    // 投げる (旧来は範囲外行が黙って入っていた経路)。業務エラー文言に変換する。
+    // drizzle は PG エラーを wrapper で包み code は cause 側に入るため pgErrorCode で辿る。
+    const code = pgErrorCode(err);
     if (code === "23514") {
       return {
         ok: false,

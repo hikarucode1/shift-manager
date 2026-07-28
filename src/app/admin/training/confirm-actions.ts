@@ -5,6 +5,7 @@ import { and, eq, sql } from "drizzle-orm";
 import { revalidatePath } from "next/cache";
 import { requireRole } from "@/lib/auth";
 import { insertNotifications } from "@/lib/notifications";
+import { pgErrorCode } from "@/lib/db-errors";
 import { db } from "@/db/client";
 import { courseConfirmations, periods } from "@/db/schema";
 
@@ -110,10 +111,7 @@ export async function saveCourseConfirmations(
     });
   } catch (err) {
     console.error("saveCourseConfirmations failed", err);
-    const code =
-      typeof err === "object" && err !== null && "code" in err
-        ? String((err as { code: unknown }).code)
-        : null;
+    const code = pgErrorCode(err);
     if (code === "23503") {
       return {
         ok: false,

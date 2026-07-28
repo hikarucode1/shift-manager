@@ -4,6 +4,7 @@ import { revalidatePath } from "next/cache";
 import { z } from "zod";
 import { eq, sql } from "drizzle-orm";
 import { requireRole } from "@/lib/auth";
+import { pgErrorCode } from "@/lib/db-errors";
 import { db } from "@/db/client";
 import { regularShiftPeriods } from "@/db/schema";
 import { isValidIsoDate } from "@/lib/week";
@@ -137,10 +138,7 @@ export async function updateRegularPeriod(
     });
   } catch (err) {
     console.error("updateRegularPeriod failed", err);
-    const code =
-      typeof err === "object" && err !== null && "code" in err
-        ? String((err as { code: unknown }).code)
-        : null;
+    const code = pgErrorCode(err);
     // 0026 trigger: 範囲外 child (regular_assignments.effective_from/to) が残っているケース。
     if (code === "23514") {
       return {

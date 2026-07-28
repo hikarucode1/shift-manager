@@ -22,3 +22,22 @@ export function isUniqueViolation(
   }
   return false;
 }
+
+/**
+ * drizzle(postgres-js) がラップした PG エラーから SQLSTATE code (例 "23514") を
+ * 取り出す。code は wrapper (DrizzleQueryError) ではなく `cause` 側に入るため、
+ * isUniqueViolation と同様に cause チェーンを辿る。見つからなければ null。
+ *
+ * ⚠️ 各所で使われていた `"code" in err ? String(err.code) : null` は wrapper の
+ * トップレベルしか見ないため常に null になる dead check だった (#175 review)。
+ * PG の SQLSTATE で分岐したいときは必ずこのヘルパーを使うこと。
+ */
+export function pgErrorCode(e: unknown): string | null {
+  let cur: unknown = e;
+  for (let i = 0; i < 5 && cur; i++) {
+    const o = cur as { code?: unknown; cause?: unknown };
+    if (typeof o.code === "string" && o.code.length > 0) return o.code;
+    cur = o.cause;
+  }
+  return null;
+}

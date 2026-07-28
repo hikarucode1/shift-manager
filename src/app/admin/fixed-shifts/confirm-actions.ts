@@ -4,6 +4,7 @@ import { z } from "zod";
 import { and, eq, gte, lte, sql } from "drizzle-orm";
 import { revalidatePath } from "next/cache";
 import { requireRole } from "@/lib/auth";
+import { pgErrorCode } from "@/lib/db-errors";
 import { db } from "@/db/client";
 import { regularAssignments, regularShiftPeriods } from "@/db/schema";
 import { dedupeAssignments } from "@/lib/shift-confirmation";
@@ -214,10 +215,7 @@ export async function saveMonthlyConfirmation(
       return { ok: false, error: err.reason };
     }
     console.error("saveMonthlyConfirmation failed", err);
-    const code =
-      typeof err === "object" && err !== null && "code" in err
-        ? String((err as { code: unknown }).code)
-        : null;
+    const code = pgErrorCode(err);
     if (code === "23503") {
       return {
         ok: false,
@@ -346,10 +344,7 @@ export async function saveRegularConfirmation(
       return { ok: false, error: err.reason };
     }
     console.error("saveRegularConfirmation failed", err);
-    const code =
-      typeof err === "object" && err !== null && "code" in err
-        ? String((err as { code: unknown }).code)
-        : null;
+    const code = pgErrorCode(err);
     if (code === "23503") {
       return {
         ok: false,
