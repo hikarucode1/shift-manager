@@ -69,6 +69,8 @@ export const notificationTypeEnum = pgEnum("notification_type", [
   "absence_result",
   "swap_result",
   "shifts_published",
+  // #155 後続: 新規の交代/代講募集 (open=応募資格者へ, named=指名先へ)
+  "swap_posted",
 ]);
 
 /* ------------------------------------------------------------------ */

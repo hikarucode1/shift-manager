@@ -65,6 +65,7 @@ CHECK / trigger / NOT NULL すべてオブジェクト単位で存在確認)。�
 | 0029 | `notifications` テーブル + RLS (#155) | 非破壊 (追加のみ) | 任意 |
 | 0030 | `notifications.dedup_key` + unique index (#155) | 非破壊 (追加のみ) | 任意 |
 | 0031 | `fixed_shift_submissions` の effective_to>=effective_from CHECK + `training_preferences` 日付範囲 trigger + 0010 関数の search_path hardening (#165) | **CHECK 追加** (違反行があれば失敗) + trigger/関数追加 | CHECK は `effective_to < effective_from` の行が 0 件であることを確認後に適用。trigger/関数は非破壊 |
+| 0032 | `notification_type` enum に `swap_posted` 追加 (#155 後続) | 非破壊 (`ALTER TYPE ADD VALUE`) | 任意。ADD VALUE は値を追加するだけで既存行に影響なし (追加値の使用はアプリの別 tx なので PG12+ で問題なし) |
 
 ### ⚠️ 0027 の安全前提の誤り (#165 監査で判明)
 
