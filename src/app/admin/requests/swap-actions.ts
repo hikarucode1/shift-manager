@@ -5,6 +5,7 @@ import { z } from "zod";
 import { and, eq, inArray, isNull } from "drizzle-orm";
 import { requireRole } from "@/lib/auth";
 import { notify } from "@/lib/notifications";
+import { jstToday } from "@/lib/week";
 import { db } from "@/db/client";
 import {
   absenceRequests,
@@ -120,6 +121,15 @@ export async function decideSwapRequest(
         throw new SwapBizError("対応済みの可能性があります。");
       }
       const req = reqRows[0];
+
+      // #165: 過去日 (実施済み) のコマは承認しない。承認は weekly_shifts を
+      // 代講者へ付け替えるため、実施済みコマを事後に書き換えてしまう。ここが
+      // 実際の変更点なので、応募側 (applyToSwap) だけでなく承認側でも塞ぐ。
+      if (req.date < jstToday()) {
+        throw new SwapBizError(
+          "過去のコマの交代は承認できません (既に実施済みです)。",
+        );
+      }
 
       const appRows = await tx
         .select({

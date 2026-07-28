@@ -204,6 +204,10 @@ export async function applyToSwap(input: unknown): Promise<ActionResult> {
   if (r.kind === "named" && r.nominatedTutorId !== profile.id) {
     return { ok: false, error: "この交代はあなた宛ではありません。" };
   }
+  // #165: 過去日のコマには応募不可 (実施済みコマの担当が事後に書き換わるのを防ぐ)
+  if (r.date < jstToday()) {
+    return { ok: false, error: "過去のコマには応募できません。" };
+  }
 
   // 同じコマに自分が既に出勤している場合は代講不可
   const clash = await db
@@ -224,30 +228,58 @@ export async function applyToSwap(input: unknown): Promise<ActionResult> {
     };
   }
 
-  // 取り下げ済みなら復活、無ければ作成 (unique: swap_request × applicant)
-  const existing = await db
-    .select({ id: swapApplications.id })
-    .from(swapApplications)
-    .where(
-      and(
-        eq(swapApplications.swapRequestId, swapRequestId),
-        eq(swapApplications.applicantId, profile.id),
-      ),
-    )
-    .limit(1);
-  if (existing.length > 0) {
-    await db
-      .update(swapApplications)
-      .set({ withdrawnAt: null, note: note || null })
-      .where(eq(swapApplications.id, existing[0].id));
-  } else {
-    await db.insert(swapApplications).values({
-      swapRequestId,
-      applicantId: profile.id,
-      note: note || null,
+  // #165: 募集行を FOR UPDATE でロックして status を再検証してから upsert する。
+  // 従来は check-then-write で、締切/承認された募集に競合で応募が入りえた。また
+  // 併発 INSERT で swap_applications_unique に当たると生 500 になっていたため
+  // isUniqueViolation で明示エラーにする (取り下げ済み → 復活 / 無 → 作成)。
+  let outcome: ActionResult;
+  try {
+    outcome = await db.transaction(async (tx) => {
+      const cur = await tx
+        .select({ status: swapRequests.status })
+        .from(swapRequests)
+        .where(eq(swapRequests.id, swapRequestId))
+        .for("update")
+        .limit(1);
+      if (cur.length === 0) {
+        return { ok: false, error: "募集が見つかりません。" };
+      }
+      if (cur[0].status !== "pending") {
+        return { ok: false, error: "この募集は既に締め切られています。" };
+      }
+      const existing = await tx
+        .select({ id: swapApplications.id })
+        .from(swapApplications)
+        .where(
+          and(
+            eq(swapApplications.swapRequestId, swapRequestId),
+            eq(swapApplications.applicantId, profile.id),
+          ),
+        )
+        .limit(1);
+      if (existing.length > 0) {
+        await tx
+          .update(swapApplications)
+          .set({ withdrawnAt: null, note: note || null })
+          .where(eq(swapApplications.id, existing[0].id));
+      } else {
+        await tx.insert(swapApplications).values({
+          swapRequestId,
+          applicantId: profile.id,
+          note: note || null,
+        });
+      }
+      return { ok: true };
     });
+  } catch (e) {
+    if (isUniqueViolation(e, "swap_applications_unique")) {
+      return { ok: false, error: "既に応募済みです。" };
+    }
+    console.error("applyToSwap failed", e);
+    return { ok: false, error: "応募に失敗しました。時間をおいて再度お試しください。" };
   }
 
+  if (!outcome.ok) return outcome;
   revalidateAll();
   return { ok: true };
 }
@@ -260,20 +292,59 @@ export async function withdrawApplication(
   const parsed = IdInput.safeParse(input);
   if (!parsed.success) return { ok: false, error: "入力が不正です。" };
 
-  const updated = await db
-    .update(swapApplications)
-    .set({ withdrawnAt: new Date() })
-    .where(
-      and(
-        eq(swapApplications.swapRequestId, parsed.data.id),
-        eq(swapApplications.applicantId, profile.id),
-        isNull(swapApplications.withdrawnAt),
-      ),
-    )
-    .returning({ id: swapApplications.id });
-  if (updated.length === 0) {
-    return { ok: false, error: "取り下げられませんでした。" };
+  // #165: 募集を FOR UPDATE でロックし、pending の間だけ取り下げを許可する。
+  // 承認/却下/取消済み (非 pending) の募集の応募を取り下げると、承認済み応募
+  // (weekly_shift 付け替え済) と withdrawnAt がねじれるため塞ぐ。
+  let outcome: ActionResult;
+  try {
+    outcome = await db.transaction(async (tx) => {
+      const req = await tx
+        .select({
+          status: swapRequests.status,
+          approvedApplicantId: swapRequests.approvedApplicantId,
+        })
+        .from(swapRequests)
+        .where(eq(swapRequests.id, parsed.data.id))
+        .for("update")
+        .limit(1);
+      if (req.length === 0) {
+        return { ok: false, error: "募集が見つかりません。" };
+      }
+      // #165: 取り下げを塞ぐのは「承認済みで、かつ自分が採用された応募者」のときだけ。
+      // その応募は weekly_shift の付け替え済みなので取り下げると整合が崩れる。
+      // 落選者や却下/取消の応募は取り下げても害が無く、塞ぐと「取り下げられない
+      // 残存応募」になり混乱するので許可する (レビュー指摘)。
+      if (
+        req[0].status === "approved" &&
+        req[0].approvedApplicantId === profile.id
+      ) {
+        return {
+          ok: false,
+          error: "あなたの代講が確定済みのため取り下げできません。",
+        };
+      }
+      const updated = await tx
+        .update(swapApplications)
+        .set({ withdrawnAt: new Date() })
+        .where(
+          and(
+            eq(swapApplications.swapRequestId, parsed.data.id),
+            eq(swapApplications.applicantId, profile.id),
+            isNull(swapApplications.withdrawnAt),
+          ),
+        )
+        .returning({ id: swapApplications.id });
+      if (updated.length === 0) {
+        return { ok: false, error: "取り下げられませんでした。" };
+      }
+      return { ok: true };
+    });
+  } catch (e) {
+    console.error("withdrawApplication failed", e);
+    return { ok: false, error: "取り下げに失敗しました。時間をおいて再度お試しください。" };
   }
+
+  if (!outcome.ok) return outcome;
   revalidateAll();
   return { ok: true };
 }

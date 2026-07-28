@@ -24,7 +24,9 @@ staging が無いため、**migration は本番に直接適用される**。破�
 
 1. **migration 専用に direct connection (ポート 5432) を使う** — Supabase の
    Project Settings > Database > Connection string の "Direct connection" / "Session pooler"
-   (5432) を一時的に `DATABASE_URL` に入れて `npm run db:migrate` を実行するのが本来の正攻法。
+   (5432) を使う。**#165 以降は `drizzle.config.ts` が `DIRECT_URL` を優先**するため、
+   `.env.local` に `DIRECT_URL`(5432)を設定すれば `DATABASE_URL` を差し替えずに
+   `npm run db:migrate` を実行できる (`DIRECT_URL` 未設定時は従来どおり `DATABASE_URL`)。
    アプリ実行時は 6543 (transaction pooler) のままでよい。
 2. **direct SQL + tracking reconcile** (5432 が使えない時の手動適用):
    - 各 migration の `.sql` を statement-breakpoint で分割し postgres-js で直接実行
@@ -58,9 +60,24 @@ CHECK / trigger / NOT NULL すべてオブジェクト単位で存在確認)。�
 | 0024 | `regular_assignments.effective_to` を backfill 後 NOT NULL 化 (#87) | **破壊的** (ALTER NOT NULL、NULL 行があれば失敗。LOCK + backfill 同梱) | `effective_to IS NULL` 件数を確認後に適用 (2026-06-23 適用済、0 行) |
 | 0025 | NOT NULL 化後の range trigger 関数から NULL 分岐を除去 (#87 follow-up) | 非破壊 (CREATE OR REPLACE FUNCTION) | 0024 適用後に適用 (2026-06-23 適用済) |
 | 0026 | 親 period 更新時に child 範囲外を検出する BEFORE UPDATE trigger (#97) | 非破壊 (trigger 追加) | 任意 (2026-06-23 適用済) |
+| 0027 | `periods.kind` 撤廃 (#110)。**⚠️ コメントの安全前提が誤り** | **破壊的** (DELETE + DROP COLUMN) | 適用済。下記注記参照 |
+| 0028 | `profiles.role` → `roles` 配列化 (#111) | 非破壊 (追加 + backfill) | 適用済 |
+| 0029 | `notifications` テーブル + RLS (#155) | 非破壊 (追加のみ) | 任意 |
+| 0030 | `notifications.dedup_key` + unique index (#155) | 非破壊 (追加のみ) | 任意 |
 | 0031 | `fixed_shift_submissions` の effective_to>=effective_from CHECK + `training_preferences` 日付範囲 trigger + 0010 関数の search_path hardening (#165) | **CHECK 追加** (違反行があれば失敗) + trigger/関数追加 | CHECK は `effective_to < effective_from` の行が 0 件であることを確認後に適用。trigger/関数は非破壊 |
 
-<!-- 注: 0027-0030 の行は別 PR (#173 infra) で追記。マージ順で本行と近接するため軽微な conflict が出たら両方残す -->
+### ⚠️ 0027 の安全前提の誤り (#165 監査で判明)
+
+0027 のコメントは「`normal` 行が子を持つ場合は FK (onDelete restrict) で失敗する」と
+記載しているが、**実際には `periods` の子 3 テーブル (`course_confirmations` /
+`training_preferences` / `training_period_notes`) はいずれも `onDelete: cascade`**
+(`src/db/schema.ts`)。したがって `DELETE FROM periods` は失敗せず **黙って子行を連鎖削除**する。
+0027 適用時は本番の `normal` 行が子 0 件だったため実害は無かったが、前提は誤り。
+
+**今後 `periods` を物理削除するコード/migration を書く場合は、FK restrict による
+保護は無い**ことを前提に、明示的に子の存在確認・扱いを決めること。現行アプリは
+`periods` を物理削除せず `is_archived` の論理削除のみ (`setPeriodArchived`) なので
+ライブの経路は無い。
 
 ## 破壊的 migration の判定基準
 

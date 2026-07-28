@@ -6,6 +6,7 @@ import { revalidatePath } from "next/cache";
 import { requireRole } from "@/lib/auth";
 import { insertNotifications } from "@/lib/notifications";
 import { pgErrorCode } from "@/lib/db-errors";
+import { findNonTutorIds } from "@/lib/tutor-validation";
 import { db } from "@/db/client";
 import { courseConfirmations, periods } from "@/db/schema";
 
@@ -77,6 +78,15 @@ export async function saveCourseConfirmations(
   // 入力 tutor_id を dedup
   const dedupedTutors = Array.from(new Set(tutorIds));
 
+  // #165: 割当先が講師ロールのアカウントかを検証し、非 tutor は確定対象から
+  // 除外する (findNonTutorIds に集約)。
+  // 「保存を丸ごと弾く」のではなく「非 tutor を落として続行」にすることで、
+  // (a) 既に確定済みの orphan (元 tutor→現 非 tutor) を含む cell を編集する
+  // だけで保存全体が失敗する、(b) 逆に既存の非 tutor が検証を素通りして再永続化
+  // され続ける、の両方を回避する。delete→insert の置換で orphan は自然に掃除される。
+  const nonTutor = new Set(await findNonTutorIds(dedupedTutors));
+  const tutorsToConfirm = dedupedTutors.filter((id) => !nonTutor.has(id));
+
   try {
     await db.transaction(async (tx) => {
       // Issue #104: updatePeriod と同じ periodId 単位の advisory lock。
@@ -96,9 +106,9 @@ export async function saveCourseConfirmations(
           ),
         );
 
-      if (dedupedTutors.length > 0) {
+      if (tutorsToConfirm.length > 0) {
         await tx.insert(courseConfirmations).values(
-          dedupedTutors.map((tutorId) => ({
+          tutorsToConfirm.map((tutorId) => ({
             periodId,
             date,
             slotNumber,
@@ -131,7 +141,7 @@ export async function saveCourseConfirmations(
 
   revalidatePath(`/admin/training/${periodId}`);
   revalidatePath("/tutor/training");
-  return { ok: true, inserted: dedupedTutors.length };
+  return { ok: true, inserted: tutorsToConfirm.length };
 }
 
 const NotifyInput = z.object({ periodId: z.string().uuid() });
