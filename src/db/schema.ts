@@ -366,6 +366,12 @@ export const fixedShiftSubmissions = pgTable(
         OR (${t.status} = 'draft' AND ${t.submittedAt} IS NULL)
         OR (${t.status} = 'frozen')`,
     ),
+    // #165: 同種テーブル (regular_assignments 等) と揃えて期間の整合を DB 層でも
+    // 保証。アプリ (saveFixedShifts) でも検証済みだが最終防御。
+    effectiveRange: check(
+      "fixed_shift_submissions_effective_range_chk",
+      sql`${t.effectiveTo} IS NULL OR ${t.effectiveTo} >= ${t.effectiveFrom}`,
+    ),
   }),
 );
 

@@ -4,6 +4,7 @@ import { revalidatePath } from "next/cache";
 import { z } from "zod";
 import { and, eq, ne, sql } from "drizzle-orm";
 import { requireRole } from "@/lib/auth";
+import { pgErrorCode } from "@/lib/db-errors";
 import { db } from "@/db/client";
 import { periods } from "@/db/schema";
 import { isValidIsoDate } from "@/lib/week";
@@ -207,10 +208,7 @@ export async function updatePeriod(input: unknown): Promise<ActionResult> {
     });
   } catch (err) {
     console.error("updatePeriod failed", err);
-    const code =
-      typeof err === "object" && err !== null && "code" in err
-        ? String((err as { code: unknown }).code)
-        : null;
+    const code = pgErrorCode(err);
     // 0026 trigger: 範囲外 child (course_confirmations.date) が残っているケース。
     if (code === "23514") {
       return {
