@@ -230,6 +230,10 @@ export async function getOpenSwapsForTutor(
   tutorId: string,
 ): Promise<OpenSwap[]> {
   const meta = await getSlotMeta();
+  // #165: 過去日 pending の実害 (実施済みコマの再割当) は承認側 (decideSwapRequest)
+  // で塞ぐ。一覧から過去日を除外すると、応募済みの過去 pending が withdraw 導線ごと
+  // 消えて取り下げ不能になるため、ここでは日付で絞らない (応募/承認は各アクションで
+  // ガード)。
   const rows = await db
     .select({
       id: swapRequests.id,
