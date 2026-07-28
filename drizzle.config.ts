@@ -14,7 +14,9 @@ export default defineConfig({
     // transaction pooler (6543) を指しており、drizzle-kit migrate が
     // pooler 経由だと half-applied で失敗する (docs/migration-policy.md 参照)。
     // DIRECT_URL があればそれを優先し、無ければ従来どおり DATABASE_URL。
-    url: process.env.DIRECT_URL ?? process.env.DATABASE_URL!,
+    // ?? ではなく trim()+|| を使う: .env.local.example は DIRECT_URL= (空) を
+    // 配っており、dotenv は空文字を注入するため ?? だと "" のまま渡ってしまう。
+    url: process.env.DIRECT_URL?.trim() || process.env.DATABASE_URL!,
   },
   verbose: true,
   strict: true,
