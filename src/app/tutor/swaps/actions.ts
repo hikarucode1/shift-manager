@@ -299,7 +299,10 @@ export async function withdrawApplication(
   try {
     outcome = await db.transaction(async (tx) => {
       const req = await tx
-        .select({ status: swapRequests.status })
+        .select({
+          status: swapRequests.status,
+          approvedApplicantId: swapRequests.approvedApplicantId,
+        })
         .from(swapRequests)
         .where(eq(swapRequests.id, parsed.data.id))
         .for("update")
@@ -307,13 +310,17 @@ export async function withdrawApplication(
       if (req.length === 0) {
         return { ok: false, error: "募集が見つかりません。" };
       }
-      // #165: 承認済み募集だけ取り下げを塞ぐ (承認された応募 = weekly_shift 付替え
-      // 済みを取り下げると整合が崩れるため)。却下/取消済みは応募が無効なだけで
-      // 取り下げても害は無く、塞ぐと「取り下げられない残存応募」になり混乱するので許可。
-      if (req[0].status === "approved") {
+      // #165: 取り下げを塞ぐのは「承認済みで、かつ自分が採用された応募者」のときだけ。
+      // その応募は weekly_shift の付け替え済みなので取り下げると整合が崩れる。
+      // 落選者や却下/取消の応募は取り下げても害が無く、塞ぐと「取り下げられない
+      // 残存応募」になり混乱するので許可する (レビュー指摘)。
+      if (
+        req[0].status === "approved" &&
+        req[0].approvedApplicantId === profile.id
+      ) {
         return {
           ok: false,
-          error: "確定済みの募集のため取り下げできません。",
+          error: "あなたの代講が確定済みのため取り下げできません。",
         };
       }
       const updated = await tx
