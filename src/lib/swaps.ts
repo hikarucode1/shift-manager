@@ -144,6 +144,43 @@ export async function getActiveTutorsExcept(
   return rows;
 }
 
+/**
+ * その (date, slotNumber) の代講に「応募資格のある」現役講師 id の一覧。
+ * = 現役の tutor (自分を除く) から、同じコマに既に出勤予定の講師 (applyToSwap の
+ * clash ガードで弾かれる) を除いたもの。open 募集の通知宛先も named 指名先の
+ * 資格判定もこの 1 箇所を通すことで、通知と応募可否の定義が乖離しないようにする。
+ * 通知宛先の解決にしか使わないため id のみ・ソートなし。
+ */
+export async function getEligibleApplicantIds(
+  date: string,
+  slotNumber: number,
+  excludeId: string,
+): Promise<string[]> {
+  const [candidates, assigned] = await Promise.all([
+    db
+      .select({ id: profiles.id })
+      .from(profiles)
+      .where(
+        and(
+          arrayContains(profiles.roles, ["tutor"]),
+          eq(profiles.isActive, true),
+          ne(profiles.id, excludeId),
+        ),
+      ),
+    db
+      .select({ tutorId: weeklyShifts.tutorId })
+      .from(weeklyShifts)
+      .where(
+        and(
+          eq(weeklyShifts.date, date),
+          eq(weeklyShifts.slotNumber, slotNumber),
+        ),
+      ),
+  ]);
+  const busy = new Set(assigned.map((r) => r.tutorId));
+  return candidates.map((c) => c.id).filter((id) => !busy.has(id));
+}
+
 async function loadApplicants(
   requestIds: string[],
 ): Promise<Map<string, SwapApplicant[]>> {

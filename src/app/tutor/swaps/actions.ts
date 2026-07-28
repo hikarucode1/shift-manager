@@ -15,7 +15,7 @@ import {
   weeklyShifts,
 } from "@/db/schema";
 import { isUniqueViolation } from "@/lib/db-errors";
-import { getActiveTutorsExcept } from "@/lib/swaps";
+import { getEligibleApplicantIds } from "@/lib/swaps";
 import { isValidIsoDate, jstToday } from "@/lib/week";
 
 type ActionResult = { ok: true } | { ok: false; error: string };
@@ -143,29 +143,21 @@ export async function createSwapRequest(
   // un-awaited promise と違いサーバーレスでも完了が保証される)。
   after(async () => {
     try {
-      let recipientIds: string[];
-      if (kind === "open") {
-        // 応募資格のある現役講師 = getActiveTutorsExcept(自分) から、その日その
-        // コマに既に出勤予定 (= applyToSwap の clash で応募不可) の講師を除外する。
-        const [candidates, assigned] = await Promise.all([
-          getActiveTutorsExcept(profile.id),
-          db
-            .select({ tutorId: weeklyShifts.tutorId })
-            .from(weeklyShifts)
-            .where(
-              and(
-                eq(weeklyShifts.date, date),
-                eq(weeklyShifts.slotNumber, slotNumber),
-              ),
-            ),
-        ]);
-        const busy = new Set(assigned.map((r) => r.tutorId));
-        recipientIds = candidates
-          .map((t) => t.id)
-          .filter((id) => !busy.has(id));
-      } else {
-        recipientIds = nominatedTutorId ? [nominatedTutorId] : [];
-      }
+      // 応募資格のある講師 (現役 tutor・自分以外・同コマ未出勤) を 1 箇所で解決する。
+      // open は全員へ、named は指名先が資格を満たす時だけ通知する。named 指名先が
+      // 既に同コマ出勤予定だと applyToSwap の clash で応募不可 = 通知しても dead-end
+      // になるため、open と同じ資格判定で除外する。
+      const eligible = await getEligibleApplicantIds(
+        date,
+        slotNumber,
+        profile.id,
+      );
+      const recipientIds =
+        kind === "open"
+          ? eligible
+          : nominatedTutorId && eligible.includes(nominatedTutorId)
+            ? [nominatedTutorId]
+            : [];
       await notify(recipientIds, {
         type: "swap_posted",
         title:
