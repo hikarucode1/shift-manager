@@ -1,5 +1,6 @@
 import { requireRole } from "@/lib/auth";
 import { getNotifications, type NotificationRow } from "@/lib/notifications";
+import { isNextControlFlowError } from "@/lib/next-errors";
 import { MarkReadOnMount } from "./mark-read-on-mount";
 import { NotificationList } from "./notification-list";
 import { NotificationLoadError } from "./notification-load-error";
@@ -7,13 +8,19 @@ import { NotificationLoadError } from "./notification-load-error";
 export default async function TutorNotificationsPage() {
   const { profile } = await requireRole("tutor");
 
-  // #184: 取得失敗をページ全体のエラー画面にしない。error boundary が無いため
-  // 従来は throw がそのまま 500 相当になり、hero もナビも表示できなかった
-  // (2026-07-30 の migration 0029 未適用時に本番でこの経路を踏んでいた)。
+  // #184: 取得失敗をページ全体の 500 にしない。
+  // ⚠️ error.tsx (エラー境界) だけでは初回 SSR の Server Component 例外を
+  // 捕捉できず、URL 直アクセスは素の 500 ドキュメントのままになる
+  // (Next 16.2 で実測。2026-07-30 の本番障害はまさにこの経路だった)。
+  // そのため「投げさせない」ここでの捕捉が初回ロード救済には必須で、
+  // error.tsx は render 中の例外とクライアント遷移を受け持つ二段構え。
   let items: NotificationRow[] | null = null;
   try {
     items = await getNotifications(profile.id);
   } catch (e) {
+    // redirect()/notFound() 等の制御フローを握り潰さない (認可 redirect を
+    // 飲み込むと権限バイパスになりうる)
+    if (isNextControlFlowError(e)) throw e;
     console.error("getNotifications failed", e);
   }
 
