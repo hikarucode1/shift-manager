@@ -15,7 +15,7 @@ import {
   weeklyShifts,
 } from "@/db/schema";
 import { isUniqueViolation } from "@/lib/db-errors";
-import { getEligibleApplicantIds } from "@/lib/swaps";
+import { getEligibleApplicantIds, isTutorBusyAt } from "@/lib/swaps";
 import { isValidIsoDate, jstToday } from "@/lib/week";
 
 type ActionResult = { ok: true } | { ok: false; error: string };
@@ -122,18 +122,7 @@ export async function createSwapRequest(
     // 指名先が同じコマに既に出勤予定だと applyToSwap の clash ガードで応募でき
     // ないため、作成時点で弾く。これで申請者にその場で理由が伝わり、一覧に
     // 応募不能な dead-end 行が出るのも防げる (通知先は下の named 分岐で確定)。
-    const nomineeClash = await db
-      .select({ id: weeklyShifts.id })
-      .from(weeklyShifts)
-      .where(
-        and(
-          eq(weeklyShifts.tutorId, nominatedTutorId as string),
-          eq(weeklyShifts.date, date),
-          eq(weeklyShifts.slotNumber, slotNumber),
-        ),
-      )
-      .limit(1);
-    if (nomineeClash.length > 0) {
+    if (await isTutorBusyAt(date, slotNumber, nominatedTutorId as string)) {
       return {
         ok: false,
         error: "その講師は同じコマに出勤予定のため指名できません。",
@@ -261,18 +250,7 @@ export async function applyToSwap(input: unknown): Promise<ActionResult> {
   }
 
   // 同じコマに自分が既に出勤している場合は代講不可
-  const clash = await db
-    .select({ id: weeklyShifts.id })
-    .from(weeklyShifts)
-    .where(
-      and(
-        eq(weeklyShifts.tutorId, profile.id),
-        eq(weeklyShifts.date, r.date),
-        eq(weeklyShifts.slotNumber, r.slotNumber),
-      ),
-    )
-    .limit(1);
-  if (clash.length > 0) {
+  if (await isTutorBusyAt(r.date, r.slotNumber, profile.id)) {
     return {
       ok: false,
       error: "そのコマは既にあなたが出勤予定のため応募できません。",

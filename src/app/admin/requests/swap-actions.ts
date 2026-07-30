@@ -5,6 +5,7 @@ import { z } from "zod";
 import { and, eq, inArray, isNull } from "drizzle-orm";
 import { requireRole } from "@/lib/auth";
 import { notify } from "@/lib/notifications";
+import { isTutorBusyAt } from "@/lib/swaps";
 import { jstToday } from "@/lib/week";
 import { db } from "@/db/client";
 import {
@@ -150,18 +151,7 @@ export async function decideSwapRequest(
       const applicantId = appRows[0].applicantId;
 
       // 代講者が同じコマに既に出勤予定なら不可 (weekly_shifts_unique)
-      const clash = await tx
-        .select({ id: weeklyShifts.id })
-        .from(weeklyShifts)
-        .where(
-          and(
-            eq(weeklyShifts.tutorId, applicantId),
-            eq(weeklyShifts.date, req.date),
-            eq(weeklyShifts.slotNumber, req.slotNumber),
-          ),
-        )
-        .limit(1);
-      if (clash.length > 0) {
+      if (await isTutorBusyAt(req.date, req.slotNumber, applicantId, tx)) {
         throw new SwapBizError("代講者は既にそのコマに出勤予定です。");
       }
 

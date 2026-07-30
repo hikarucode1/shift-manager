@@ -144,11 +144,44 @@ export async function getActiveTutorsExcept(
   return rows;
 }
 
+/** db 本体・transaction のどちらでも受けられる executor 型 */
+type Executor =
+  | typeof db
+  | Parameters<Parameters<typeof db.transaction>[0]>[0];
+
+/**
+ * 指定講師がその (date, slotNumber) に既に出勤予定か。
+ * 「同コマ出勤 = 代講不可」の clash 述語の単一ソース。応募 (applyToSwap)・
+ * 指名の作成時検証 (createSwapRequest)・承認時の applicant 検証
+ * (admin/requests/swap-actions) はいずれもこの 1 箇所を通す。transaction 内から
+ * 呼ぶ場合は executor に tx を渡す (省略時は db 本体)。
+ */
+export async function isTutorBusyAt(
+  date: string,
+  slotNumber: number,
+  tutorId: string,
+  executor: Executor = db,
+): Promise<boolean> {
+  const rows = await executor
+    .select({ id: weeklyShifts.id })
+    .from(weeklyShifts)
+    .where(
+      and(
+        eq(weeklyShifts.tutorId, tutorId),
+        eq(weeklyShifts.date, date),
+        eq(weeklyShifts.slotNumber, slotNumber),
+      ),
+    )
+    .limit(1);
+  return rows.length > 0;
+}
+
 /**
  * その (date, slotNumber) の代講に「応募資格のある」現役講師 id の一覧。
- * = 現役の tutor (自分を除く) から、同じコマに既に出勤予定の講師 (applyToSwap の
- * clash ガードで弾かれる) を除いたもの。open 募集の通知宛先も named 指名先の
- * 資格判定もこの 1 箇所を通すことで、通知と応募可否の定義が乖離しないようにする。
+ * = 現役の tutor (自分を除く) から、同じコマに既に出勤予定の講師 (= {@link isTutorBusyAt}
+ * が true = applyToSwap の clash で弾かれる) を除いたもの。単発判定は isTutorBusyAt、
+ * 一括の宛先解決はこちら、という一括版。open 募集の通知宛先の算出に使う
+ * (named 指名先は createSwapRequest が作成時に検証するのでここは通らない)。
  * 通知宛先の解決にしか使わないため id のみ・ソートなし。
  */
 export async function getEligibleApplicantIds(
