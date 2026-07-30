@@ -22,18 +22,91 @@ staging が無いため、**migration は本番に直接適用される**。破�
 
 **対処 (いずれか)**:
 
-1. **migration 専用に direct connection (ポート 5432) を使う** — Supabase の
-   Project Settings > Database > Connection string の "Direct connection" / "Session pooler"
-   (5432) を使う。**#165 以降は `drizzle.config.ts` が `DIRECT_URL` を優先**するため、
-   `.env.local` に `DIRECT_URL`(5432)を設定すれば `DATABASE_URL` を差し替えずに
-   `npm run db:migrate` を実行できる (`DIRECT_URL` 未設定時は従来どおり `DATABASE_URL`)。
+1. **migration 専用に direct connection を使う** — Supabase の
+   Project Settings > Database > Connection string の **"Direct connection"**
+   (`db.<ref>.supabase.co:5432`) を使う。**#165 以降は `drizzle.config.ts` が
+   `DIRECT_URL` を優先**するため、`.env.local` に `DIRECT_URL` を設定すれば
+   `DATABASE_URL` を差し替えずに `npm run db:migrate` を実行できる
+   (`DIRECT_URL` 未設定時は従来どおり `DATABASE_URL`)。
    アプリ実行時は 6543 (transaction pooler) のままでよい。
-2. **direct SQL + tracking reconcile** (5432 が使えない時の手動適用):
+
+   > ⚠️ **Session pooler (5432) は direct connection ではない** (2026-07-30 判明)。
+   > `aws-N-<region>.pooler.supabase.com:5432` は **Supavisor 経由**であり、
+   > **ポート番号が 5432 でも drizzle-kit は同じ握り潰し exit 1 で失敗する**
+   > (通常の SQL クエリは問題なく通るので「接続できる = migrate できる」ではない)。
+   > 真の direct connection は `db.<ref>.supabase.co:5432` だが、**Free tier では
+   > IPv6 専用**のため IPv4 のみの環境からは到達できない。その場合は下記 2 を使う。
+
+2. **direct SQL + tracking reconcile** (direct connection が使えない時の手動適用):
    - 各 migration の `.sql` を statement-breakpoint で分割し postgres-js で直接実行
-   - `drizzle.__drizzle_migrations` に `hash = sha256(.sql ファイル生 content)`、
-     `created_at = epoch ms (単調増加)` の行を挿入して reconcile
-   - hash 算出は `sha256(fs.readFileSync(file,'utf8'))` (raw file 全文)。既存の記録済み
-     migration の hash と一致することで検証可能
+   - `drizzle.__drizzle_migrations` に `hash` と `created_at` の行を挿入して reconcile
+
+   **⚠️ `created_at` には必ず `drizzle/meta/_journal.json` の当該 entry の `when`
+   (= drizzle 内部の `folderMillis`) をそのまま入れる。適用時刻を入れてはいけない。**
+
+   drizzle の適用判定は `created_at` **だけ**を見る (`drizzle-orm/pg-core/dialect.cjs:59-69`):
+
+   ```js
+   // テーブル内の「最大 created_at の 1 行だけ」を取り、folderMillis と比較する
+   select id, hash, created_at from ... order by created_at desc limit 1
+   if (!lastDbMigration || Number(lastDbMigration.created_at) < migration.folderMillis) { /* 適用 */ }
+   // 記録時も created_at には folderMillis がそのまま入る
+   insert into ... ("hash","created_at") values(${migration.hash}, ${migration.folderMillis})
+   ```
+
+   したがって適用時刻や独自の連番を入れると **未適用 migration が恒久的にスキップされる**:
+   0033 と 0034 が未適用の状態で 0033 だけ手動適用して `created_at = 適用時刻 (8/5)` を
+   入れると、`max(created_at)=8/5` > 0034 の `when`(8/1) となり、以後
+   `drizzle-kit migrate` は **0034 を「適用対象なし」と言って永久に飛ばす**。
+   逆に journal の `when` より小さい値を入れると、**適用済みの migration を再適用**しようと
+   して `CREATE TYPE` 重複等で失敗する。
+
+   - `hash` は記録されるだけで **drizzle は照合しない** (load-bearing ではない)。ただし
+     既存の記録済み行と `sha256(fs.readFileSync(file,'utf8'))` (raw file 全文) が一致するか
+     を確認しておくと、journal と本番のズレを早期に検知できる衛生として有効
+
+### 本番適用状況 (2026-07-30 確認・0032 まで適用済) ← 最新
+
+> 以降の節は履歴。現在の到達点はこの節 (**0032 まで適用済、recorded=33**)。
+
+**⚠️ 「任意」と書かれた migration は自動では流れない** — 2026-07-30 の監査で、本番が
+**0028 までしか適用されていない**ことが判明した (recorded=29)。`notifications` テーブルと
+`notification_type` enum が存在せず、**#155 の通知機能 (#164/#166/#180) は本番で
+一切動いていなかった**。migration を「任意」に分類しても、その機能のコードを deploy した
+時点で適用が必須になる。**機能 PR をマージしたら対応 migration の適用状況を必ず確認する**
+(`npm run check:migrations` で機械的に検出できる)。
+
+**なぜ 9 日間気づけなかったか (症状の非対称性)** — 0029 生成 (7/21) から発覚 (7/30) まで
+テーブル不在に気づけなかったのは、経路によって症状が違ったため:
+
+| 経路 | テーブル未作成時の挙動 |
+|---|---|
+| ベルの未読バッジ (`notification-bell.tsx`) | `.catch(() => {})` で握り潰し → **バッジは 0 のまま無症状** (#168 で意図的にそう設計) |
+| `/tutor/notifications` (`page.tsx`) | `getNotifications` を素で await → **開くとエラー画面** |
+
+つまり **「ベルは静かに壊れ、一覧を開くと落ちる」**。次回は「バッジがずっと 0 のまま」を
+migration 未適用のサインとして疑う。
+
+適用手順の記録 (2026-07-30): Session pooler 経由の `npm run db:migrate` は上記のとおり
+exit 1 で失敗 (ただし**トランザクションが丸ごとロールバックされ half-applied には
+ならなかった**)。direct connection は IPv6 専用で到達不可だったため、**上記 2 の
+direct SQL + tracking reconcile** で 0029-0032 を **1 トランザクションで適用**した。
+適用前検証: 0031 の CHECK 違反 0 件 / 期範囲外 `training_preferences` 0 件。
+適用後検証: 全オブジェクト存在確認 + **CHECK/trigger/unique が実際に強制されることを
+ロールバック付き tx で実挙動確認** (23514 / 23514 / 23505)。
+
+**⚠️ 初回 reconcile 時に `created_at` を「既存 max + 1 の連番」で入れてしまい、後から
+journal の `when` (folderMillis) に是正した** (2026-07-30 中に修正済み)。連番のままだと
+`max(created_at)` が 0029-0032 の `when` より小さいため、将来 direct connection から
+`drizzle-kit migrate` を実行した際に **適用済みの 0029-0032 を再適用しようとして
+`CREATE TYPE` 重複で失敗**するところだった。現在は
+`max(created_at) = 1785223359887` (= 0032 の `when`) で、再適用対象なしを確認済み。
+
+**⚠️ 本番アプリの DB 接続状態 (2026-07-30 時点)**: 適用作業時に Supabase の DB パスワードを
+リセットしたため、**Vercel 本番の `DATABASE_URL` は古いパスワードのままで DB 接続不可**。
+env 更新 + 再デプロイが必要 (未実施)。また Supabase は **Free tier のため非アクティブで
+自動 pause** される (paused 中は DB 不通 = 本番アプリも実質ダウン。ダッシュボードの
+Resume project で復帰、データは保持される)。
 
 ### 本番適用状況 (2026-06-23 確認)
 
@@ -62,10 +135,10 @@ CHECK / trigger / NOT NULL すべてオブジェクト単位で存在確認)。�
 | 0026 | 親 period 更新時に child 範囲外を検出する BEFORE UPDATE trigger (#97) | 非破壊 (trigger 追加) | 任意 (2026-06-23 適用済) |
 | 0027 | `periods.kind` 撤廃 (#110)。**⚠️ コメントの安全前提が誤り** | **破壊的** (DELETE + DROP COLUMN) | 適用済。下記注記参照 |
 | 0028 | `profiles.role` → `roles` 配列化 (#111) | 非破壊 (追加 + backfill) | 適用済 |
-| 0029 | `notifications` テーブル + RLS (#155) | 非破壊 (追加のみ) | 任意 |
-| 0030 | `notifications.dedup_key` + unique index (#155) | 非破壊 (追加のみ) | 任意 |
-| 0031 | `fixed_shift_submissions` の effective_to>=effective_from CHECK + `training_preferences` 日付範囲 trigger + 0010 関数の search_path hardening (#165) | **CHECK 追加** (違反行があれば失敗) + trigger/関数追加 | CHECK は `effective_to < effective_from` の行が 0 件であることを確認後に適用。trigger/関数は非破壊 |
-| 0032 | `notification_type` enum に `swap_posted` 追加 (#155 後続) | 非破壊 (`ALTER TYPE ADD VALUE`) | **コード deploy より先に適用**。値追加自体は既存行に影響なしだが、`swap_posted` を使うコードが migration より前に稼働すると notify insert が invalid-enum で失敗する (fire-and-forget で握り潰され通知がロストするだけで致命ではないが、deploy⇔migrate の順序に注意)。**⚠️ tx 境界**: `drizzle-kit migrate` は未適用 migration を 1 トランザクションでまとめて流すため、PG は「同一 tx 内で追加した enum 値の *使用*」を拒否する。将来 `swap_posted` を DML/DEFAULT で使う migration を作る場合、0032 と同じ未適用バッチに入ると `unsafe use of new value` でバッチ全体が失敗する。0032 は `ALTER TYPE ADD VALUE` 単独で main は 0031 まで適用済みのため今回は問題なし。enum 値を使う migration は必ず 0032 適用後の別バッチにすること |
+| 0029 | `notifications` テーブル + RLS (#155) | 非破壊 (追加のみ) | **2026-07-30 適用済**。通知機能 (#164/#166/#180) の動作に必須 (任意ではない) |
+| 0030 | `notifications.dedup_key` + unique index (#155) | 非破壊 (追加のみ) | **2026-07-30 適用済** |
+| 0031 | `fixed_shift_submissions` の effective_to>=effective_from CHECK + `training_preferences` 日付範囲 trigger + 0010 関数の search_path hardening (#165) | **CHECK 追加** (違反行があれば失敗) + trigger/関数追加 | CHECK は `effective_to < effective_from` の行が 0 件であることを確認後に適用。trigger/関数は非破壊。**2026-07-30 適用済** (違反 0 件確認のうえ) |
+| 0032 | `notification_type` enum に `swap_posted` 追加 (#155 後続) | 非破壊 (`ALTER TYPE ADD VALUE`) | **コード deploy より先に適用**。値追加自体は既存行に影響なしだが、`swap_posted` を使うコードが migration より前に稼働すると notify insert が invalid-enum で失敗する (fire-and-forget で握り潰され通知がロストするだけで致命ではないが、deploy⇔migrate の順序に注意)。**⚠️ tx 境界**: `drizzle-kit migrate` は未適用 migration を 1 トランザクションでまとめて流すため、PG は「同一 tx 内で追加した enum 値の *使用*」を拒否する。将来 `swap_posted` を DML/DEFAULT で使う migration を作る場合、0032 と同じ未適用バッチに入ると `unsafe use of new value` でバッチ全体が失敗する。0032 は `ALTER TYPE ADD VALUE` 単独で main は 0031 まで適用済みのため今回は問題なし。enum 値を使う migration は必ず 0032 適用後の別バッチにすること。**2026-07-30 適用済** |
 
 ### ⚠️ 0027 の安全前提の誤り (#165 監査で判明)
 
@@ -141,4 +214,8 @@ export が残っていると、誤って `db.select().from(...)` を書くと型
 - `drizzle/meta/` — drizzle snapshot
 - `scripts/check-rls-migrations.ts` — 新規 public テーブルに RLS+REVOKE が
   宣言されているかの static check (`npm run check:rls`)
+- `scripts/check-migrations.ts` — journal と本番の `drizzle.__drizzle_migrations` を
+  比較して**未適用 migration を列挙**する read-only チェック
+  (`DATABASE_URL='...' npm run check:migrations`)。migrate と違い通常のクエリなので
+  **pooler 経由でも動く**。機能 PR のマージ後・deploy 前に実行する
 - Issue #85 (2) — 本ドキュメントの起点
