@@ -11,9 +11,12 @@ description: shift-manager の変更をローカル (Supabase 未接続環境) �
 ## ハーネス構築 (毎回一時適用 → 検証後に必ず戻す)
 
 1. **認証バイパス** (`DEV_STUB_AUTH=1` ガード付き、コミット禁止):
+   - バイパス条件には必ず `NODE_ENV !== "production"` を AND で含める。万一
+     このパッチをコミットしてしまっても、本番では env 変数だけでは有効化
+     できない形にしておく (「コミット禁止」運用だけに頼らない多重防御)。
    - `src/lib/supabase/middleware.ts`: `supabaseResponse` 作成直後に
-     `if (process.env.DEV_STUB_AUTH === "1") return supabaseResponse;`
-   - `src/lib/auth.ts` `requireSession()`: 冒頭で同フラグ時に
+     `if (process.env.DEV_STUB_AUTH === "1" && process.env.NODE_ENV !== "production") return supabaseResponse;`
+   - `src/lib/auth.ts` `requireSession()`: 冒頭で上と同じ条件のとき
      stub profile (`roles: ["tutor"]` など) を返す
 2. **ページが DB を叩く場合**: 対象コンポーネントをモックデータで描画する
    一時ページ `src/app/tutor/verify-<issue>/page.tsx` を作る

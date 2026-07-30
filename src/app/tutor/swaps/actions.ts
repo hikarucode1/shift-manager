@@ -119,6 +119,26 @@ export async function createSwapRequest(
     if (nt.length === 0) {
       return { ok: false, error: "指名先の講師が見つかりません。" };
     }
+    // 指名先が同じコマに既に出勤予定だと applyToSwap の clash ガードで応募でき
+    // ないため、作成時点で弾く。これで申請者にその場で理由が伝わり、一覧に
+    // 応募不能な dead-end 行が出るのも防げる (通知先は下の named 分岐で確定)。
+    const nomineeClash = await db
+      .select({ id: weeklyShifts.id })
+      .from(weeklyShifts)
+      .where(
+        and(
+          eq(weeklyShifts.tutorId, nominatedTutorId as string),
+          eq(weeklyShifts.date, date),
+          eq(weeklyShifts.slotNumber, slotNumber),
+        ),
+      )
+      .limit(1);
+    if (nomineeClash.length > 0) {
+      return {
+        ok: false,
+        error: "その講師は同じコマに出勤予定のため指名できません。",
+      };
+    }
   }
 
   try {
@@ -143,19 +163,13 @@ export async function createSwapRequest(
   // un-awaited promise と違いサーバーレスでも完了が保証される)。
   after(async () => {
     try {
-      // 応募資格のある講師 (現役 tutor・自分以外・同コマ未出勤) を 1 箇所で解決する。
-      // open は全員へ、named は指名先が資格を満たす時だけ通知する。named 指名先が
-      // 既に同コマ出勤予定だと applyToSwap の clash で応募不可 = 通知しても dead-end
-      // になるため、open と同じ資格判定で除外する。
-      const eligible = await getEligibleApplicantIds(
-        date,
-        slotNumber,
-        profile.id,
-      );
+      // open は「応募資格のある講師 (現役 tutor・自分以外・同コマ未出勤)」全員へ。
+      // named は指名先 1 名へ (作成時に role/active + 同コマ clash を検証済みなので
+      // ここでの資格再判定は不要)。
       const recipientIds =
         kind === "open"
-          ? eligible
-          : nominatedTutorId && eligible.includes(nominatedTutorId)
+          ? await getEligibleApplicantIds(date, slotNumber, profile.id)
+          : nominatedTutorId
             ? [nominatedTutorId]
             : [];
       await notify(recipientIds, {
@@ -164,7 +178,7 @@ export async function createSwapRequest(
           kind === "open"
             ? "代講募集が追加されました"
             : "交代の指名がありました",
-        body: `${date} ${slotNumber}限${kind === "named" ? "（あなた宛の指名）" : ""}`,
+        body: `対象: ${date} ${slotNumber}限${kind === "named" ? "（あなた宛の指名）" : ""}`,
         href: "/tutor/open-swaps",
       });
     } catch (e) {
