@@ -1,9 +1,11 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
+import { after } from "next/server";
 import { z } from "zod";
 import { and, arrayContains, eq, inArray, isNull } from "drizzle-orm";
 import { requireRole } from "@/lib/auth";
+import { notify } from "@/lib/notifications";
 import { db } from "@/db/client";
 import {
   absenceRequests,
@@ -13,6 +15,7 @@ import {
   weeklyShifts,
 } from "@/db/schema";
 import { isUniqueViolation } from "@/lib/db-errors";
+import { getEligibleApplicantIds, isTutorBusyAt } from "@/lib/swaps";
 import { isValidIsoDate, jstToday } from "@/lib/week";
 
 type ActionResult = { ok: true } | { ok: false; error: string };
@@ -116,6 +119,15 @@ export async function createSwapRequest(
     if (nt.length === 0) {
       return { ok: false, error: "指名先の講師が見つかりません。" };
     }
+    // 指名先が同じコマに既に出勤予定だと applyToSwap の clash ガードで応募でき
+    // ないため、作成時点で弾く。これで申請者にその場で理由が伝わり、一覧に
+    // 応募不能な dead-end 行が出るのも防げる (通知先は下の named 分岐で確定)。
+    if (await isTutorBusyAt(date, slotNumber, nominatedTutorId as string)) {
+      return {
+        ok: false,
+        error: "その講師は同じコマに出勤予定のため指名できません。",
+      };
+    }
   }
 
   try {
@@ -134,6 +146,34 @@ export async function createSwapRequest(
     console.error("createSwapRequest failed", e);
     return { ok: false, error: "申請に失敗しました。時間をおいてお試しください。" };
   }
+
+  // #155: 新規募集を関連講師へ通知する。応答をブロックしないよう after() で
+  // レスポンス確定後に実行する (募集自体は上で commit 済み。after なら bare な
+  // un-awaited promise と違いサーバーレスでも完了が保証される)。
+  after(async () => {
+    try {
+      // open は「応募資格のある講師 (現役 tutor・自分以外・同コマ未出勤)」全員へ。
+      // named は指名先 1 名へ (作成時に role/active + 同コマ clash を検証済みなので
+      // ここでの資格再判定は不要)。
+      const recipientIds =
+        kind === "open"
+          ? await getEligibleApplicantIds(date, slotNumber, profile.id)
+          : nominatedTutorId
+            ? [nominatedTutorId]
+            : [];
+      await notify(recipientIds, {
+        type: "swap_posted",
+        title:
+          kind === "open"
+            ? "代講募集が追加されました"
+            : "交代の指名がありました",
+        body: `対象: ${date} ${slotNumber}限${kind === "named" ? "（あなた宛の指名）" : ""}`,
+        href: "/tutor/open-swaps",
+      });
+    } catch (e) {
+      console.error("createSwapRequest notify failed", e);
+    }
+  });
 
   revalidateAll();
   return { ok: true };
@@ -210,18 +250,7 @@ export async function applyToSwap(input: unknown): Promise<ActionResult> {
   }
 
   // 同じコマに自分が既に出勤している場合は代講不可
-  const clash = await db
-    .select({ id: weeklyShifts.id })
-    .from(weeklyShifts)
-    .where(
-      and(
-        eq(weeklyShifts.tutorId, profile.id),
-        eq(weeklyShifts.date, r.date),
-        eq(weeklyShifts.slotNumber, r.slotNumber),
-      ),
-    )
-    .limit(1);
-  if (clash.length > 0) {
+  if (await isTutorBusyAt(r.date, r.slotNumber, profile.id)) {
     return {
       ok: false,
       error: "そのコマは既にあなたが出勤予定のため応募できません。",
