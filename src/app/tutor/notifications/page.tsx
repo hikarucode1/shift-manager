@@ -1,6 +1,6 @@
+import { unstable_rethrow } from "next/navigation";
 import { requireRole } from "@/lib/auth";
 import { getNotifications, type NotificationRow } from "@/lib/notifications";
-import { isNextControlFlowError } from "@/lib/next-errors";
 import { MarkReadOnMount } from "./mark-read-on-mount";
 import { NotificationList } from "./notification-list";
 import { NotificationLoadError } from "./notification-load-error";
@@ -19,8 +19,13 @@ export default async function TutorNotificationsPage() {
     items = await getNotifications(profile.id);
   } catch (e) {
     // redirect()/notFound() 等の制御フローを握り潰さない (認可 redirect を
-    // 飲み込むと権限バイパスになりうる)
-    if (isNextControlFlowError(e)) throw e;
+    // 飲み込むと権限バイパスになりうる)。
+    // ⚠️ digest 文字列を自前で見る判定ではなく必ず unstable_rethrow を使う。
+    // drizzle は全クエリ例外を DrizzleQueryError で包むため、包まれた制御
+    // フロー例外は表層に digest を持たず自前判定を素通りする。
+    // unstable_rethrow は error.cause を再帰的に辿るのでこれを取りこぼさない
+    // (PG の SQLSTATE を lib/db-errors.ts の pgErrorCode() で見るのと同じ話)。
+    unstable_rethrow(e);
     console.error("getNotifications failed", e);
   }
 
