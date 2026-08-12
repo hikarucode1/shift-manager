@@ -15,9 +15,13 @@ import { Card, CardContent } from "@/components/ui/card";
  *
  * layout.tsx (TutorShell = ヘッダー/ボトムナビ) はこの境界の外なので、
  * ここが描画されてもシェルは生き残り、他の画面へ移動できる。
- * `reset()` は同一セグメントの再レンダリングを試みるだけで、
- * router.refresh() のようにオフライン時にブラウザのハードナビへ
- * フォールバックしない (= アプリごと失わない)。
+ *
+ * ⚠️ 再試行に使うのは `reset` ではなく `unstable_retry`。Next 16.2.4 の
+ * `reset` は `setState({error: null})` するだけで RSC ペイロードを取り直さず
+ * (error-boundary.js:39-42)、キャッシュ済みの失敗セグメントを再レンダリング
+ * して即座に同じ例外を投げるため、ボタンが無反応にしか見えない。
+ * `unstable_retry` は `startTransition` の中で `router.refresh()` してから
+ * reset する (同:43-47) ので、DB 復旧後に押せば実際に回復する。
  *
  * 文言は原因を断定しない。実際の障害はサーバー側 (DB 未到達・schema 不整合)
  * のことが多く、「通信状況を確認してください」と書くとユーザーに誤った
@@ -26,10 +30,10 @@ import { Card, CardContent } from "@/components/ui/card";
  */
 export default function TutorError({
   error,
-  reset,
+  unstable_retry,
 }: {
   error: Error & { digest?: string };
-  reset: () => void;
+  unstable_retry: () => void;
 }) {
   useEffect(() => {
     console.error("tutor route error", error);
@@ -45,7 +49,7 @@ export default function TutorError({
             時間をおいて再度お試しください。解消しない場合は教室長にご連絡ください。
           </p>
         </div>
-        <Button variant="outline" size="sm" onClick={reset}>
+        <Button variant="outline" size="sm" onClick={unstable_retry}>
           <RefreshCw aria-hidden />
           再試行
         </Button>

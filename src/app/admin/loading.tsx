@@ -28,25 +28,35 @@
  *
  * admin ページは KPI カード + 表/パネルという構成が多いので、
  * それに寄せた汎用スケルトンにしている (11 ページ共用)。
+ *
+ * a11y の注意点 2 つ:
+ *  - 脈動は `motion-safe:` 付き。Tailwind の pulse ユーティリティ自体には
+ *    reduced-motion の opt-out が無く、DB 障害時はこのスケルトンが終端の
+ *    表示になり脈動が一瞬でなく延々続くため、OS 設定を尊重する必要がある
+ *    (この docstring に素のクラス名を書くと Tailwind のスキャナが拾って
+ *    未使用ルールを吐くので、バッククォート内でも書かない)
+ *  - `role="status"` に `aria-busy="true"` を付けない。busy は「この領域の
+ *    更新を保留しろ」の意味で、初手から busy のまま差し替えられる作りだと
+ *    sr-only の「読み込み中」が一度も読み上げられない可能性がある
  */
 export default function AdminLoading() {
   return (
-    <div className="space-y-5" role="status" aria-busy="true">
+    <div className="space-y-5" role="status">
       <span className="sr-only">読み込み中</span>
 
-      <div className="h-7 w-40 animate-pulse rounded bg-muted" />
+      <div className="h-7 w-40 motion-safe:animate-pulse rounded bg-muted" />
 
       <div className="grid gap-3 sm:grid-cols-3">
         {[0, 1, 2].map((i) => (
           <div
             key={i}
-            className="h-[88px] animate-pulse rounded-xl bg-muted"
+            className="h-[88px] motion-safe:animate-pulse rounded-xl bg-muted"
             aria-hidden
           />
         ))}
       </div>
 
-      <div className="h-64 animate-pulse rounded-xl bg-muted" aria-hidden />
+      <div className="h-64 motion-safe:animate-pulse rounded-xl bg-muted" aria-hidden />
     </div>
   );
 }

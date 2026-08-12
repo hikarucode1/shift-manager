@@ -19,21 +19,21 @@
  */
 export default function TutorLoading() {
   return (
-    <div className="space-y-5" role="status" aria-busy="true">
+    <div className="space-y-5" role="status">
       <span className="sr-only">読み込み中</span>
 
       {/* hero (実ページと同じ rounded-xl / bg-primary) */}
       <section className="rounded-xl bg-primary p-4" aria-hidden>
-        <div className="h-4 w-28 animate-pulse rounded bg-primary-foreground/20" />
+        <div className="h-4 w-28 motion-safe:animate-pulse rounded bg-primary-foreground/20" />
         <div className="mt-3 grid grid-cols-2 gap-3">
-          <div className="h-[68px] animate-pulse rounded-lg bg-primary-foreground/10" />
-          <div className="h-[68px] animate-pulse rounded-lg bg-primary-foreground/10" />
+          <div className="h-[68px] motion-safe:animate-pulse rounded-lg bg-primary-foreground/10" />
+          <div className="h-[68px] motion-safe:animate-pulse rounded-lg bg-primary-foreground/10" />
         </div>
       </section>
 
       <div className="space-y-3" aria-hidden>
         {[0, 1, 2].map((i) => (
-          <div key={i} className="h-20 animate-pulse rounded-xl bg-muted" />
+          <div key={i} className="h-20 motion-safe:animate-pulse rounded-xl bg-muted" />
         ))}
       </div>
     </div>

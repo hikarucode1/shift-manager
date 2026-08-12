@@ -1,39 +1,28 @@
-import { unstable_rethrow } from "next/navigation";
 import { requireRole } from "@/lib/auth";
-import { getNotifications, type NotificationRow } from "@/lib/notifications";
+import { getNotifications } from "@/lib/notifications";
 import { MarkReadOnMount } from "./mark-read-on-mount";
 import { NotificationList } from "./notification-list";
-import { NotificationLoadError } from "./notification-load-error";
 
 export default async function TutorNotificationsPage() {
   const { profile } = await requireRole("tutor");
 
-  // #184: 取得失敗をページ全体の 500 にしない。
-  // ⚠️ error.tsx (エラー境界) だけでは初回 SSR の Server Component 例外を
-  // 捕捉できず、URL 直アクセスは素の 500 ドキュメントのままになる
-  // (Next 16.2 で実測。2026-07-30 の本番障害はまさにこの経路だった)。
-  // そのため「投げさせない」ここでの捕捉が初回ロード救済には必須で、
-  // error.tsx は render 中の例外とクライアント遷移を受け持つ二段構え。
-  let items: NotificationRow[] | null = null;
-  try {
-    items = await getNotifications(profile.id);
-  } catch (e) {
-    // redirect()/notFound() 等の制御フローを握り潰さない (認可 redirect を
-    // 飲み込むと権限バイパスになりうる)。
-    // ⚠️ digest 文字列を自前で見る判定ではなく必ず unstable_rethrow を使う。
-    // drizzle は全クエリ例外を DrizzleQueryError で包むため、包まれた制御
-    // フロー例外は表層に digest を持たず自前判定を素通りする。
-    // unstable_rethrow は error.cause を再帰的に辿るのでこれを取りこぼさない
-    // (PG の SQLSTATE を lib/db-errors.ts の pgErrorCode() で見るのと同じ話)。
-    unstable_rethrow(e);
-    console.error("getNotifications failed", e);
-  }
+  // #184 で入れたページ内 try/catch は #186 で撤去した。当時は
+  // 「error.tsx だけでは初回 SSR の例外を捕捉できない」ため各ページで
+  // 投げさせない必要があったが、tutor/loading.tsx が Suspense 境界を
+  // 作った今は初回ロードでも error.tsx に落ちる。
+  //
+  // 捕捉を残すと、この画面だけ他の講師画面と挙動がずれる:
+  // 境界は「エラーID (digest)」を出すが自前の失敗表示は出せない。
+  // 2026-07-30 の障害で実際に壊れたのがこの画面なので、問い合わせ時に
+  // digest を読み上げられないのは一番痛い。境界に流して揃える。
+  const items = await getNotifications(profile.id);
 
   return (
     <div className="space-y-5">
-      {/* 読み込めていない時に既読化すると、ユーザーが中身を見ないまま未読が
-          消える (markAllRead は表示分でなく全件対象)。成功時のみ実行する */}
-      {items !== null && <MarkReadOnMount />}
+      {/* 取得に失敗した場合はここへ到達せず境界が出るので、既読化が
+          「中身を見ないまま未読が消える」形で走ることはない
+          (markAllRead は表示分でなく全件対象) */}
+      <MarkReadOnMount />
 
       {/* ネイビー hero (#130/#131 と統一) */}
       <section className="rounded-xl bg-primary p-4 text-primary-foreground">
@@ -43,11 +32,7 @@ export default async function TutorNotificationsPage() {
         </p>
       </section>
 
-      {items === null ? (
-        <NotificationLoadError />
-      ) : (
-        <NotificationList items={items} />
-      )}
+      <NotificationList items={items} />
     </div>
   );
 }

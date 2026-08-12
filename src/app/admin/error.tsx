@@ -16,6 +16,10 @@ import { Card, CardContent } from "@/components/ui/card";
  * layout.tsx (AdminShell = ヘッダー/横ナビ) はこの境界の外なので、
  * ここが描画されてもシェルは生き残る。
  *
+ * ⚠️ 再試行に使うのは `reset` ではなく `unstable_retry` (理由は
+ * tutor/error.tsx の docstring 参照。`reset` は RSC を取り直さないので
+ * キャッシュ済みの失敗セグメントを再レンダリングして即再 throw する)。
+ *
  * ⚠️ この境界だけでは URL 直アクセス (初回 SSR) の 500 は防げない。
  * 同セグメントの loading.tsx が Suspense 境界を作ることで初めて
  * 初回ロードでも描画される (Next 16.2.4 で実測)。両者はセット。
@@ -27,10 +31,10 @@ import { Card, CardContent } from "@/components/ui/card";
  */
 export default function AdminError({
   error,
-  reset,
+  unstable_retry,
 }: {
   error: Error & { digest?: string };
-  reset: () => void;
+  unstable_retry: () => void;
 }) {
   useEffect(() => {
     console.error("admin route error", error);
@@ -47,7 +51,7 @@ export default function AdminError({
             時間をおいて再度お試しください。解消しない場合は、下のエラーIDを添えて開発者にご連絡ください。
           </p>
         </div>
-        <Button variant="outline" size="sm" onClick={reset}>
+        <Button variant="outline" size="sm" onClick={unstable_retry}>
           <RefreshCw aria-hidden />
           再試行
         </Button>
