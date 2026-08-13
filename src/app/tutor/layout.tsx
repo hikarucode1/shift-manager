@@ -1,5 +1,6 @@
 import { unstable_rethrow } from "next/navigation";
 import { requireRole } from "@/lib/auth";
+import { reportIncident } from "@/lib/incident";
 import { TutorShell } from "@/components/tutor-shell";
 import { SystemUnavailable } from "@/components/system-unavailable";
 
@@ -20,8 +21,8 @@ export default async function TutorLayout({
     // unstable_rethrow は error.cause を再帰的に辿るので、drizzle の
     // DrizzleQueryError に包まれた制御フロー例外も取りこぼさない。
     unstable_rethrow(e);
-    console.error("tutor layout: session/profile unavailable", e);
-    return <SystemUnavailable contactLabel="教室長" />;
+    const incidentId = reportIncident("tutor-layout", e);
+    return <SystemUnavailable contactLabel="教室長" incidentId={incidentId} />;
   }
 
   return <TutorShell profile={session.profile}>{children}</TutorShell>;

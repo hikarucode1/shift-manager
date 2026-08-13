@@ -1,5 +1,6 @@
 import { unstable_rethrow } from "next/navigation";
 import { requireRole } from "@/lib/auth";
+import { reportIncident } from "@/lib/incident";
 import { AdminShell } from "@/components/admin-shell";
 import { SystemUnavailable } from "@/components/system-unavailable";
 
@@ -15,8 +16,8 @@ export default async function AdminLayout({
     session = await requireRole("admin");
   } catch (e) {
     unstable_rethrow(e);
-    console.error("admin layout: session/profile unavailable", e);
-    return <SystemUnavailable contactLabel="開発者" />;
+    const incidentId = reportIncident("admin-layout", e);
+    return <SystemUnavailable contactLabel="開発者" incidentId={incidentId} />;
   }
 
   return <AdminShell profile={session.profile}>{children}</AdminShell>;
