@@ -53,7 +53,16 @@ export const getProfile = cache(
   },
 );
 
-export async function requireSession() {
+/**
+ * 現在のセッションと内部プロフィール。未ログイン/無効なら /login へ redirect。
+ *
+ * `cache()` で包むのはリクエスト単位の重複排除のため (#188)。`getProfile` は
+ * 元から包まれていたが、`createClient()` + `supabase.auth.getUser()` は
+ * 呼ばれるたびに実際の `GET /user` を飛ばしていた。layout と page の両方が
+ * requireRole() を呼ぶ多重防御の構成なので、包まないと 1 リクエストあたり
+ * middleware + layout + page で 3 往復する。
+ */
+export const requireSession = cache(async () => {
   const supabase = await createClient();
   const {
     data: { user },
@@ -65,7 +74,7 @@ export async function requireSession() {
   if (!profile || !profile.isActive) redirect("/login?reason=inactive");
 
   return { user, profile };
-}
+});
 
 export async function requireRole(role: Role) {
   const session = await requireSession();

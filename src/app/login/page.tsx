@@ -1,7 +1,9 @@
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { getProfile, landingPath } from "@/lib/auth";
+import { resolveOrIncident } from "@/lib/shell-guard";
 import { LoginForm } from "./login-form";
+import { SystemUnavailable } from "@/components/system-unavailable";
 import { Card, CardContent } from "@/components/ui/card";
 
 export default async function LoginPage({
@@ -15,9 +17,24 @@ export default async function LoginPage({
   } = await supabase.auth.getUser();
 
   if (user) {
-    const profile = await getProfile(user.id);
-    if (profile?.isActive) {
-      redirect(landingPath(profile));
+    // #188: ここも layout の外。DB 障害中にログイン済みユーザーが /login を
+    // 開くと素の 500 になっていた。ログインフォームを出す手もあるが、
+    // 実際にはログイン済みなので「もう一度ログインすれば直る」と誤解させる。
+    const resolved = await resolveOrIncident("login-page", () =>
+      getProfile(user.id),
+    );
+
+    if (!resolved.ok) {
+      return (
+        <SystemUnavailable
+          contactLabel="教室長"
+          incidentId={resolved.incidentId}
+        />
+      );
+    }
+
+    if (resolved.value?.isActive) {
+      redirect(landingPath(resolved.value));
     }
   }
 
