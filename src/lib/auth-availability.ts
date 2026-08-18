@@ -1,5 +1,7 @@
 import {
+  isAuthApiError,
   isAuthRetryableFetchError,
+  AuthUnknownError,
   type AuthError,
   type User,
 } from "@supabase/supabase-js";
@@ -18,15 +20,22 @@ import {
  * `/login` へ 307 していたため、利用者には「ログアウトされた」ようにしか見えず、
  * #188 で入れた SystemUnavailable には**到達しなかった**。
  *
- * ⚠️ **`isAuthRetryableFetchError` を呼ぶのはリポジトリ内でこの 1 箇所**。
- * `error.status === 0 || error.status >= 500` のような自前判定に置き換えないこと
- * (`lib/db-errors.ts` の `pgErrorCode()`、`lib/shell-guard.ts` の `unstable_rethrow`
- * と同じ話で、判定はライブラリ側の関数に委ねる)。
+ * 線引きは **「サーバー側の都合で判定できなかった」か「判定した結果、認証を
+ * 否定された」か**。前者だけが到達不能で、後者 (401/403/セッション無し) は
+ * 従来どおりログアウト扱いにして `/login` へ送る。
  *
- * ⚠️ 救えるのは auth-js が `AuthRetryableFetchError` を作る 2 経路だけ =
- * **fetch 自体の失敗 (status 0) と HTTP 5xx** (`@supabase/auth-js` の
- * `lib/fetch.js` の `handleError`)。pause したプロジェクトがゲートウェイから
- * 非 5xx (401/404 等) を返す場合は、いまも「ログアウト」として観測される。
+ * ⚠️ **判定を書くのはリポジトリ内でこの 1 箇所** (`lib/db-errors.ts` の
+ * `pgErrorCode()`、`lib/shell-guard.ts` の `unstable_rethrow` と同じ方針)。
+ * クライアント側の `login-form.tsx` もここの `isAuthUnavailable` を使う。
+ *
+ * ⚠️ **`isAuthRetryableFetchError` だけでは足りない**。auth-js が retryable と
+ * するのは fetch 自体の失敗 (status 0) と
+ * `NETWORK_ERROR_CODES = [502,503,504,520,521,522,523,524,530]` **だけ**で、
+ * **500 も 429 も 540 も `AuthApiError` になる** (`@supabase/auth-js` の
+ * `lib/fetch.js`。同ファイルのコメントは "status in 500...599 range" と書いて
+ * いるが、実際の配列はこれより狭い — コメントではなく配列を読むこと)。
+ * GoTrue は自分の Postgres に届かないとき 500 `unexpected_failure` を返すので、
+ * ライブラリの判定だけだと #193 が動機にした障害形が素通りする。
  */
 export type AuthUserRead =
   | { reachable: true; user: User | null }
@@ -55,13 +64,42 @@ export class AuthUnavailableError extends Error {
   }
 }
 
+/**
+ * ライブラリの retryable 判定に含まれないが、意味としては到達不能と同じ側の
+ * ステータス。「認証を否定された」のではなく「認証 API が答えられなかった」。
+ */
+const UNAVAILABLE_STATUS = new Set([
+  // GoTrue は自分の Postgres に届かないとき unexpected_failure を 500 で返す。
+  // #193 が動機にした「プロジェクトごと止まる」障害の中心的な形。
+  500,
+  // レート制限。障害復旧直後に講師が一斉に再試行すると同一 NAT IP で当たる。
+  // 打ち直しても通らない点は障害と同じなので、ログアウト扱いにはしない。
+  429,
+]);
+
+/**
+ * この error は「認証 API が答えられなかった」ことを示すか。
+ * `null` (成功) と、認証を否定する応答 (401/403/セッション無し) では false。
+ */
+export function isAuthUnavailable(error: unknown): boolean {
+  // fetch 自体の失敗 (status 0) と NETWORK_ERROR_CODES
+  if (isAuthRetryableFetchError(error)) return true;
+
+  // 本文が JSON でない応答。ゲートウェイが HTML のエラーページを返すと 500 でも
+  // ここに来る (実測)。auth-js がこれを作るのはいずれも「何も判定できなかった」
+  // 場面だけなので、認証の否定として扱わない。
+  if (error instanceof AuthUnknownError) return true;
+
+  return isAuthApiError(error) && UNAVAILABLE_STATUS.has(error.status ?? 0);
+}
+
 export async function readAuthUser(client: UserReader): Promise<AuthUserRead> {
   const {
     data: { user },
     error,
   } = await client.auth.getUser();
 
-  if (isAuthRetryableFetchError(error)) return { reachable: false, error };
+  if (error && isAuthUnavailable(error)) return { reachable: false, error };
 
   // 到達はできている。未ログイン (AuthSessionMissingError) や失効した JWT
   // (AuthApiError 401/403) は従来どおり「ログアウト済み」として扱う。

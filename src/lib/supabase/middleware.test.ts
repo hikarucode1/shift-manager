@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { NextRequest } from "next/server";
 import {
+  AuthApiError,
   AuthRetryableFetchError,
   AuthSessionMissingError,
   type AuthError,
@@ -72,7 +73,7 @@ describe("updateSession", () => {
     expect(res.headers.get("location")).toBeNull();
   });
 
-  it("5xx (pause 中のプロジェクト) でも素通しする", async () => {
+  it("502-504 (ゲートウェイが落ちている) でも素通しする", async () => {
     resolves({
       user: null,
       error: new AuthRetryableFetchError("service unavailable", 503),
@@ -81,6 +82,31 @@ describe("updateSession", () => {
     const res = await updateSession(request("/admin/weekly"));
 
     expect(res.status).toBe(200);
+  });
+
+  it("500 (GoTrue が自分の DB に届かない) でも素通しする", async () => {
+    // auth-js の retryable 判定には入らない形。ここが 307 に戻ると、
+    // #193 が動機にした障害形がそのまま素通りする。
+    resolves({
+      user: null,
+      error: new AuthApiError("unexpected_failure", 500, "unexpected_failure"),
+    });
+
+    const res = await updateSession(request("/admin/weekly"));
+
+    expect(res.status).toBe(200);
+    expect(res.headers.get("location")).toBeNull();
+  });
+
+  it("401 (JWT 失効) は従来どおり /login へ 307 する", async () => {
+    resolves({
+      user: null,
+      error: new AuthApiError("bad_jwt", 401, "bad_jwt"),
+    });
+
+    const res = await updateSession(request("/tutor"));
+
+    expect(res.status).toBe(307);
   });
 
   it("到達できないことをサーバーログに残す (画面は静かに fallback するので)", async () => {
