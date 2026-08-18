@@ -1,6 +1,7 @@
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { getProfile, landingPath } from "@/lib/auth";
+import { getUserOrThrow } from "@/lib/auth-availability";
 import { resolveOrIncident } from "@/lib/shell-guard";
 import { LoginForm } from "./login-form";
 import { SystemUnavailable } from "@/components/system-unavailable";
@@ -12,30 +13,32 @@ export default async function LoginPage({
   searchParams: Promise<{ reason?: string; error?: string }>;
 }) {
   const supabase = await createClient();
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
 
-  if (user) {
-    // #188: ここも layout の外。DB 障害中にログイン済みユーザーが /login を
-    // 開くと素の 500 になっていた。ログインフォームを出す手もあるが、
-    // 実際にはログイン済みなので「もう一度ログインすれば直る」と誤解させる。
-    const resolved = await resolveOrIncident("login-page", () =>
-      getProfile(user.id),
+  // #188: ここも layout の外。DB 障害中にログイン済みユーザーが /login を
+  // 開くと素の 500 になっていた。ログインフォームを出す手もあるが、
+  // 実際にはログイン済みなので「もう一度ログインすれば直る」と誤解させる。
+  //
+  // #193: getUser() もガードの内側に入れた。認証 API に到達できないなら、
+  // 未ログインに見えていてもフォームを出さない — 押しても signInWithPassword が
+  // 同じ理由で失敗するだけで、「パスワードが違う」と誤解したまま何度も試すことになる。
+  // ここは障害中の利用者が必ず来る画面 (middleware の 307 先であり、
+  // 「ログアウトされた」と思った人が自分で開く先でもある)。
+  const resolved = await resolveOrIncident("login-page", async () => {
+    const user = await getUserOrThrow(supabase);
+    return user ? await getProfile(user.id) : null;
+  });
+
+  if (!resolved.ok) {
+    return (
+      <SystemUnavailable
+        contactLabel="教室長"
+        incidentId={resolved.incidentId}
+      />
     );
+  }
 
-    if (!resolved.ok) {
-      return (
-        <SystemUnavailable
-          contactLabel="教室長"
-          incidentId={resolved.incidentId}
-        />
-      );
-    }
-
-    if (resolved.value?.isActive) {
-      redirect(landingPath(resolved.value));
-    }
+  if (resolved.value?.isActive) {
+    redirect(landingPath(resolved.value));
   }
 
   const { reason, error } = await searchParams;

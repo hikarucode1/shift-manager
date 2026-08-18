@@ -5,6 +5,7 @@ import { eq } from "drizzle-orm";
 import { db } from "@/db/client";
 import { profiles } from "@/db/schema";
 import { createClient } from "@/lib/supabase/server";
+import { getUserOrThrow } from "@/lib/auth-availability";
 
 export type Role = "tutor" | "admin";
 
@@ -56,6 +57,11 @@ export const getProfile = cache(
 /**
  * 現在のセッションと内部プロフィール。未ログイン/無効なら /login へ redirect。
  *
+ * ⚠️ 認証 API に**到達できない**場合は redirect せず throw する (#193)。
+ * ここで /login へ送ると障害が「ログアウト」に化けるため。layout から呼ばれた
+ * ときは resolveOrIncident が受けて SystemUnavailable、page から呼ばれたときは
+ * error.tsx に落ちる。
+ *
  * `cache()` で包むのはリクエスト単位の重複排除のため (#188)。`getProfile` は
  * 元から包まれていたが、`createClient()` + `supabase.auth.getUser()` は
  * 呼ばれるたびに実際の `GET /user` を飛ばしていた。layout と page の両方が
@@ -64,9 +70,7 @@ export const getProfile = cache(
  */
 export const requireSession = cache(async () => {
   const supabase = await createClient();
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
+  const user = await getUserOrThrow(supabase);
 
   if (!user) redirect("/login");
 
