@@ -10,7 +10,10 @@ import {
 
 const getUser = vi.fn();
 
-vi.mock("@supabase/ssr", () => ({
+// createServerClient だけ差し替える。cookie の失効に使う parseCookieHeader /
+// DEFAULT_COOKIE_OPTIONS は本物を通す (属性が本物と食い違うと意味がない)。
+vi.mock("@supabase/ssr", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@supabase/ssr")>()),
   createServerClient: () => ({ auth: { getUser } }),
 }));
 
@@ -25,8 +28,30 @@ function resolves(result: { user: User | null; error: AuthError | null }) {
   });
 }
 
-function request(path: string) {
-  return new NextRequest(new URL(path, "https://example.test"));
+const AUTH_COOKIE_NAMES = [
+  "sb-abcdefg-auth-token.0",
+  "sb-abcdefg-auth-token.1",
+  "sb-abcdefg-auth-token-code-verifier",
+];
+
+const COOKIE_HEADER = [
+  ...AUTH_COOKIE_NAMES.map((name) => `${name}=value-of-${name}`),
+  "theme=dark",
+].join("; ");
+
+function request(path: string, withCookies = false) {
+  return new NextRequest(new URL(path, "https://example.test"), {
+    headers: withCookies ? { cookie: COOKIE_HEADER } : undefined,
+  });
+}
+
+/** 失効させられた cookie 名。判定は Expires (Max-Age は Next のマージで落ちる) */
+function expiredCookieNames(res: Response): string[] {
+  return res.headers
+    .getSetCookie()
+    .filter((c) => /Expires=Thu, 01 Jan 1970/i.test(c))
+    .map((c) => c.split("=")[0])
+    .sort();
 }
 
 describe("updateSession", () => {
@@ -117,5 +142,81 @@ describe("updateSession", () => {
     await updateSession(request("/tutor"));
 
     expect(spy).toHaveBeenCalledWith("[middleware] auth unreachable", error);
+  });
+  // --- ここから下が #197 ---
+  // 壊れたチャンク cookie があると @supabase/ssr の base64url デコードが throw し、
+  // auth-js の _getUser は AuthError でないものを再 throw する。捕まえないと
+  // middleware ごと 500 になり、matcher が全経路に掛かるので /login も
+  // /auth/signout も 500 = アプリ側から回復できなくなる。
+
+  function corrupted() {
+    getUser.mockRejectedValue(
+      new Error('Invalid Base64-URL character "!" at position 20'),
+    );
+  }
+
+  it("セッションを読めなくても 500 にせず /login へ 307 する", async () => {
+    corrupted();
+
+    const res = await updateSession(request("/tutor", true));
+
+    expect(res.status).toBe(307);
+    expect(res.headers.get("location")).toBe("https://example.test/login");
+  });
+
+  it("その 307 に認証 cookie の失効を載せる (次のリクエストで直る)", async () => {
+    // 載せ忘れると壊れた cookie を送り続けてリダイレクトループになる。
+    corrupted();
+
+    const res = await updateSession(request("/tutor", true));
+
+    expect(expiredCookieNames(res)).toEqual(AUTH_COOKIE_NAMES.slice().sort());
+  });
+
+  it("/login では素通ししつつ失効させる (ログイン画面に到達させる)", async () => {
+    corrupted();
+
+    const res = await updateSession(request("/login", true));
+
+    expect(res.status).toBe(200);
+    expect(expiredCookieNames(res)).toEqual(AUTH_COOKIE_NAMES.slice().sort());
+  });
+
+  it("/auth/signout も 500 にしない", async () => {
+    corrupted();
+
+    const res = await updateSession(request("/auth/signout", true));
+
+    expect(res.status).toBe(200);
+  });
+
+  it("認証と無関係な cookie は消さない", async () => {
+    corrupted();
+
+    const res = await updateSession(request("/tutor", true));
+
+    expect(expiredCookieNames(res)).not.toContain("theme");
+  });
+
+  it("壊れていないときは失効ヘッダを足さない", async () => {
+    resolves({ user, error: null });
+
+    const res = await updateSession(request("/tutor", true));
+
+    expect(expiredCookieNames(res)).toEqual([]);
+  });
+
+  it("読めなかったことは incident ID でログに残す", async () => {
+    const spy = vi.spyOn(console, "error").mockImplementation(() => {});
+    corrupted();
+
+    await updateSession(request("/tutor", true));
+
+    expect(spy).toHaveBeenCalledWith(
+      expect.stringMatching(
+        /^\[middleware-auth-cookie\] incident=[0-9a-f]{8}$/,
+      ),
+      expect.any(Error),
+    );
   });
 });
