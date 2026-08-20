@@ -9,6 +9,7 @@ import {
   inArray,
   isNull,
   ne,
+  or,
 } from "drizzle-orm";
 import { alias } from "drizzle-orm/pg-core";
 import { db } from "@/db/client";
@@ -76,7 +77,11 @@ export type AdminSwapRequest = MySwapRequest & {
 
 function labelOf(meta: Awaited<ReturnType<typeof getSlotMeta>>, n: number) {
   const m = meta.get(n);
-  return { label: m?.label ?? `${n}限`, start: m?.start ?? "", end: m?.end ?? "" };
+  return {
+    label: m?.label ?? `${n}限`,
+    start: m?.start ?? "",
+    end: m?.end ?? "",
+  };
 }
 
 /** 講師: 交代申請できる「今日以降の自分の確定シフト」(有効な申請があるものは除外) */
@@ -145,9 +150,7 @@ export async function getActiveTutorsExcept(
 }
 
 /** db 本体・transaction のどちらでも受けられる executor 型 */
-type Executor =
-  | typeof db
-  | Parameters<Parameters<typeof db.transaction>[0]>[0];
+type Executor = typeof db | Parameters<Parameters<typeof db.transaction>[0]>[0];
 
 /**
  * 指定講師がその (date, slotNumber) に既に出勤予定か。
@@ -174,6 +177,63 @@ export async function isTutorBusyAt(
     )
     .limit(1);
   return rows.length > 0;
+}
+
+/** `getBusyTutorIdsBySlot` のキー。UI 側と同じ形式で揃える */
+export function busySlotKey(date: string, slotNumber: number): string {
+  return `${date}|${slotNumber}`;
+}
+
+/**
+ * 行 → コマ別の出勤講師 id。DB を触らない純関数なのでテストできる。
+ */
+export function groupBusyBySlot(
+  rows: { date: string; slotNumber: number; tutorId: string }[],
+): Record<string, string[]> {
+  const busy: Record<string, string[]> = {};
+  for (const row of rows) {
+    const key = busySlotKey(row.date, row.slotNumber);
+    (busy[key] ??= []).push(row.tutorId);
+  }
+  return busy;
+}
+
+/**
+ * 指定コマ群について「そのコマに出勤予定の講師 id」を引く (#181)。
+ *
+ * 指名セレクトで同コマ出勤中の講師を disable するための先出し情報。
+ * ⚠️ **これは整合性の境界ではない**。指名の可否は createSwapRequest 側の
+ * `isTutorBusyAt` が担保する (UI を通らない経路があるため)。ここはあくまで
+ * 「選んで送信して初めてエラーになる」体験を減らすためのもの。
+ *
+ * ⚠️ 条件を `date IN (...) AND slot IN (...)` にしないこと。日付とコマの
+ * 直積になり、**別のコマの出勤を拾って余計な講師を disable する**。
+ * ペアごとに OR で並べて厳密に指定する。
+ */
+export async function getBusyTutorIdsBySlot(
+  slots: { date: string; slotNumber: number }[],
+): Promise<Record<string, string[]>> {
+  if (slots.length === 0) return {};
+
+  const rows = await db
+    .select({
+      date: weeklyShifts.date,
+      slotNumber: weeklyShifts.slotNumber,
+      tutorId: weeklyShifts.tutorId,
+    })
+    .from(weeklyShifts)
+    .where(
+      or(
+        ...slots.map((s) =>
+          and(
+            eq(weeklyShifts.date, s.date),
+            eq(weeklyShifts.slotNumber, s.slotNumber),
+          ),
+        ),
+      ),
+    );
+
+  return groupBusyBySlot(rows);
 }
 
 /**

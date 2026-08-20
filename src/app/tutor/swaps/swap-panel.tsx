@@ -32,20 +32,26 @@ export function SwapPanel({
   shifts,
   tutors,
   requests,
+  busyBySlot,
 }: {
   shifts: SwappableShift[];
   tutors: { id: string; name: string }[];
   requests: MySwapRequest[];
+  /** #181: "date|slotNumber" → そのコマに出勤予定の講師 id */
+  busyBySlot: Record<string, string[]>;
 }) {
   const router = useRouter();
   const [isPending, startTransition] = useTransition();
-  const [notice, setNotice] = useState<
-    { type: "ok" | "error"; text: string } | null
-  >(null);
+  const [notice, setNotice] = useState<{
+    type: "ok" | "error";
+    text: string;
+  } | null>(null);
 
   const [target, setTarget] = useState("");
   const [kind, setKind] = useState<"named" | "open">("open");
   const [nominee, setNominee] = useState("");
+  // #181: 選択中のコマに出勤予定の講師。指名先の候補から外す
+  const busyTutorIds = busyBySlot[target] ?? [];
   const [reason, setReason] = useState("");
 
   useEffect(() => {
@@ -156,7 +162,15 @@ export function SwapPanel({
                           name="sw-target"
                           value={val}
                           checked={on}
-                          onChange={() => setTarget(val)}
+                          onChange={() => {
+                            setTarget(val);
+                            // 選択済みの指名先が新しいコマで出勤中なら外す。
+                            // 残すと disabled な値を掴んだまま送信でき、
+                            // まさに #181 で消したいエラーに戻る。
+                            if ((busyBySlot[val] ?? []).includes(nominee)) {
+                              setNominee("");
+                            }
+                          }}
                           className="sr-only"
                         />
                         <span className="text-sm font-medium">
@@ -225,11 +239,15 @@ export function SwapPanel({
                     className="h-9 w-full rounded-md border bg-background px-2 text-sm focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
                   >
                     <option value="">— 選択してください —</option>
-                    {tutors.map((t) => (
-                      <option key={t.id} value={t.id}>
-                        {t.name}
-                      </option>
-                    ))}
+                    {tutors.map((t) => {
+                      const busy = busyTutorIds.includes(t.id);
+                      return (
+                        <option key={t.id} value={t.id} disabled={busy}>
+                          {t.name}
+                          {busy ? "（同じコマに出勤予定）" : ""}
+                        </option>
+                      );
+                    })}
                   </select>
                 </div>
               )}
@@ -319,7 +337,8 @@ export function SwapPanel({
                     </p>
                     {r.applicants.length > 0 && (
                       <p className="mt-0.5 text-sm text-muted-foreground">
-                        応募: {r.applicants.map((a) => a.applicantName).join(", ")}
+                        応募:{" "}
+                        {r.applicants.map((a) => a.applicantName).join(", ")}
                       </p>
                     )}
                     {r.status === "approved" && r.approvedApplicantName && (
