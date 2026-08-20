@@ -13,7 +13,7 @@ description: shift-manager の変更をローカル (Supabase 未接続環境) �
 | 検証したいもの | 手法 |
 |---|---|
 | 画面・ナビ・UI の挙動 | DEV_STUB_AUTH で認証をバイパス (下記 A) |
-| **認証/セッションそのものの挙動** | **`NEXT_PUBLIC_SUPABASE_URL` を差し替える (下記 B)。スタブを当てないので実物に近い** |
+| **認証/セッションそのものの挙動** | **`NEXT_PUBLIC_SUPABASE_URL` を差し替える (下記 B)。アプリのソースを一切書き換えないので、認証コードは本番と同じものが走る** |
 | server action の DB 書き込み | ローカルでは不可 → PR に明記し preview 環境で確認 |
 
 ---
@@ -34,8 +34,12 @@ description: shift-manager の変更をローカル (Supabase 未接続環境) �
    シェル/ナビの検証はページ本体がエラーでも可能
 3. 起動: `DEV_STUB_AUTH=1 npm run dev -- -p 3456` (バックグラウンド)
 
-> ⚠️ `next start` は `NODE_ENV=production` を強制するので、上の AND 条件により
-> **本番ビルドではバイパスが効かない**。実画面検証は `npm run dev`、
+> ⚠️ **本番ビルドではバイパスが効かない**。`process.env.NODE_ENV` は
+> `next build` の時点でバンドルに畳み込まれる (`.next/server` 配下の js に
+> `process.env.NODE_ENV` は 1 つも残らない) ため、上の AND 条件が常に false に
+> なる。`next start` に `NODE_ENV=development` を渡しても後の祭り
+> (`next` は `NODE_ENV` を**強制はせず既定値を入れるだけ**なので値自体は
+> 通るが、畳み込み済みのコードには効かない)。実画面検証は `npm run dev`、
 > ステータスコードの厳密測定は本番ビルド + プローブ、と使い分ける。
 
 ---
@@ -82,11 +86,22 @@ const s = { access_token:"fake", token_type:"bearer", expires_in:3600,
 console.log("base64-" + Buffer.from(JSON.stringify(s)).toString("base64url"));
 ```
 
-> ⚠️ **使い回すと `expires_at` が切れる**。切れていると `_callRefreshToken` の
-> 指数バックオフに入り、1 リクエストで 40 秒級待たされる。測る前に作り直す。
+> ⚠️ **使い回すと `expires_at` が切れる**。切れていると `_refreshAccessToken` の
+> 指数バックオフ (`200ms * 2^n`、上限 30 秒) に入り、1 リクエストで 40 秒級
+> 待たされる。測る前に作り直す。
 
-チャンク破損 (`.0` / `.1`) を再現したいときは `.1` を不正な base64 にする。
-なお `.1` の**欠損**は throw せず `AuthSessionMissingError` になる (別経路)。
+**破損の再現**は上のレシピの cookie 1 本でできる: 値の `base64-` より後ろに
+不正な文字を混ぜれば同じ経路 (`cookies.js` の base64url デコード) で throw する。
+
+> ⚠️ 上のレシピが作る cookie は 200 文字弱で、`@supabase/ssr` の
+> `MAX_CHUNK_SIZE = 3180` に届かないので **`.0` / `.1` には割れない**。
+> チャンク自体を再現したいならセッション JSON にダミーを詰めて 3180 文字を
+> 超えさせること。
+
+なお chunk の**欠損** (`.1` が消えて `.0` だけ残る) は throw せず
+`AuthSessionMissingError` になる (`combineChunks` が falsy chunk で break する)。
+このとき auth-js が `TypeError: Cannot create property 'user' on string ...` を
+**console.error に吐く**が、これは破損ではなく欠損の正常系。
 
 ---
 
@@ -94,10 +109,12 @@ console.log("base64-" + Buffer.from(JSON.stringify(s)).toString("base64url"));
 
 - scratchpad に `npm i playwright` + `npx playwright install chromium chromium-headless-shell`。
   ビューポートは 390×844 (講師 UI はスマホファースト)
-- ⚠️ **必ず `http://localhost:PORT` で開く**。`127.0.0.1` だと Next が
-  `allowedDevOrigins` 未設定のクロスオリジン dev リクエストとして弾き、
-  **HMR/クライアント資産が届かず hydration しない**。フォームは素の HTML として
-  native submit されるので、「クリックしても何も起きない」形で現れて気づきにくい。
+- ⚠️ **必ず `http://localhost:PORT` で開く**。`127.0.0.1` だと Next の
+  dev origin allowlist (`localhost` と `allowedDevOrigins` のみ) に外れ、
+  **HMR の WebSocket ハンドシェイクが弾かれて hydration が完了しない**
+  (`/_next/static/*` 自体は 200 で届く。Origin ヘッダを送るのが WS だけなので、
+  script タグは通る)。結果フォームは素の HTML として native submit され、
+  「クリックしても何も起きない」形で現れて気づきにくい。
   curl でのステータス測定は `127.0.0.1` でも問題ない
 - ページエラー時の dev overlay (`nextjs-portal`) がクリックを遮るため、
   クリック前に `document.querySelectorAll("nextjs-portal").forEach(e => e.remove())`
