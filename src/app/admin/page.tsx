@@ -5,6 +5,8 @@ import { profiles } from "@/db/schema";
 import { getAdminWeekSchedule } from "@/lib/admin-schedule";
 import { getPendingAbsenceRequests } from "@/lib/absences";
 import { getPendingSwapRequests } from "@/lib/swaps";
+import { loadNotificationHealth } from "@/lib/notification-health-loader";
+import { NotificationHealthCard } from "@/components/notification-health-card";
 import { getHeatmapData, getHeatmapPeriods } from "@/lib/training-overview";
 import { weekOf } from "@/lib/week";
 import { cn } from "@/lib/utils";
@@ -47,14 +49,21 @@ export default async function AdminHome() {
   const periods = await getHeatmapPeriods();
   const currentPeriod = periods[0] ?? null;
 
-  const [schedule, pendingAbsences, pendingSwaps, unlinkedCount, heatmap] =
-    await Promise.all([
-      getAdminWeekSchedule(week),
-      getPendingAbsenceRequests(),
-      getPendingSwapRequests(),
-      countUnlinkedTutors(),
-      currentPeriod ? getHeatmapData(currentPeriod.id) : Promise.resolve(null),
-    ]);
+  const [
+    schedule,
+    pendingAbsences,
+    pendingSwaps,
+    unlinkedCount,
+    heatmap,
+    notificationHealth,
+  ] = await Promise.all([
+    getAdminWeekSchedule(week),
+    getPendingAbsenceRequests(),
+    getPendingSwapRequests(),
+    countUnlinkedTutors(),
+    currentPeriod ? getHeatmapData(currentPeriod.id) : Promise.resolve(null),
+    loadNotificationHealth(),
+  ]);
 
   const pendingTotal = pendingAbsences.length + pendingSwaps.length;
   const total = schedule.totalShiftCount;
@@ -72,7 +81,7 @@ export default async function AdminHome() {
       </div>
 
       {/* 上段: KPI 4 列 */}
-      <div className="grid gap-3.5 sm:grid-cols-2 lg:grid-cols-4">
+      <div className="grid gap-3.5 sm:grid-cols-2 lg:grid-cols-5">
         <KpiCard label="今週の確定コマ" value={`${total}`} />
         <KpiCard label="未承認の申請" value={`${pendingTotal}`} />
         <KpiCard
@@ -84,6 +93,7 @@ export default async function AdminHome() {
           }
         />
         <KpiCard label="未連携の講師" value={`${unlinkedCount}`} />
+        <NotificationHealthCard view={notificationHealth} />
       </div>
 
       {/* 下段: 左=承認待ち / 右=今週の充足状況 */}
