@@ -14,6 +14,7 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
+import { isIndeterminate, toFailedResult } from "@/lib/action-failure";
 import { cn } from "@/lib/utils";
 import { ACCENT_BADGE, GREEN_BADGE, MUTED_BADGE } from "@/lib/period-status";
 import {
@@ -116,13 +117,17 @@ export function PeriodManager({
   ) {
     setNotice(null);
     startTransition(async () => {
-      const res = await fn();
+      const res = await fn().catch(toFailedResult);
       if (res.ok) {
         setNotice({ type: "ok", text: okMsg });
         onSuccess?.();
         router.refresh();
       } else {
         setNotice({ type: "error", text: res.error ?? "失敗しました。" });
+        // #202: reject 由来は「書いたか不明」。画面を古いまま放置せず
+        // サーバーの真実を取りに行く (返り値の { ok: false } は確実に
+        // 書いていないので触らない)。
+        if (isIndeterminate(res)) router.refresh();
       }
     });
   }

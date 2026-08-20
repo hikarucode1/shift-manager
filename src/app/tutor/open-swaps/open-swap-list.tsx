@@ -3,6 +3,7 @@
 import { useEffect, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { AlertCircle } from "lucide-react";
+import { isIndeterminate, toFailedResult } from "@/lib/action-failure";
 import type { OpenSwap } from "@/lib/swaps";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -30,12 +31,16 @@ export function OpenSwapList({ swaps }: { swaps: OpenSwap[] }) {
   ) {
     setNotice(null);
     startTransition(async () => {
-      const res = await fn();
+      const res = await fn().catch(toFailedResult);
       if (res.ok) {
         setNotice({ type: "ok", text: okMsg });
         router.refresh();
       } else {
         setNotice({ type: "error", text: res.error ?? "失敗しました。" });
+        // #202: reject 由来は「書いたか不明」。画面を古いまま放置せず
+        // サーバーの真実を取りに行く (返り値の { ok: false } は確実に
+        // 書いていないので触らない)。
+        if (isIndeterminate(res)) router.refresh();
       }
     });
   }

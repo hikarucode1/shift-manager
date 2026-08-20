@@ -1,10 +1,12 @@
 "use client";
 
 import { Fragment, useMemo, useState, useTransition } from "react";
+import { useRouter } from "next/navigation";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { isIndeterminate, toFailedResult } from "@/lib/action-failure";
 import { cn } from "@/lib/utils";
 import { INPUT_WEEKDAYS, type InputWeekday } from "@/lib/shift-constants";
 import {
@@ -116,9 +118,29 @@ export function FixedShiftEditor({
   );
   const [note, setNote] = useState<string>(initialMeta.note ?? "");
   const [status, setStatus] = useState<UiSubmissionStatus>(initialMeta.status);
+  const router = useRouter();
   const [submittedAt, setSubmittedAt] = useState<string | null>(
     initialMeta.submittedAt,
   );
+
+  // #202: 提出状態はサーバーが持つ真実で、利用者の編集対象ではない。
+  // reject 後に router.refresh() でサーバーから読み直したとき、ここで
+  // 追従しないと **画面に無いボタンを押せと言われる詰み** が起きる:
+  // ローカルが draft のまま DB が submitted だと、保存時に「修正するには
+  // 『下書きに戻す』を押してください」と言われるが、そのボタンは
+  // isSubmitted (= ローカル state) が true のときしか描画されない。
+  //
+  // effect ではなくレンダー中に合わせる (React の「props から派生した state を
+  // 調整する」パターン)。lint の set-state-in-effect も effect を禁じている。
+  const [syncedMeta, setSyncedMeta] = useState(initialMeta);
+  if (
+    syncedMeta.status !== initialMeta.status ||
+    syncedMeta.submittedAt !== initialMeta.submittedAt
+  ) {
+    setSyncedMeta(initialMeta);
+    setStatus(initialMeta.status);
+    setSubmittedAt(initialMeta.submittedAt);
+  }
   const [isPending, startTransition] = useTransition();
   const [message, setMessage] = useState<{
     type: "success" | "error";
@@ -173,7 +195,7 @@ export function FixedShiftEditor({
         desiredSlots: numberOrNull(desiredSlots),
         note: note.trim() === "" ? null : note,
         entries,
-      });
+      }).catch(toFailedResult);
       if (result.ok) {
         // 保存成功時は draft 状態 (none → draft も含む)
         setStatus("draft");
@@ -181,6 +203,8 @@ export function FixedShiftEditor({
         setMessage({ type: "success", text: "下書きとして保存しました。「提出」を押すと確定します。" });
       } else {
         setMessage({ type: "error", text: result.error });
+        // #202: reject 由来は「書いたか不明」。サーバーから読み直す。
+        if (isIndeterminate(result)) router.refresh();
       }
     });
   }
@@ -189,7 +213,7 @@ export function FixedShiftEditor({
     setMessage(null);
     startTransition(async () => {
       // PR #67 B-2: 引数なしでサーバ側が「最新 draft 行」を解決して submit する
-      const result = await submitFixedShifts();
+      const result = await submitFixedShifts().catch(toFailedResult);
       if (result.ok) {
         setStatus("submitted");
         // PR #67 R-5: クライアントの new Date() ではなくサーバが実際に書いた値
@@ -197,6 +221,8 @@ export function FixedShiftEditor({
         setMessage({ type: "success", text: "提出しました。修正するには「下書きに戻す」を押してください。" });
       } else {
         setMessage({ type: "error", text: result.error });
+        // #202: reject 由来は「書いたか不明」。サーバーから読み直す。
+        if (isIndeterminate(result)) router.refresh();
       }
     });
   }
@@ -205,13 +231,15 @@ export function FixedShiftEditor({
     setMessage(null);
     startTransition(async () => {
       // PR #67 B-2: 引数なしでサーバ側が「最新 submitted 行」を解決して revert する
-      const result = await revertSubmissionToDraft();
+      const result = await revertSubmissionToDraft().catch(toFailedResult);
       if (result.ok) {
         setStatus("draft");
         setSubmittedAt(null);
         setMessage({ type: "success", text: "下書きに戻しました。" });
       } else {
         setMessage({ type: "error", text: result.error });
+        // #202: reject 由来は「書いたか不明」。サーバーから読み直す。
+        if (isIndeterminate(result)) router.refresh();
       }
     });
   }

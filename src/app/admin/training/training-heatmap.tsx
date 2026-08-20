@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { Check, X } from "lucide-react";
+import { isIndeterminate, toFailedResult } from "@/lib/action-failure";
 import type { HeatmapData, HeatmapTutor } from "@/lib/training-overview";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -107,7 +108,7 @@ export function TrainingHeatmap({ data }: { data: HeatmapData }) {
         date: open.date,
         slotNumber: open.slotNumber,
         tutorIds,
-      });
+      }).catch(toFailedResult);
       if (result.ok) {
         setNotice({
           type: "ok",
@@ -126,6 +127,8 @@ export function TrainingHeatmap({ data }: { data: HeatmapData }) {
         router.refresh();
       } else {
         setNotice({ type: "error", text: result.error });
+        // #202: reject 由来は「書いたか不明」なのでサーバーから読み直す。
+        if (isIndeterminate(result)) router.refresh();
       }
     });
   }

@@ -3,6 +3,7 @@
 import { useEffect, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { AlertCircle, Info } from "lucide-react";
+import { isIndeterminate, toFailedResult } from "@/lib/action-failure";
 import type { MySwapRequest, SwappableShift } from "@/lib/swaps";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
@@ -76,13 +77,17 @@ export function SwapPanel({
   ) {
     setNotice(null);
     startTransition(async () => {
-      const res = await fn();
+      const res = await fn().catch(toFailedResult);
       if (res.ok) {
         setNotice({ type: "ok", text: okMsg });
         onOk?.();
         router.refresh();
       } else {
         setNotice({ type: "error", text: res.error ?? "失敗しました。" });
+        // #202: reject 由来は「書いたか不明」。画面を古いまま放置せず
+        // サーバーの真実を取りに行く (返り値の { ok: false } は確実に
+        // 書いていないので触らない)。
+        if (isIndeterminate(res)) router.refresh();
       }
     });
   }

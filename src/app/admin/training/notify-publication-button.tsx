@@ -26,6 +26,8 @@ export function NotifyPublicationButton({ periodId }: { periodId: string }) {
     }
     setPending(true);
     setMessage(null);
+    // action-failure: ok — 操作固有の文言を出すため共有版を使わない。
+    // startTransition を通さないので error.tsx にも飛ばない。
     const res = await notifyCoursePublication({ periodId }).catch(() => ({
       ok: false as const,
       error: "通知の送信に失敗しました。再度お試しください。",
