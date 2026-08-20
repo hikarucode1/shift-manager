@@ -19,6 +19,7 @@ import {
   swapRequests,
   weeklyShifts,
 } from "@/db/schema";
+import { busySlotKey } from "@/lib/slot-key";
 import { getSlotMeta } from "@/lib/slot-meta";
 import { jstToday, weekdayOf } from "@/lib/week";
 
@@ -77,11 +78,7 @@ export type AdminSwapRequest = MySwapRequest & {
 
 function labelOf(meta: Awaited<ReturnType<typeof getSlotMeta>>, n: number) {
   const m = meta.get(n);
-  return {
-    label: m?.label ?? `${n}限`,
-    start: m?.start ?? "",
-    end: m?.end ?? "",
-  };
+  return { label: m?.label ?? `${n}限`, start: m?.start ?? "", end: m?.end ?? "" };
 }
 
 /** 講師: 交代申請できる「今日以降の自分の確定シフト」(有効な申請があるものは除外) */
@@ -150,7 +147,9 @@ export async function getActiveTutorsExcept(
 }
 
 /** db 本体・transaction のどちらでも受けられる executor 型 */
-type Executor = typeof db | Parameters<Parameters<typeof db.transaction>[0]>[0];
+type Executor =
+  | typeof db
+  | Parameters<Parameters<typeof db.transaction>[0]>[0];
 
 /**
  * 指定講師がその (date, slotNumber) に既に出勤予定か。
@@ -177,11 +176,6 @@ export async function isTutorBusyAt(
     )
     .limit(1);
   return rows.length > 0;
-}
-
-/** `getBusyTutorIdsBySlot` のキー。UI 側と同じ形式で揃える */
-export function busySlotKey(date: string, slotNumber: number): string {
-  return `${date}|${slotNumber}`;
 }
 
 /**
@@ -213,6 +207,10 @@ export function groupBusyBySlot(
 export async function getBusyTutorIdsBySlot(
   slots: { date: string; slotNumber: number }[],
 ): Promise<Record<string, string[]>> {
+  // ⚠️ この早期 return は load-bearing。drizzle の `or()` は条件 0 件で
+  // undefined を返し、`.where(undefined)` は WHERE 句ごと落ちるので、
+  // 消すと weekly_shifts 全件を引いて**全講師が disable される**。
+  // 「交代に出せるコマが 0 件」は新人講師や週明けに普通に起きる状態。
   if (slots.length === 0) return {};
 
   const rows = await db

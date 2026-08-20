@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { busySlotKey, groupBusyBySlot } from "@/lib/swaps";
+import { getBusyTutorIdsBySlot, groupBusyBySlot } from "@/lib/swaps";
+import { busySlotKey } from "@/lib/slot-key";
 
 describe("groupBusyBySlot", () => {
   it("コマごとに講師 id をまとめる", () => {
@@ -30,9 +31,24 @@ describe("groupBusyBySlot", () => {
     expect(groupBusyBySlot([])).toEqual({});
   });
 
-  it("キーは UI 側の 'date|slot' 形式と一致する", () => {
-    // SwapPanel の target ("date|slotNumber") をそのままキーに使うので、
-    // ここがずれると全員が候補に残り、#181 の対処が黙って無効になる。
-    expect(busySlotKey("2026-02-14", 3)).toBe("2026-02-14|3");
+  it("キーは busySlotKey で作る (サーバーとクライアントで同じ関数)", () => {
+    // SwapPanel の target も同じ busySlotKey で作る。別々にリテラルを
+    // 手書きしていると、片方だけ変えても型は通り、busyBySlot[target] が
+    // 常に undefined になって #181 の対処が黙って無効になる。
+    const busy = groupBusyBySlot([
+      { date: "2026-02-14", slotNumber: 3, tutorId: "t1" },
+    ]);
+
+    expect(busy[busySlotKey("2026-02-14", 3)]).toEqual(["t1"]);
+  });
+});
+
+describe("getBusyTutorIdsBySlot", () => {
+  it("コマが 0 件なら DB を引かずに空を返す", async () => {
+    // ⚠️ この早期 return は load-bearing。drizzle の or() は条件 0 件で
+    // undefined を返し .where(undefined) は WHERE 句ごと落ちるので、消すと
+    // weekly_shifts 全件を引いて全講師が disable される。DB 接続の無い
+    // この環境でも通る = クエリに到達していないこと自体の証明になる。
+    await expect(getBusyTutorIdsBySlot([])).resolves.toEqual({});
   });
 });
