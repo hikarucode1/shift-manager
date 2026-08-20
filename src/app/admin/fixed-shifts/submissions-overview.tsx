@@ -14,6 +14,7 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
+import { toFailedResult } from "@/lib/action-failure";
 import { cn } from "@/lib/utils";
 import { INPUT_WEEKDAYS, type InputWeekday } from "@/lib/shift-constants";
 import { setSubmissionFrozen } from "./actions";
@@ -202,7 +203,7 @@ export function AdminSubmissionsOverview({
         tutorId,
         effectiveFrom,
         freeze,
-      });
+      }).catch(toFailedResult);
       if (result.ok) {
         setNotice({
           type: "ok",
@@ -252,7 +253,7 @@ export function AdminSubmissionsOverview({
         periodId: period.id,
         targetMonth,
         assignments,
-      });
+      }).catch(toFailedResult);
       if (result.ok) {
         setConfirmDirty(false);
         setNotice({
@@ -287,7 +288,7 @@ export function AdminSubmissionsOverview({
       const result = await saveRegularConfirmation({
         periodId: period.id,
         assignments,
-      });
+      }).catch(toFailedResult);
       if (result.ok) {
         setConfirmDirty(false);
         setNotice({

@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { Check, X } from "lucide-react";
+import { toFailedResult } from "@/lib/action-failure";
 import type { HeatmapData, HeatmapTutor } from "@/lib/training-overview";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -107,7 +108,7 @@ export function TrainingHeatmap({ data }: { data: HeatmapData }) {
         date: open.date,
         slotNumber: open.slotNumber,
         tutorIds,
-      });
+      }).catch(toFailedResult);
       if (result.ok) {
         setNotice({
           type: "ok",

@@ -3,6 +3,7 @@
 import { useEffect, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { AlertCircle, Info } from "lucide-react";
+import { toFailedResult } from "@/lib/action-failure";
 import type { AbsenceRequestRow, UpcomingShift } from "@/lib/absences";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
@@ -62,7 +63,7 @@ export function AbsencePanel({
   ) {
     setNotice(null);
     startTransition(async () => {
-      const res = await fn();
+      const res = await fn().catch(toFailedResult);
       if (res.ok) {
         setNotice({ type: "ok", text: okMsg });
         onOk?.();

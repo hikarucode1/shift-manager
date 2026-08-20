@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
+import { toFailedResult } from "@/lib/action-failure";
 import { cn } from "@/lib/utils";
 import { setAdminActive } from "./actions";
 
@@ -74,7 +75,7 @@ export function AdminManager({
       const result = await setAdminActive({
         id: row.id,
         isActive: !row.isActive,
-      });
+      }).catch(toFailedResult);
       if (result.ok) {
         setNotice({
           type: "ok",

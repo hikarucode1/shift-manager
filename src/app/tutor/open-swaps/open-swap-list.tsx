@@ -3,6 +3,7 @@
 import { useEffect, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { AlertCircle } from "lucide-react";
+import { toFailedResult } from "@/lib/action-failure";
 import type { OpenSwap } from "@/lib/swaps";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -30,7 +31,7 @@ export function OpenSwapList({ swaps }: { swaps: OpenSwap[] }) {
   ) {
     setNotice(null);
     startTransition(async () => {
-      const res = await fn();
+      const res = await fn().catch(toFailedResult);
       if (res.ok) {
         setNotice({ type: "ok", text: okMsg });
         router.refresh();

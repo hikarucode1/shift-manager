@@ -12,6 +12,7 @@ import {
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
+import { toFailedResult } from "@/lib/action-failure";
 import { cn } from "@/lib/utils";
 import { shortDate } from "@/lib/week";
 import {
@@ -56,18 +57,6 @@ export type TrainingEditorProps = {
 };
 
 const key = (date: string, slot: number) => `${date}|${slot}`;
-
-/**
- * action の reject (通信断・サーバー障害など) を通知用の失敗結果へ変換する。
- * 原因はユーザーには区別できないため文言は中立にし、診断用に console へ残す。
- */
-function toFailedResult(e: unknown): { ok: false; error: string } {
-  console.error("training action failed:", e);
-  return {
-    ok: false,
-    error: "保存に失敗しました。通信状況を確認して再度お試しください。",
-  };
-}
 
 export function TrainingEditor({ data }: TrainingEditorProps) {
   const { period, slots, days } = data;

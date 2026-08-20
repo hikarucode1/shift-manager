@@ -14,6 +14,7 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
+import { toFailedResult } from "@/lib/action-failure";
 import { cn } from "@/lib/utils";
 import { submissionStatus } from "@/lib/period-status";
 import {
@@ -122,7 +123,7 @@ export function RegularPeriodManager({
   ) {
     setNotice(null);
     startTransition(async () => {
-      const res = await fn();
+      const res = await fn().catch(toFailedResult);
       if (res.ok) {
         setNotice({ type: "ok", text: okMsg });
         onSuccess?.();

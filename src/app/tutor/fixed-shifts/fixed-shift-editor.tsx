@@ -5,6 +5,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { toFailedResult } from "@/lib/action-failure";
 import { cn } from "@/lib/utils";
 import { INPUT_WEEKDAYS, type InputWeekday } from "@/lib/shift-constants";
 import {
@@ -173,7 +174,7 @@ export function FixedShiftEditor({
         desiredSlots: numberOrNull(desiredSlots),
         note: note.trim() === "" ? null : note,
         entries,
-      });
+      }).catch(toFailedResult);
       if (result.ok) {
         // 保存成功時は draft 状態 (none → draft も含む)
         setStatus("draft");
@@ -189,7 +190,7 @@ export function FixedShiftEditor({
     setMessage(null);
     startTransition(async () => {
       // PR #67 B-2: 引数なしでサーバ側が「最新 draft 行」を解決して submit する
-      const result = await submitFixedShifts();
+      const result = await submitFixedShifts().catch(toFailedResult);
       if (result.ok) {
         setStatus("submitted");
         // PR #67 R-5: クライアントの new Date() ではなくサーバが実際に書いた値
@@ -205,7 +206,7 @@ export function FixedShiftEditor({
     setMessage(null);
     startTransition(async () => {
       // PR #67 B-2: 引数なしでサーバ側が「最新 submitted 行」を解決して revert する
-      const result = await revertSubmissionToDraft();
+      const result = await revertSubmissionToDraft().catch(toFailedResult);
       if (result.ok) {
         setStatus("draft");
         setSubmittedAt(null);
