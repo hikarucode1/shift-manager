@@ -9,6 +9,13 @@ import type { NextResponse } from "next/server";
  * project-ref を含むので名前を決め打ちできず、storageKey は auth-js 側で
  * `protected` なので型からも触れない。ここでは命名規約だけで拾う。
  *
+ * ⚠️ **`-code-verifier` (PKCE) も対象に入る**。middleware (#197) は
+ * `/auth/*` の素通し時にもこれを呼ぶので、将来 `/auth/callback` や
+ * パスワード再設定の route を足すなら要注意: コールバック時点で壊れた chunk が
+ * 残っていると、直前に書かれた verifier まで巻き添えで消え、コード交換が
+ * 失敗する。現状 `/auth/` 配下は signout だけで、`exchangeCodeForSession` /
+ * `signInWithOAuth` / `signInWithOtp` / `resetPasswordForEmail` は未使用。
+ *
  * ⚠️ 削除は `path=/` 決め打ち。`@supabase/ssr` は
  * `{...DEFAULT_COOKIE_OPTIONS, ...cookieOptions}` で書くので、将来
  * `createClient()` に `cookieOptions` を渡すならここも合わせること

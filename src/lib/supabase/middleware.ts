@@ -38,8 +38,13 @@ export async function updateSession(request: NextRequest) {
     // #197: 保存済みセッションを**読む段階**で壊れている。auth-js の _getUser は
     // isAuthError(error) を return し、そうでないものだけ throw する。ネットワーク
     // 失敗も 5xx も AuthError なので return 側に回る = ここに来るのは
-    // 「セッションを読めなかった」。実例はチャンク cookie の欠損/破損で
+    // 「セッションを読めなかった」。実例はチャンク cookie の**破損**で
     // @supabase/ssr の base64url デコードが throw するケース (実測)。
+    //
+    // なお chunk の**欠損** (`.1` が消えて `.0` だけ残る) はここを通らない。
+    // combineChunks が falsy な chunk で打ち切り AuthSessionMissingError を
+    // return するので (実測)、普通の未ログインとして /login へ送られる。
+    // 残った `.0` は失効させないが、再ログインで上書きされるので実害は無い。
     //
     // 捕まえないと middleware ごと 500 になり、matcher が全経路に掛かるので
     // /login も /auth/signout も 500 = **アプリ側から回復する手段が無くなる**
