@@ -14,14 +14,16 @@ import { Card, CardContent } from "@/components/ui/card";
  *
  * 各 layout と `/` `/login` が認可を try/catch し、失敗時にこれを返す。
  *
- * ⚠️ 効く範囲は **DB 単体の障害** (DATABASE_URL の誤り・プール枯渇・
- * schema 不整合。2026-07-30 に実際に起きた類型) に限る。
- * **Supabase プロジェクトごと pause した場合はここに到達しない**:
- * GoTrue も同時に止まり、auth-js の getUser() は AuthRetryableFetchError を
- * throw せず `{ user: null, error }` を返すため、middleware が `!user` を見て
- * layout より先に /login へ 307 する (= ユーザーには「ログアウトされた」
- * ように見える)。捨てている `error` を isAuthRetryableFetchError() で
- * 判別してこの経路も救う案は #193。
+ * 効く範囲は **DB 単体の障害** (DATABASE_URL の誤り・プール枯渇・schema 不整合。
+ * 2026-07-30 に実際に起きた類型) に加えて、**認証 API に到達できない場合** (#193)。
+ * 後者は auth-js の getUser() が throw せず `{ user: null, error }` を返すせいで
+ * 「ログアウト」と区別できず、middleware が layout より先に /login へ 307 して
+ * いた。判別は `lib/auth-availability.ts` の `isAuthUnavailable` に集約してある。
+ *
+ * ⚠️ **到達不能と判定できない残りの形**: GoTrue が応答を返せていて、かつその
+ * ステータスが `NETWORK_ERROR_CODES` / 500 / 429 のいずれでもない場合
+ * (例: ゲートウェイが 404 や 401 を返す形の停止)。この場合はいまも
+ * 「ログアウト」として観測される。
  *
  * ⚠️ client component だが、これは reload ボタンのためだけ。本体は SSR されて
  * 最初の HTML に載るので、JS が動かない環境でもメッセージは表示される
