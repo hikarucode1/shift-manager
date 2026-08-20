@@ -134,15 +134,31 @@ export async function getNotificationHealth(
 ): Promise<NotificationHealth> {
   const since = new Date(Date.now() - windowDays * 24 * 60 * 60 * 1000);
 
+  // ⚠️ **書き込み経路のスキーマをわざと踏む**。count(*) と max(created_at) だけだと
+  // 「テーブルはあるが 0030 (dedup_key + unique index) や 0032 (enum に
+  // swap_posted 追加) だけ未適用」のとき、insertNotifications は全滅するのに
+  // このクエリは成功して緑になる。2026-07-30 と同じ症状を見逃すので、
+  // insert 側が依存する列と enum 値をここで参照して道連れにする。
+  // enum は notificationTypeEnum から生成するので、値が増えても自動で追従する。
+  const typeProbe = sql.join(
+    notificationTypeEnum.enumValues.map((v) => sql`${v}::notification_type`),
+    sql`, `,
+  );
+
   const rows = await db
     .select({
       recentCount: sql<number>`count(*) filter (where ${notifications.createdAt} >= ${since})::int`,
       latestAt: sql<Date | null>`max(${notifications.createdAt})`,
+      dedupKeyProbe: sql<number>`count(${notifications.dedupKey})::int`,
+      typeProbe: sql<number>`count(*) filter (where ${notifications.type} = any(array[${typeProbe}]))::int`,
     })
     .from(notifications);
 
-  return {
-    recentCount: rows[0]?.recentCount ?? 0,
-    latestAt: rows[0]?.latestAt ?? null,
-  };
+  const row = rows[0];
+  // ⚠️ ここで 0 を返してはいけない。GROUP BY 無しの集約は必ず 1 行返るので
+  // 到達しないはずだが、`?? 0` にしておくと将来クエリが育ったときに
+  // 「例外の代わりに黙って 0」= この機能が防ぎたい形そのものへ倒れる。
+  if (!row) throw new Error("notification health: no aggregate row");
+
+  return { recentCount: row.recentCount, latestAt: row.latestAt };
 }

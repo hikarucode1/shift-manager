@@ -5,14 +5,8 @@ import { profiles } from "@/db/schema";
 import { getAdminWeekSchedule } from "@/lib/admin-schedule";
 import { getPendingAbsenceRequests } from "@/lib/absences";
 import { getPendingSwapRequests } from "@/lib/swaps";
-import { getNotificationHealth } from "@/lib/notifications";
-import {
-  HEALTH_WINDOW_DAYS,
-  toHealthView,
-  type NotificationHealthView,
-} from "@/lib/notification-health";
+import { loadNotificationHealth } from "@/lib/notification-health-loader";
 import { NotificationHealthCard } from "@/components/notification-health-card";
-import { reportIncident } from "@/lib/incident";
 import { getHeatmapData, getHeatmapPeriods } from "@/lib/training-overview";
 import { weekOf } from "@/lib/week";
 import { cn } from "@/lib/utils";
@@ -33,22 +27,6 @@ async function countUnlinkedTutors(): Promise<number> {
       ),
     );
   return row[0]?.c ?? 0;
-}
-
-/**
- * #191: 通知機能の生死。ダッシュボード全体を巻き込まないよう、ここだけで
- * 例外を受け止めて「取得不可」として出す。
- *
- * ⚠️ **失敗を 0 件として出さないこと**。2026-07-30 の障害が 9 日間気づかれ
- * なかったのは、ベルが失敗を握り潰してバッジが 0 のままだったから。同じ形を
- * ここで作ると、この機能自体が無意味になる。
- */
-async function loadNotificationHealth(): Promise<NotificationHealthView> {
-  try {
-    return toHealthView(await getNotificationHealth(HEALTH_WINDOW_DAYS));
-  } catch (e) {
-    return toHealthView(null, reportIncident("admin-notification-health", e));
-  }
 }
 
 function KpiCard({ label, value }: { label: string; value: string }) {
