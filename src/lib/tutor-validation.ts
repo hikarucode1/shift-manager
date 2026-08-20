@@ -5,6 +5,10 @@ import { profiles } from "@/db/schema";
 
 /**
  * 与えた profile id のうち「tutor ロールを持たない」ものを返す (#165)。
+ *
+ * ⚠️ tutor ロール保有行の**補集合**なので、`profiles` に存在しない id も
+ * 戻り値に含まれる。呼び出し側が理由を文言にするときは「ロールが無い」と
+ * 断定しすぎないこと (#177 のレビュー指摘)。
  * シフト取り込み (upload-commit) と講習コマ確定 (saveCourseConfirmations) の
  * 割当先が講師アカウントかを検証するための共通ヘルパー。
  *

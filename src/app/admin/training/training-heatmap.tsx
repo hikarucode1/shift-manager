@@ -55,10 +55,9 @@ export function TrainingHeatmap({ data }: { data: HeatmapData }) {
   const [editedConfirmedIds, setEditedConfirmedIds] = useState<Set<string>>(
     () => new Set(),
   );
-  const [notice, setNotice] = useState<{
-    type: "ok" | "error";
-    text: string;
-  } | null>(null);
+  const [notice, setNotice] = useState<
+    { type: "ok" | "error"; text: string } | null
+  >(null);
 
   useEffect(() => {
     if (!notice) return;
@@ -114,10 +113,13 @@ export function TrainingHeatmap({ data }: { data: HeatmapData }) {
           type: "ok",
           // #177: 講師ロールでない割当先は除外して保存を続行する (#174) ので、
           // 黙っていると「選んだ数より少ない」ことしか伝わらない。
+          // 「外しました」なのは、保存がセル単位の DELETE→INSERT だから:
+          // 既に確定済みだった非 tutor は「追加されなかった」のではなく
+          // **確定が取り消される**。「除外」だと取消が伝わらない。
           text:
             `${shortDate(open.date)} ${open.slotLabel} に ${result.inserted} 名を確定しました。` +
             (result.skipped > 0
-              ? `（${result.skipped} 名は講師ロールでないため除外しました）`
+              ? `（${result.skipped} 名は講師ロールが無いため確定から外しました）`
               : ""),
         });
         setOpen(null);
@@ -338,8 +340,7 @@ export function TrainingHeatmap({ data }: { data: HeatmapData }) {
                   {orphanInCell.length > 0 && (
                     <>
                       <li className="pt-2 text-[10px] uppercase tracking-wide text-amber-800 dark:text-amber-300">
-                        希望未提出だが確定済 ({orphanInCell.length} 名) —
-                        チェックを外して保存で取消
+                        希望未提出だが確定済 ({orphanInCell.length} 名) — チェックを外して保存で取消
                       </li>
                       {orphanInCell.map((t) => {
                         const checked = editedConfirmedIds.has(t.id);
@@ -348,8 +349,7 @@ export function TrainingHeatmap({ data }: { data: HeatmapData }) {
                             <label
                               className={cn(
                                 "flex cursor-pointer items-center gap-2 rounded border border-amber-200 bg-amber-50/60 px-2 py-1 hover:bg-amber-100/60 dark:border-amber-900 dark:bg-amber-950/30",
-                                checked &&
-                                  "bg-amber-100/80 dark:bg-amber-950/50",
+                                checked && "bg-amber-100/80 dark:bg-amber-950/50",
                               )}
                             >
                               <input

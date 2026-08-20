@@ -142,7 +142,8 @@ export async function saveCourseConfirmations(
     if (code === "23514") {
       return {
         ok: false,
-        error: "確定保存に失敗しました: コマ番号が範囲外です (1〜20)。",
+        error:
+          "確定保存に失敗しました: コマ番号が範囲外です (1〜20)。",
       };
     }
     return { ok: false, error: "確定保存に失敗しました。" };
