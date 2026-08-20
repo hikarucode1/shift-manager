@@ -111,7 +111,16 @@ export function TrainingHeatmap({ data }: { data: HeatmapData }) {
       if (result.ok) {
         setNotice({
           type: "ok",
-          text: `${shortDate(open.date)} ${open.slotLabel} に ${result.inserted} 名を確定しました。`,
+          // #177: 講師ロールでない割当先は除外して保存を続行する (#174) ので、
+          // 黙っていると「選んだ数より少ない」ことしか伝わらない。
+          // 「外しました」なのは、保存がセル単位の DELETE→INSERT だから:
+          // 既に確定済みだった非 tutor は「追加されなかった」のではなく
+          // **確定が取り消される**。「除外」だと取消が伝わらない。
+          text:
+            `${shortDate(open.date)} ${open.slotLabel} に ${result.inserted} 名を確定しました。` +
+            (result.skipped > 0
+              ? `（${result.skipped} 名は講師ロールが無いため確定から外しました）`
+              : ""),
         });
         setOpen(null);
         router.refresh();

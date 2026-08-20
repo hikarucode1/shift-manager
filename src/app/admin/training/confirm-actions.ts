@@ -11,7 +11,17 @@ import { db } from "@/db/client";
 import { courseConfirmations, periods } from "@/db/schema";
 
 type ActionResult =
-  | { ok: true; inserted: number }
+  | {
+      ok: true;
+      inserted: number;
+      /**
+       * #177: 講師ロールを持たない割当先を確定対象から除外した数。
+       * 保存全体を弾かず除外して続行する仕様 (#174) の副作用として、
+       * 「3 名選んだのに 2 名しか確定されない」が利用者から見て説明の無い
+       * 数字になっていたので、呼び出し側が理由を添えられるように返す。
+       */
+      skipped: number;
+    }
   | { ok: false; error: string };
 
 const IsoDate = z
@@ -141,7 +151,11 @@ export async function saveCourseConfirmations(
 
   revalidatePath(`/admin/training/${periodId}`);
   revalidatePath("/tutor/training");
-  return { ok: true, inserted: tutorsToConfirm.length };
+  return {
+    ok: true,
+    inserted: tutorsToConfirm.length,
+    skipped: dedupedTutors.length - tutorsToConfirm.length,
+  };
 }
 
 const NotifyInput = z.object({ periodId: z.string().uuid() });
