@@ -1,0 +1,79 @@
+# 本番の migration 適用状況を機械的に監視する (#204)。
+#
+# 2026-07-30: migration 0029-0032 が本番未適用のまま機能コードだけ deploy され、
+# 通知機能が 9 日間動いていなかった。人手の「マージしたら適用状況を確認する」
+# 運用では取りこぼすので、ここで自動化する。
+#
+# ⚠️ pull_request では動かさない。fork からの PR に secret を渡さないため。
+name: migration guard
+
+on:
+  # 機能 PR をマージした直後に気づけるようにする (7/30 の事故がこの形)
+  push:
+    branches: [main]
+  # 適用漏れが「静かに」残り続けないよう毎朝も見る (06:00 JST = 21:00 UTC)
+  schedule:
+    - cron: "0 21 * * *"
+  workflow_dispatch:
+
+concurrency:
+  group: migration-guard
+  cancel-in-progress: false
+
+jobs:
+  check:
+    name: check:migrations (production)
+    runs-on: ubuntu-latest
+    # fork でスケジュール実行や push が走っても意味が無いので上流限定
+    if: github.repository == 'hikarucode1/shift-manager'
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Require PROD_DATABASE_URL
+        # 未設定なら **落とす**。skip にすると「監視しているつもりで何も見ていない」
+        # 状態が静かに続き、この workflow が防ごうとしている事故と同じ形になる。
+        env:
+          PROD_DATABASE_URL: ${{ secrets.PROD_DATABASE_URL }}
+        run: |
+          if [ -z "${PROD_DATABASE_URL}" ]; then
+            {
+              echo "### secret \`PROD_DATABASE_URL\` が未設定です"
+              echo ""
+              echo "Settings > Secrets and variables > Actions > New repository secret に登録してください。"
+              echo ""
+              echo "- 値: Supabase ダッシュボードの上部にある緑の **Connect** ボタン > **Transaction pooler** (ポート 6543) の URI"
+              echo "  (Settings 配下ではない。2026-08 時点の UI では左ナビに Database の項目は無い)"
+              echo "- \`DATABASE_URL\` と別名にしているのは、他のジョブが誤って本番へ繋がないようにするため"
+              echo "- 可能なら読み取り専用ロールの接続情報を使うこと (check:migrations は SELECT のみ)"
+            } >> "$GITHUB_STEP_SUMMARY"
+            echo "::error::secret PROD_DATABASE_URL が未設定のため、本番の migration 適用状況を確認できません"
+            exit 1
+          fi
+
+      - name: Check applied migrations
+        env:
+          # check-migrations は DIRECT_URL → DATABASE_URL の順に見る (SELECT のみ)
+          DATABASE_URL: ${{ secrets.PROD_DATABASE_URL }}
+        run: |
+          # 既定シェルは bash -e なので、失敗時に閉じ ``` まで到達するよう外す
+          set +e
+          set -o pipefail
+          {
+            echo "### check:migrations"
+            echo ""
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+          npm run check:migrations 2>&1 | tee -a "$GITHUB_STEP_SUMMARY"
+          status=$?
+          set -e
+          echo '```' >> "$GITHUB_STEP_SUMMARY"
+          exit $status
