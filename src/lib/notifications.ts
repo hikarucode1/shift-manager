@@ -1,6 +1,7 @@
 import "server-only";
-import { and, count, desc, eq, isNull } from "drizzle-orm";
+import { and, count, desc, eq, isNull, sql } from "drizzle-orm";
 import { db } from "@/db/client";
+import type { NotificationHealth } from "@/lib/notification-health";
 import { notifications, notificationTypeEnum } from "@/db/schema";
 
 /** DB enum (notification_type) から導出し、二重定義を避ける */
@@ -118,4 +119,30 @@ export async function markAllRead(profileId: string): Promise<void> {
         isNull(notifications.readAt),
       ),
     );
+}
+
+/**
+ * 通知機能の生死を測るための実測値 (#191)。
+ *
+ * ⚠️ **エラーを握り潰さないこと**。テーブルが無い / クエリが通らないことこそが
+ * 見たい情報で、ここで 0 を返すと 2026-07-30 の「壊れているのにバッジが 0 で
+ * 無症状」を再現する。呼び出し側 (admin ダッシュボード) が catch して
+ * 「取得不可」として出す。
+ */
+export async function getNotificationHealth(
+  windowDays: number,
+): Promise<NotificationHealth> {
+  const since = new Date(Date.now() - windowDays * 24 * 60 * 60 * 1000);
+
+  const rows = await db
+    .select({
+      recentCount: sql<number>`count(*) filter (where ${notifications.createdAt} >= ${since})::int`,
+      latestAt: sql<Date | null>`max(${notifications.createdAt})`,
+    })
+    .from(notifications);
+
+  return {
+    recentCount: rows[0]?.recentCount ?? 0,
+    latestAt: rows[0]?.latestAt ?? null,
+  };
 }

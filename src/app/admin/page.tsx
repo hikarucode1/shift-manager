@@ -5,6 +5,14 @@ import { profiles } from "@/db/schema";
 import { getAdminWeekSchedule } from "@/lib/admin-schedule";
 import { getPendingAbsenceRequests } from "@/lib/absences";
 import { getPendingSwapRequests } from "@/lib/swaps";
+import { getNotificationHealth } from "@/lib/notifications";
+import {
+  HEALTH_WINDOW_DAYS,
+  toHealthView,
+  type NotificationHealthView,
+} from "@/lib/notification-health";
+import { NotificationHealthCard } from "@/components/notification-health-card";
+import { reportIncident } from "@/lib/incident";
 import { getHeatmapData, getHeatmapPeriods } from "@/lib/training-overview";
 import { weekOf } from "@/lib/week";
 import { cn } from "@/lib/utils";
@@ -27,6 +35,22 @@ async function countUnlinkedTutors(): Promise<number> {
   return row[0]?.c ?? 0;
 }
 
+/**
+ * #191: 通知機能の生死。ダッシュボード全体を巻き込まないよう、ここだけで
+ * 例外を受け止めて「取得不可」として出す。
+ *
+ * ⚠️ **失敗を 0 件として出さないこと**。2026-07-30 の障害が 9 日間気づかれ
+ * なかったのは、ベルが失敗を握り潰してバッジが 0 のままだったから。同じ形を
+ * ここで作ると、この機能自体が無意味になる。
+ */
+async function loadNotificationHealth(): Promise<NotificationHealthView> {
+  try {
+    return toHealthView(await getNotificationHealth(HEALTH_WINDOW_DAYS));
+  } catch (e) {
+    return toHealthView(null, reportIncident("admin-notification-health", e));
+  }
+}
+
 function KpiCard({ label, value }: { label: string; value: string }) {
   return (
     <Card className="border-l-[3px] border-l-accent">
@@ -47,14 +71,21 @@ export default async function AdminHome() {
   const periods = await getHeatmapPeriods();
   const currentPeriod = periods[0] ?? null;
 
-  const [schedule, pendingAbsences, pendingSwaps, unlinkedCount, heatmap] =
-    await Promise.all([
-      getAdminWeekSchedule(week),
-      getPendingAbsenceRequests(),
-      getPendingSwapRequests(),
-      countUnlinkedTutors(),
-      currentPeriod ? getHeatmapData(currentPeriod.id) : Promise.resolve(null),
-    ]);
+  const [
+    schedule,
+    pendingAbsences,
+    pendingSwaps,
+    unlinkedCount,
+    heatmap,
+    notificationHealth,
+  ] = await Promise.all([
+    getAdminWeekSchedule(week),
+    getPendingAbsenceRequests(),
+    getPendingSwapRequests(),
+    countUnlinkedTutors(),
+    currentPeriod ? getHeatmapData(currentPeriod.id) : Promise.resolve(null),
+    loadNotificationHealth(),
+  ]);
 
   const pendingTotal = pendingAbsences.length + pendingSwaps.length;
   const total = schedule.totalShiftCount;
@@ -72,7 +103,7 @@ export default async function AdminHome() {
       </div>
 
       {/* 上段: KPI 4 列 */}
-      <div className="grid gap-3.5 sm:grid-cols-2 lg:grid-cols-4">
+      <div className="grid gap-3.5 sm:grid-cols-2 lg:grid-cols-5">
         <KpiCard label="今週の確定コマ" value={`${total}`} />
         <KpiCard label="未承認の申請" value={`${pendingTotal}`} />
         <KpiCard
@@ -84,6 +115,7 @@ export default async function AdminHome() {
           }
         />
         <KpiCard label="未連携の講師" value={`${unlinkedCount}`} />
+        <NotificationHealthCard view={notificationHealth} />
       </div>
 
       {/* 下段: 左=承認待ち / 右=今週の充足状況 */}
