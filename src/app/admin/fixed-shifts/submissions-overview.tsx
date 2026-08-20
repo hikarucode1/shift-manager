@@ -14,7 +14,7 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
-import { toFailedResult } from "@/lib/action-failure";
+import { isIndeterminate, toFailedResult } from "@/lib/action-failure";
 import { cn } from "@/lib/utils";
 import { INPUT_WEEKDAYS, type InputWeekday } from "@/lib/shift-constants";
 import { setSubmissionFrozen } from "./actions";
@@ -212,6 +212,8 @@ export function AdminSubmissionsOverview({
         router.refresh();
       } else {
         setNotice({ type: "error", text: result.error });
+        // #202: reject 由来は「書いたか不明」なのでサーバーから読み直す。
+        if (isIndeterminate(result)) router.refresh();
       }
     });
   }
@@ -263,6 +265,8 @@ export function AdminSubmissionsOverview({
         router.refresh();
       } else {
         setNotice({ type: "error", text: result.error });
+        // #202: reject 由来は「書いたか不明」なのでサーバーから読み直す。
+        if (isIndeterminate(result)) router.refresh();
       }
     });
   }
@@ -298,6 +302,8 @@ export function AdminSubmissionsOverview({
         router.refresh();
       } else {
         setNotice({ type: "error", text: result.error });
+        // #202: reject 由来は「書いたか不明」なのでサーバーから読み直す。
+        if (isIndeterminate(result)) router.refresh();
       }
     });
   }

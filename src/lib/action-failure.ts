@@ -29,11 +29,42 @@
  * ⚠️ 操作の種類 (保存 / 承認 / 申請 / 取消) を問わず使うので、文言は動詞を
  * 固定しないこと。
  */
-export function toFailedResult(e: unknown): { ok: false; error: string } {
+export type IndeterminateFailure = {
+  ok: false;
+  error: string;
+  /**
+   * **サーバーが書いたかどうか分からない**ことの印 (#202 レビュー指摘)。
+   *
+   * action が `{ ok: false }` を**返した**ときは「確実に書いていない」なので、
+   * 各パネルは画面をそのままにしてよい (だから成功時しか `router.refresh()`
+   * しない作りになっている)。**reject は違う**: タイムアウトや接続断では
+   * サーバーが commit したのにレスポンスだけ落ちた可能性がある。
+   *
+   * 見分けが付かないまま画面を書き換えると、楽観的更新のロールバックが
+   * **能動的に嘘をつく** (DB は保存済みなのに画面は元に戻る)。この印を見て
+   * 呼び出し側は `router.refresh()` し、サーバーの真実を取りに行くこと。
+   */
+  indeterminate: true;
+};
+
+/** `toFailedResult` 由来か (= サーバーの結果が不明) */
+export function isIndeterminate(res: object): boolean {
+  return "indeterminate" in res;
+}
+
+export function toFailedResult(e: unknown): IndeterminateFailure {
   // 画面には出せない診断情報をブラウザのコンソールに残す。
   console.error("server action failed:", e);
+
+  // production では server action の例外はメッセージがサニタイズされる代わりに
+  // digest を持つ。error.tsx が「エラーID」として出していたのと同じ値なので、
+  // 報告の導線をトースト粒度で引き継ぐ。
+  const digest = (e as { digest?: unknown } | null)?.digest;
+  const suffix = typeof digest === "string" ? `（エラーID: ${digest}）` : "";
+
   return {
     ok: false,
-    error: "処理を完了できませんでした。時間をおいて再度お試しください。",
+    error: `処理を完了できませんでした。時間をおいて再度お試しください。${suffix}`,
+    indeterminate: true,
   };
 }

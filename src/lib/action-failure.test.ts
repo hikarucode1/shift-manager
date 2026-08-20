@@ -1,7 +1,7 @@
 import { readdirSync, readFileSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { toFailedResult } from "@/lib/action-failure";
+import { isIndeterminate, toFailedResult } from "@/lib/action-failure";
 
 describe("toFailedResult", () => {
   afterEach(() => vi.restoreAllMocks());
@@ -30,6 +30,28 @@ describe("toFailedResult", () => {
     // 実際の障害はサーバー側のことが多く、「通信状況を確認してください」と
     // 書くと誤った自己解決を促し、障害が報告されないまま埋もれる。
     expect(toFailedResult(new Error("x")).error).not.toMatch(/通信状況/);
+  });
+
+  it("結果不定の印を付ける (サーバーが書いたか分からない)", () => {
+    vi.spyOn(console, "error").mockImplementation(() => {});
+
+    // action が { ok: false } を「返した」ときは確実に書いていないが、
+    // reject は commit 済みでレスポンスだけ落ちた可能性がある。呼び出し側は
+    // この印を見て router.refresh() し、サーバーの真実を取りに行く。
+    expect(isIndeterminate(toFailedResult(new Error("x")))).toBe(true);
+    expect(isIndeterminate({ ok: false, error: "過去の日付は…" })).toBe(false);
+  });
+
+  it("digest があればエラーID として文言に出す", () => {
+    vi.spyOn(console, "error").mockImplementation(() => {});
+
+    // production では server action の例外はメッセージがサニタイズされる
+    // 代わりに digest を持つ。error.tsx が出していた値と同じなので、
+    // 報告の導線をトースト粒度で引き継ぐ。
+    const withDigest = Object.assign(new Error("boom"), { digest: "abc123" });
+
+    expect(toFailedResult(withDigest).error).toContain("エラーID: abc123");
+    expect(toFailedResult(new Error("boom")).error).not.toContain("エラーID");
   });
 
   it("操作の種類を固定しない (保存 / 承認 / 申請 / 取消 で使い回す)", () => {

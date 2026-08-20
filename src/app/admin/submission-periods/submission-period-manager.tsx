@@ -14,7 +14,7 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
-import { toFailedResult } from "@/lib/action-failure";
+import { isIndeterminate, toFailedResult } from "@/lib/action-failure";
 import { cn } from "@/lib/utils";
 import { submissionStatus } from "@/lib/period-status";
 import {
@@ -110,6 +110,10 @@ export function SubmissionPeriodManager({
         router.refresh();
       } else {
         setNotice({ type: "error", text: res.error ?? "失敗しました。" });
+        // #202: reject 由来は「書いたか不明」。画面を古いまま放置せず
+        // サーバーの真実を取りに行く (返り値の { ok: false } は確実に
+        // 書いていないので触らない)。
+        if (isIndeterminate(res)) router.refresh();
       }
     });
   }

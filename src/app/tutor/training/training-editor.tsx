@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { useCallback, useEffect, useRef, useState } from "react";
+import { useRouter } from "next/navigation";
 import { AlertCircle, Lock } from "lucide-react";
 import {
   Card,
@@ -12,7 +13,7 @@ import {
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
-import { toFailedResult } from "@/lib/action-failure";
+import { isIndeterminate, toFailedResult } from "@/lib/action-failure";
 import { cn } from "@/lib/utils";
 import { shortDate } from "@/lib/week";
 import {
@@ -62,6 +63,7 @@ export function TrainingEditor({ data }: TrainingEditorProps) {
   const { period, slots, days } = data;
   const editable = period.editable;
 
+  const router = useRouter();
   const [selected, setSelected] = useState<Set<string>>(
     () => new Set(data.selected),
   );
@@ -131,6 +133,14 @@ export function TrainingEditor({ data }: TrainingEditorProps) {
       setSavingCount((c) => c - 1);
 
       if (!res.ok) {
+        // #202: reject 由来 = サーバーが書いたか不明。ここでロールバックすると
+        // 「DB は保存済みなのに画面は元に戻る」= 能動的に嘘をつく。勝手に
+        // 書き換えず、サーバーの真実を取りに行く。
+        if (isIndeterminate(res)) {
+          setNotice({ type: "error", text: res.error });
+          router.refresh();
+          return;
+        }
         // 失敗 → 操作前の状態へロールバック
         setSelected((prev) => {
           const next = new Set(prev);
@@ -143,7 +153,7 @@ export function TrainingEditor({ data }: TrainingEditorProps) {
         setNotice({ type: "error", text: res.error });
       }
     },
-    [period.id],
+    [period.id, router],
   );
 
   const toggle = useCallback(

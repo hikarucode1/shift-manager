@@ -7,7 +7,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
-import { toFailedResult } from "@/lib/action-failure";
+import { isIndeterminate, toFailedResult } from "@/lib/action-failure";
 import { cn } from "@/lib/utils";
 import { avatarColor, avatarInitial } from "@/lib/avatar";
 import { inviteTutor, renameTutor, setTutorActive } from "./actions";
@@ -98,6 +98,8 @@ export function TutorManager({
       } else {
         // 失敗時は入力状態を保持し、エラーだけ表示
         setNotice({ type: "error", text: res.error ?? "失敗しました。" });
+        // #202: reject 由来は「書いたか不明」なのでサーバーから読み直す。
+        if (isIndeterminate(res)) router.refresh();
       }
     });
   }

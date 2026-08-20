@@ -5,7 +5,7 @@ import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
-import { toFailedResult } from "@/lib/action-failure";
+import { isIndeterminate, toFailedResult } from "@/lib/action-failure";
 import { cn } from "@/lib/utils";
 import { setAdminActive } from "./actions";
 
@@ -86,6 +86,8 @@ export function AdminManager({
         router.refresh();
       } else {
         setNotice({ type: "error", text: result.error });
+        // #202: reject 由来は「書いたか不明」なのでサーバーから読み直す。
+        if (isIndeterminate(result)) router.refresh();
       }
     });
   };

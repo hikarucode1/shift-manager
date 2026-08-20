@@ -9,7 +9,7 @@ import {
   CheckCircle2,
   UploadCloud,
 } from "lucide-react";
-import { toFailedResult } from "@/lib/action-failure";
+import { isIndeterminate, toFailedResult } from "@/lib/action-failure";
 import type { ParsedShiftCsv } from "@/lib/shift-csv-parser";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -139,6 +139,8 @@ export function UploadWizard({ tutors }: { tutors: Tutor[] }) {
       const res = await parseUploadedCsv(form).catch(toFailedResult);
       if (!res.ok) {
         setError(res.error);
+        // #202: reject 由来は「書いたか不明」なのでサーバーから読み直す。
+        if (isIndeterminate(res)) router.refresh();
         return;
       }
       // Auto-map by exact display_name match.
@@ -191,6 +193,8 @@ export function UploadWizard({ tutors }: { tutors: Tutor[] }) {
       }).catch(toFailedResult);
       if (!res.ok) {
         setError(res.error);
+        // #202: reject 由来は「書いたか不明」なのでサーバーから読み直す。
+        if (isIndeterminate(res)) router.refresh();
         return;
       }
       setResult({
