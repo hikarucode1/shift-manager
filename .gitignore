@@ -41,3 +41,7 @@ yarn-error.log*
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+
+# Claude Code のローカル固有設定 (skills は共有するので追跡する)
+.claude/settings.local.json
+.claude/*.local.json
