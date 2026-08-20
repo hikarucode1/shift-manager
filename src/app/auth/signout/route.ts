@@ -1,48 +1,7 @@
 import { NextResponse } from "next/server";
-import { DEFAULT_COOKIE_OPTIONS, parseCookieHeader } from "@supabase/ssr";
 import { createClient } from "@/lib/supabase/server";
+import { expireAuthCookies } from "@/lib/supabase/auth-cookies";
 import { reportIncident } from "@/lib/incident";
-
-/**
- * Supabase の認証 cookie。`sb-<project-ref>-auth-token` を基点に、
- * 長い値のチャンク (`.0` `.1` ...) と `-code-verifier` / `-user` が並ぶ
- * (auth-js が消しているのもこの 3 種)。
- *
- * project-ref を含むので名前を決め打ちできず、storageKey は auth-js 側で
- * `protected` なので型からも触れない。ここでは命名規約だけで拾う。
- *
- * ⚠️ 削除は `path=/` 決め打ち。`@supabase/ssr` は
- * `{...DEFAULT_COOKIE_OPTIONS, ...cookieOptions}` で書くので、将来
- * `createClient()` に `cookieOptions` を渡すならここも合わせること
- * (path が食い違うと消したつもりで残る)。
- */
-function isSupabaseAuthCookie(name: string): boolean {
-  return name.startsWith("sb-") && name.includes("-auth-token");
-}
-
-/**
- * リクエストが持っている認証 cookie を、レスポンスで失効させる。
- *
- * ⚠️ **`expires` を省いて `maxAge: 0` だけにしてはいけない**。成功パスでは
- * auth-js 自身も `cookies()` 経由で同じ名前を消しに来るので 1 つの名前に
- * 2 つの書き込みが並び、Next のマージを通ると **`Max-Age=0` だけが落ちて
- * `Path` と `SameSite` しか残らない** (実測)。属性の無い空 cookie は削除では
- * なくセッション cookie なので、ブラウザには**残る**。`Expires` はマージを
- * 越えて生き残るため両方付ける。
- */
-function expireAuthCookies(request: Request, response: NextResponse): void {
-  for (const { name } of parseCookieHeader(
-    request.headers.get("cookie") ?? "",
-  )) {
-    if (isSupabaseAuthCookie(name)) {
-      response.cookies.set(name, "", {
-        ...DEFAULT_COOKIE_OPTIONS,
-        maxAge: 0,
-        expires: new Date(0),
-      });
-    }
-  }
-}
 
 /**
  * ログアウト (#195)。
