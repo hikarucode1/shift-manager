@@ -76,6 +76,13 @@ staging が無いため、**migration は本番に直接適用される**。破�
 時点で適用が必須になる。**機能 PR をマージしたら対応 migration の適用状況を必ず確認する**
 (`npm run check:migrations` で機械的に検出できる)。
 
+**2026-08-20: この確認を自動化した (#204)** — `.github/workflows/check-migrations.yml` が
+main への push 時と毎朝 06:00 JST に `check:migrations` を回す。人手の運用ルールに
+頼らないための多重防御。**secret `PROD_DATABASE_URL` が未設定だと workflow は落ちる**
+(skip にすると「監視しているつもりで何も見ていない」状態が静かに続き、防ぎたい事故と
+同じ形になるため)。値は Transaction pooler (6543) の URI。`DATABASE_URL` と別名なのは、
+他のジョブが誤って本番へ繋がないようにするため。
+
 **なぜ 9 日間気づけなかったか (症状の非対称性)** — 0029 生成 (7/21) から発覚 (7/30) まで
 テーブル不在に気づけなかったのは、経路によって症状が違ったため:
 
