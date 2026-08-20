@@ -9,6 +9,7 @@ import {
   CheckCircle2,
   UploadCloud,
 } from "lucide-react";
+import { toFailedResult } from "@/lib/action-failure";
 import type { ParsedShiftCsv } from "@/lib/shift-csv-parser";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -135,7 +136,7 @@ export function UploadWizard({ tutors }: { tutors: Tutor[] }) {
     const form = new FormData();
     form.append("file", file);
     startParse(async () => {
-      const res = await parseUploadedCsv(form);
+      const res = await parseUploadedCsv(form).catch(toFailedResult);
       if (!res.ok) {
         setError(res.error);
         return;
@@ -187,7 +188,7 @@ export function UploadWizard({ tutors }: { tutors: Tutor[] }) {
         originalFilename: bundle.originalFilename,
         fileBytes: bundle.fileBytes,
         mappings,
-      });
+      }).catch(toFailedResult);
       if (!res.ok) {
         setError(res.error);
         return;

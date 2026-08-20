@@ -18,6 +18,8 @@ export function NotificationBell() {
   useEffect(() => {
     let alive = true;
     const refresh = () =>
+      // action-failure: ok — バッジはバックグラウンドのポーリングで、失敗しても
+      // 前回値を保つ設計 (#191 で「バッジの 0 は生死の証拠にならない」と記録済み)。
       getUnreadCountAction()
         .then((n) => {
           if (alive) setCount(n);

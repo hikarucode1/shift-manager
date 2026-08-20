@@ -1,5 +1,5 @@
 import { readdirSync, readFileSync } from "node:fs";
-import { join } from "node:path";
+import { join, resolve } from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { toFailedResult } from "@/lib/action-failure";
 
@@ -39,7 +39,7 @@ describe("toFailedResult", () => {
   });
 });
 
-/** src 配下の .tsx を全部読む */
+/** 指定ディレクトリ配下の .tsx を再帰的に読む */
 function tsxFiles(dir: string): { path: string; source: string }[] {
   return readdirSync(dir, { withFileTypes: true }).flatMap((entry) => {
     const path = join(dir, entry.name);
@@ -49,34 +49,87 @@ function tsxFiles(dir: string): { path: string; source: string }[] {
   });
 }
 
+/** server action のモジュール (`./actions` `./confirm-actions` など) からの import 名 */
+function importedActionNames(source: string): string[] {
+  const names: string[] = [];
+  const importRe = /import\s+\{([^}]+)\}\s+from\s+"[^"]*actions"/g;
+  for (const m of source.matchAll(importRe)) {
+    for (const raw of m[1].split(",")) {
+      const name = raw.trim().split(/\s+as\s+/).pop()?.trim();
+      if (name && !name.startsWith("type ")) names.push(name);
+    }
+  }
+  return names;
+}
+
+/**
+ * `await name(...)` の呼び出しを探し、閉じ括弧の直後が `.catch(` でないものを返す。
+ *
+ * ファイル単位の文字列一致だと、**同じファイル内の一部の呼び出しだけ捕まえて
+ * いれば緑**になる (3 箇所呼ぶファイルが 3 つある)。実際にミューテーションで
+ * すり抜けたのでここまで見る。
+ */
+function uncaughtCalls(source: string, names: string[]): string[] {
+  const uncaught: string[] = [];
+  for (const name of names) {
+    const callRe = new RegExp(`await\\s+${name}\\s*\\(`, "g");
+    for (const m of source.matchAll(callRe)) {
+      let i = m.index + m[0].length;
+      let depth = 1;
+      while (i < source.length && depth > 0) {
+        const c = source[i];
+        if (c === "(") depth += 1;
+        else if (c === ")") depth -= 1;
+        i += 1;
+      }
+      if (!source.slice(i, i + 7).startsWith(".catch(")) uncaught.push(name);
+    }
+  }
+  return uncaught;
+}
+
+const SRC = resolve(__dirname, "..");
+const OPT_OUT = "action-failure: ok";
+
+function panelFiles() {
+  return [...tsxFiles(join(SRC, "app")), ...tsxFiles(join(SRC, "components"))]
+    .map((f) => ({ ...f, names: importedActionNames(f.source) }))
+    .filter((f) => f.names.length > 0);
+}
+
 describe("server action の reject が握り潰されていないこと (#202)", () => {
   // ⚠️ 普通のユニットテストでは押さえられない不変条件なのでソースを走査する。
   // vitest は node 環境 (jsdom 無し) でパネルを描画できず、かつ守りたいのは
-  // 「**すべての**パネルが捕まえていること」というリポジトリ横断の性質。
+  // 「**すべての**呼び出しが捕まえていること」というリポジトリ横断の性質。
   //
-  // これが無いと、新しいパネルを足した人が同じ穴を開けても CI は緑のまま、
-  // 障害時にそのパネルだけ「押しても何も起きない」に戻る。
-  it("startTransition で action を呼ぶファイルは必ず toFailedResult を使う", () => {
-    const offenders = tsxFiles("src/app")
-      .filter(({ source }) => source.includes("startTransition(async"))
-      .filter(({ source }) => !source.includes("toFailedResult"))
-      .map(({ path }) => path);
+  // ⚠️ 起点は「server action を import しているか」。`startTransition(async` の
+  // 文字列一致にしていたら、useTransition() の戻り値を startParse/startCommit に
+  // 分割代入している upload-wizard.tsx を**実際に取りこぼした** (レビュー指摘)。
+  // 呼び出し側の書き方ではなく import で捕まえる。
+  //
+  // 意図的に独自の catch を持つファイルは、理由を書いた opt-out で除外する。
+  it("import した server action の呼び出しは必ず reject を捕まえる", () => {
+    const offenders = panelFiles()
+      .filter(({ source }) => !source.includes(OPT_OUT))
+      .flatMap(({ path, source, names }) =>
+        uncaughtCalls(source, names).map((n) => `${path} → ${n}()`),
+      );
 
     expect(offenders, [
       "server action の reject が捕まっていません。",
-      "`await fn()` を `await fn().catch(toFailedResult)` にしてください。",
+      "`await fn(...)` を `await fn(...).catch(toFailedResult)` にしてください。",
       "捕まえないと React 19 の Action の例外として error.tsx まで飛び、",
       "ページ全体が差し替わって入力途中の内容ごと消えます (#202)。",
+      `意図的に独自の catch を持つ場合は "${OPT_OUT}" と理由をコメントに書いてください。`,
     ].join("\n")).toEqual([]);
   });
 
   it("走査対象が実際に存在する (テスト自体が空振りしていないこと)", () => {
     // パスやパターンがずれると offenders が常に空になり、上のテストが
     // 何も守らないまま緑になる。
-    const scanned = tsxFiles("src/app").filter(({ source }) =>
-      source.includes("startTransition(async"),
-    );
+    const files = panelFiles();
 
-    expect(scanned.length).toBeGreaterThanOrEqual(13);
+    expect(files.length).toBeGreaterThanOrEqual(15);
+    expect(files.flatMap((f) => f.names).length).toBeGreaterThanOrEqual(20);
   });
 });
