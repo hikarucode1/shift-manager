@@ -9,6 +9,7 @@ import {
   inArray,
   isNull,
   ne,
+  or,
 } from "drizzle-orm";
 import { alias } from "drizzle-orm/pg-core";
 import { db } from "@/db/client";
@@ -18,6 +19,7 @@ import {
   swapRequests,
   weeklyShifts,
 } from "@/db/schema";
+import { busySlotKey } from "@/lib/slot-key";
 import { getSlotMeta } from "@/lib/slot-meta";
 import { jstToday, weekdayOf } from "@/lib/week";
 
@@ -174,6 +176,62 @@ export async function isTutorBusyAt(
     )
     .limit(1);
   return rows.length > 0;
+}
+
+/**
+ * 行 → コマ別の出勤講師 id。DB を触らない純関数なのでテストできる。
+ */
+export function groupBusyBySlot(
+  rows: { date: string; slotNumber: number; tutorId: string }[],
+): Record<string, string[]> {
+  const busy: Record<string, string[]> = {};
+  for (const row of rows) {
+    const key = busySlotKey(row.date, row.slotNumber);
+    (busy[key] ??= []).push(row.tutorId);
+  }
+  return busy;
+}
+
+/**
+ * 指定コマ群について「そのコマに出勤予定の講師 id」を引く (#181)。
+ *
+ * 指名セレクトで同コマ出勤中の講師を disable するための先出し情報。
+ * ⚠️ **これは整合性の境界ではない**。指名の可否は createSwapRequest 側の
+ * `isTutorBusyAt` が担保する (UI を通らない経路があるため)。ここはあくまで
+ * 「選んで送信して初めてエラーになる」体験を減らすためのもの。
+ *
+ * ⚠️ 条件を `date IN (...) AND slot IN (...)` にしないこと。日付とコマの
+ * 直積になり、**別のコマの出勤を拾って余計な講師を disable する**。
+ * ペアごとに OR で並べて厳密に指定する。
+ */
+export async function getBusyTutorIdsBySlot(
+  slots: { date: string; slotNumber: number }[],
+): Promise<Record<string, string[]>> {
+  // ⚠️ この早期 return は load-bearing。drizzle の `or()` は条件 0 件で
+  // undefined を返し、`.where(undefined)` は WHERE 句ごと落ちるので、
+  // 消すと weekly_shifts 全件を引いて**全講師が disable される**。
+  // 「交代に出せるコマが 0 件」は新人講師や週明けに普通に起きる状態。
+  if (slots.length === 0) return {};
+
+  const rows = await db
+    .select({
+      date: weeklyShifts.date,
+      slotNumber: weeklyShifts.slotNumber,
+      tutorId: weeklyShifts.tutorId,
+    })
+    .from(weeklyShifts)
+    .where(
+      or(
+        ...slots.map((s) =>
+          and(
+            eq(weeklyShifts.date, s.date),
+            eq(weeklyShifts.slotNumber, s.slotNumber),
+          ),
+        ),
+      ),
+    );
+
+  return groupBusyBySlot(rows);
 }
 
 /**

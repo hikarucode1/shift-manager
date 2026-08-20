@@ -14,6 +14,7 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
+import { busySlotKey } from "@/lib/slot-key";
 import { shortDate } from "@/lib/week";
 import { cn } from "@/lib/utils";
 import { cancelSwapRequest, createSwapRequest } from "./actions";
@@ -32,10 +33,13 @@ export function SwapPanel({
   shifts,
   tutors,
   requests,
+  busyBySlot,
 }: {
   shifts: SwappableShift[];
   tutors: { id: string; name: string }[];
   requests: MySwapRequest[];
+  /** #181: "date|slotNumber" → そのコマに出勤予定の講師 id */
+  busyBySlot: Record<string, string[]>;
 }) {
   const router = useRouter();
   const [isPending, startTransition] = useTransition();
@@ -46,6 +50,17 @@ export function SwapPanel({
   const [target, setTarget] = useState("");
   const [kind, setKind] = useState<"named" | "open">("open");
   const [nominee, setNominee] = useState("");
+
+  // #181: 選択中のコマに出勤予定の講師。指名先の候補から外す。
+  //
+  // ⚠️ 選択を state のリセットで面倒みないこと。**選択済みの option が後から
+  // disabled になっても、select は値を保持し required も通る** (実測)。
+  // busyBySlot はコマを触らなくても更新されうる (別の申請を取り消すと
+  // revalidatePath → router.refresh() で props だけ入れ替わる) ので、
+  // 「target が変わった瞬間に外す」形だと取りこぼす。導出にしておけば
+  // 出勤状況が動いた時点で常に外れる。
+  const busyTutorIds = busyBySlot[target] ?? [];
+  const effectiveNominee = busyTutorIds.includes(nominee) ? "" : nominee;
   const [reason, setReason] = useState("");
 
   useEffect(() => {
@@ -74,9 +89,15 @@ export function SwapPanel({
 
   function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
-    const sel = shifts.find((s) => `${s.date}|${s.slotNumber}` === target);
+    const sel = shifts.find((s) => busySlotKey(s.date, s.slotNumber) === target);
     if (!sel) {
       setNotice({ type: "error", text: "対象のコマを選択してください。" });
+      return;
+    }
+    // #181 の最終ガード。UI の disable はあくまで先出しなので、state の同期に
+    // 穴が空いてもここで止める (サーバーは別途 isTutorBusyAt で弾く)。
+    if (kind === "named" && !effectiveNominee) {
+      setNotice({ type: "error", text: "指名する講師を選択してください。" });
       return;
     }
     // native required は空白のみを通すため trim 後の空チェックで一貫させる
@@ -92,7 +113,7 @@ export function SwapPanel({
           slotNumber: sel.slotNumber,
           reason: trimmedReason,
           kind,
-          nominatedTutorId: kind === "named" ? nominee : null,
+          nominatedTutorId: kind === "named" ? effectiveNominee : null,
         }),
       "交代申請を送信しました。",
       () => {
@@ -139,7 +160,7 @@ export function SwapPanel({
                 </legend>
                 <div className="space-y-2">
                   {shifts.map((s) => {
-                    const val = `${s.date}|${s.slotNumber}`;
+                    const val = busySlotKey(s.date, s.slotNumber);
                     const on = target === val;
                     return (
                       <label
@@ -219,17 +240,21 @@ export function SwapPanel({
                   <Label htmlFor="sw-nominee">指名する講師</Label>
                   <select
                     id="sw-nominee"
-                    value={nominee}
+                    value={effectiveNominee}
                     onChange={(e) => setNominee(e.target.value)}
                     required
                     className="h-9 w-full rounded-md border bg-background px-2 text-sm focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
                   >
                     <option value="">— 選択してください —</option>
-                    {tutors.map((t) => (
-                      <option key={t.id} value={t.id}>
-                        {t.name}
-                      </option>
-                    ))}
+                    {tutors.map((t) => {
+                      const busy = busyTutorIds.includes(t.id);
+                      return (
+                        <option key={t.id} value={t.id} disabled={busy}>
+                          {t.name}
+                          {busy ? "（同じコマに出勤予定）" : ""}
+                        </option>
+                      );
+                    })}
                   </select>
                 </div>
               )}
