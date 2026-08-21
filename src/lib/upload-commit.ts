@@ -2,14 +2,22 @@ import "server-only";
 import { and, arrayContains, eq, inArray } from "drizzle-orm";
 import { db } from "@/db/client";
 import {
+  profiles,
   shiftAssignments,
   shiftUploads,
   students,
+  swapRequests,
   weeklyShifts,
 } from "@/db/schema";
 import type { ParsedShiftCsv } from "@/lib/shift-csv-parser";
 import { findMappingDuplicates } from "@/lib/mapping-validation";
 import { findNonTutorIds } from "@/lib/tutor-validation";
+import { substitutionNote } from "@/lib/substitution-note";
+import {
+  planSwapReapplication,
+  type InsertedShift,
+  type SkipReason,
+} from "@/lib/swap-reapplication";
 
 export type TeacherMapping = Record<string, string>; // teacherName → profileId
 
@@ -39,6 +47,21 @@ export type CommitUploadResult = {
   insertedAssignmentRows: number;
   upsertedStudents: number;
   replacedDateCount: number;
+  /** 取り込みで消えた承認済み代講のうち、付け替えを復元できた件数 (#210) */
+  reappliedSwaps: number;
+  /**
+   * 復元できなかった承認済み代講 (#210)。新しい CSV で元の講師がそのコマに
+   * 居ない = 基礎シフト自体が変わった場合。**握り潰さず呼び出し側に返す**。
+   */
+  unreappliedSwaps: {
+    /** 同じ日・同じコマで 2 件失敗したときに区別できるように残す */
+    swapId: string;
+    date: string;
+    slotNumber: number;
+    reason: SkipReason;
+  }[];
+  /** approved なのに代講者の記録が無い行 (復元しようがない) の数 */
+  missingApplicantSwaps: number;
 };
 
 /**
@@ -198,6 +221,8 @@ export async function commitShiftUpload(
     // 4) Insert new weekly_shifts + shift_assignments
     let insertedShiftRows = 0;
     let insertedAssignmentRows = 0;
+    // #210: 再適用の計画を DB に触る前に立てるため、挿入した在席情報を持つ
+    const insertedShifts: InsertedShift[] = [];
 
     for (const day of parsed.days) {
       if (day.isHoliday) continue;
@@ -219,6 +244,11 @@ export async function commitShiftUpload(
             .returning({ id: weeklyShifts.id });
 
           insertedShiftRows++;
+          insertedShifts.push({
+            tutorId,
+            date: day.date,
+            slotNumber: slot.slotNumber,
+          });
 
           if (a.students.length > 0) {
             const rows = a.students
@@ -243,12 +273,105 @@ export async function commitShiftUpload(
       }
     }
 
+    // 5) #210: 承認済み代講の付け替えを復元する。
+    //
+    // 上の delete→insert は CSV を正として基礎シフトを作り直すが、それだけだと
+    // **承認済みの代講が黙って巻き戻る** (担当が元に戻り、is_override と
+    // `代講(承認済): A → B` の note が消える)。しかも swap_requests は approved の
+    // まま残るので、申請履歴と座席表が食い違ったままになる。
+    //
+    // 「誰が実際にそのコマに入ったか」は承認でしか記録できない (#178/#213) ので、
+    // CSV で基礎を作り直したうえに、その事実を積み直す。
+    //
+    // ⚠️ **どれを適用するかは純関数 planSwapReapplication が決める**。順序
+    // (連鎖代講) と衝突 (一意制約) を DB に触る前に確定させ、テストで固定する
+    // ため。実 DB でしか動かせない処理なので、そこが唯一の防御線になる。
+    const approved =
+      uploadedDates.length > 0
+        ? await tx
+            .select({
+              id: swapRequests.id,
+              requesterId: swapRequests.requesterId,
+              applicantId: swapRequests.approvedApplicantId,
+              date: swapRequests.date,
+              slotNumber: swapRequests.slotNumber,
+              decidedAt: swapRequests.decidedAt,
+              createdAt: swapRequests.createdAt,
+            })
+            .from(swapRequests)
+            .where(
+              and(
+                eq(swapRequests.status, "approved"),
+                inArray(swapRequests.date, uploadedDates),
+              ),
+            )
+        : [];
+
+    const plan = planSwapReapplication(
+      insertedShifts,
+      approved.flatMap((a) =>
+        a.applicantId
+          ? [{
+              id: a.id,
+              requesterId: a.requesterId,
+              applicantId: a.applicantId,
+              date: a.date,
+              slotNumber: a.slotNumber,
+              decidedAt: a.decidedAt,
+              createdAt: a.createdAt,
+            }]
+          : [],
+      ),
+    );
+
+    // 代講者の記録が無い approved は復元しようがない。黙って飛ばさず数える
+    const missingApplicant = approved.filter((a) => !a.applicantId).length;
+
+    const nameIds = [
+      ...new Set(plan.applies.flatMap((a) => [a.noteFromId, a.noteToId])),
+    ];
+    const names =
+      nameIds.length > 0
+        ? await tx
+            .select({ id: profiles.id, name: profiles.displayName })
+            .from(profiles)
+            .where(inArray(profiles.id, nameIds))
+        : [];
+    const nameOf = (id: string) =>
+      names.find((n) => n.id === id)?.name ?? "不明";
+
+    for (const a of plan.applies) {
+      await tx
+        .update(weeklyShifts)
+        .set({
+          tutorId: a.setTutorId,
+          isOverride: true,
+          note: substitutionNote(nameOf(a.noteFromId), nameOf(a.noteToId)),
+        })
+        .where(
+          and(
+            eq(weeklyShifts.uploadId, uploadId),
+            eq(weeklyShifts.tutorId, a.matchTutorId),
+            eq(weeklyShifts.date, a.date),
+            eq(weeklyShifts.slotNumber, a.slotNumber),
+          ),
+        );
+    }
+
     return {
       uploadId,
       insertedShiftRows,
       insertedAssignmentRows,
       upsertedStudents: upsertedStudentCount,
       replacedDateCount: parsed.days.filter((d) => !d.isHoliday).length,
+      reappliedSwaps: plan.applies.length,
+      unreappliedSwaps: plan.skipped.map((sk) => ({
+        swapId: sk.swapId,
+        date: sk.date,
+        slotNumber: sk.slotNumber,
+        reason: sk.reason,
+      })),
+      missingApplicantSwaps: missingApplicant,
     };
   });
 }

@@ -10,6 +10,7 @@ import {
   UploadCloud,
 } from "lucide-react";
 import { isIndeterminate, toFailedResult } from "@/lib/action-failure";
+import type { SkipReason } from "@/lib/swap-reapplication";
 import type { ParsedShiftCsv } from "@/lib/shift-csv-parser";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -99,6 +100,22 @@ type ParsedBundle = {
   fileBytes: number;
 };
 
+/**
+ * 再適用できなかった理由ごとの説明。
+ *
+ * ⚠️ **`Record<SkipReason, string>` にすること**。ハードコードの配列にしていた
+ * ときは、reason を増やしても**その分が黙って表示から落ちて件数だけ合わなく
+ * なる**状態だった (レビュー指摘)。網羅漏れをコンパイルエラーにする。
+ */
+const SKIP_TEXT: Record<SkipReason, string> = {
+  "requester-absent":
+    "新しい CSV にそのコマ自体がありません（編成の組み直し・休講など）。座席表と申請履歴が食い違うので確認してください。",
+  "already-reflected":
+    "CSV が既に代講後の状態を含んでいたため、付け替えは不要でした（座席表と申請履歴は一致しています）。「代講」の表示だけ付け直しました。",
+  "applicant-conflict":
+    "元の講師と代講者が両方そのコマに入っています。CSV から片方を消し忘れている可能性があります。",
+};
+
 export function UploadWizard({ tutors }: { tutors: Tutor[] }) {
   const router = useRouter();
   const [stage, setStage] = useState<Stage>("idle");
@@ -111,6 +128,14 @@ export function UploadWizard({ tutors }: { tutors: Tutor[] }) {
   const [result, setResult] = useState<
     | {
         insertedShiftRows: number;
+        reappliedSwaps: number;
+        unreappliedSwaps: {
+          swapId: string;
+          date: string;
+          slotNumber: number;
+          reason: SkipReason;
+        }[];
+        missingApplicantSwaps: number;
         insertedAssignmentRows: number;
         upsertedStudents: number;
       }
@@ -199,6 +224,9 @@ export function UploadWizard({ tutors }: { tutors: Tutor[] }) {
       }
       setResult({
         insertedShiftRows: res.insertedShiftRows,
+        reappliedSwaps: res.reappliedSwaps,
+        unreappliedSwaps: res.unreappliedSwaps,
+        missingApplicantSwaps: res.missingApplicantSwaps,
         insertedAssignmentRows: res.insertedAssignmentRows,
         upsertedStudents: res.upsertedStudents,
       });
@@ -237,6 +265,54 @@ export function UploadWizard({ tutors }: { tutors: Tutor[] }) {
               suffix="名"
             />
           </div>
+
+          {/* #210: 取り込みは対象日の weekly_shifts を作り直すので、承認済みの
+              代講は放っておくと黙って巻き戻る。復元した件数と、復元できなかった
+              分を必ず出す (黙って消すと #210 と同じ形になる)。 */}
+          {result.reappliedSwaps > 0 && (
+            <p className="text-sm text-muted-foreground">
+              承認済みの代講 {result.reappliedSwaps} 件を再適用しました。
+            </p>
+          )}
+          {/* ⚠️ 理由ごとに分ける。「CSV が既に代講を反映している」は正常なのに
+              一括で赤にすると偽陽性になり、警告が無視される訓練になる。 */}
+          {result.unreappliedSwaps.length > 0 && (
+            <div
+              role="alert"
+              className="space-y-2 rounded-md border border-destructive/40 bg-destructive/10 px-3 py-2 text-sm text-destructive"
+            >
+              <p className="font-medium">
+                承認済みの代講 {result.unreappliedSwaps.length}{" "}
+                件を再適用できませんでした。
+              </p>
+              {(Object.keys(SKIP_TEXT) as SkipReason[]).map((reason) => {
+                const text = SKIP_TEXT[reason];
+                const rows = result.unreappliedSwaps.filter(
+                  (u) => u.reason === reason,
+                );
+                if (rows.length === 0) return null;
+                return (
+                  <div key={reason} className="space-y-0.5">
+                    <p className="text-xs">{text}</p>
+                    <ul className="list-disc pl-4 text-xs">
+                      {rows.map((u) => (
+                        <li key={u.swapId}>
+                          {u.date} {u.slotNumber}限
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+
+          {result.missingApplicantSwaps > 0 && (
+            <p role="alert" className="text-sm text-destructive">
+              承認済みなのに代講者の記録が無い申請が{" "}
+              {result.missingApplicantSwaps} 件あります（復元できません）。
+            </p>
+          )}
           <div className="flex gap-2">
             <Button onClick={reset}>もう1週分アップロード</Button>
           </div>

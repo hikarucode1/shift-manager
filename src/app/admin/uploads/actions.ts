@@ -3,6 +3,7 @@
 import { revalidatePath } from "next/cache";
 import iconv from "iconv-lite";
 import { requireRole } from "@/lib/auth";
+import type { SkipReason } from "@/lib/swap-reapplication";
 import {
   parseShiftCsvBuffer,
   parseShiftCsvText,
@@ -98,6 +99,17 @@ export type CommitUploadResponse =
       insertedShiftRows: number;
       insertedAssignmentRows: number;
       upsertedStudents: number;
+      /** #210: 取り込みで消えた承認済み代講のうち復元できた件数 */
+      reappliedSwaps: number;
+      /** #210: 復元できなかった承認済み代講と、その理由 */
+      unreappliedSwaps: {
+        swapId: string;
+        date: string;
+        slotNumber: number;
+        reason: SkipReason;
+      }[];
+      /** #210: approved なのに代講者の記録が無い行の数 */
+      missingApplicantSwaps: number;
     }
   | { ok: false; error: string };
 
@@ -164,6 +176,9 @@ export async function commitUploadedCsv(
       insertedShiftRows: result.insertedShiftRows,
       insertedAssignmentRows: result.insertedAssignmentRows,
       upsertedStudents: result.upsertedStudents,
+      reappliedSwaps: result.reappliedSwaps,
+      unreappliedSwaps: result.unreappliedSwaps,
+      missingApplicantSwaps: result.missingApplicantSwaps,
     };
   } catch (err) {
     console.error("commitUploadedCsv failed", err);
