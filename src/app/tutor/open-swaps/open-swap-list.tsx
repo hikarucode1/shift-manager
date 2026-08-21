@@ -109,18 +109,28 @@ export function OpenSwapList({ swaps }: { swaps: OpenSwap[] }) {
                     応募を取り下げる
                   </Button>
                 ) : (
-                  <Button
-                    className="w-full"
-                    disabled={isPending}
-                    onClick={() =>
-                      run(
-                        () => applyToSwap({ swapRequestId: s.id }),
-                        "応募しました。",
-                      )
-                    }
-                  >
-                    応募する
-                  </Button>
+                  <>
+                    <Button
+                      className="w-full"
+                      // #178: 終了したコマには応募できない (サーバー側も弾く)。
+                      // 過去日 pending は取下げ導線のため一覧に残しているので、
+                      // 押せてしまうと必ずエラーになる dead button だった。
+                      disabled={isPending || s.isPast}
+                      onClick={() =>
+                        run(
+                          () => applyToSwap({ swapRequestId: s.id }),
+                          "応募しました。",
+                        )
+                      }
+                    >
+                      応募する
+                    </Button>
+                    {s.isPast && (
+                      <p className="text-center text-xs text-muted-foreground">
+                        終了したコマのため応募できません
+                      </p>
+                    )}
+                  </>
                 )}
               </CardContent>
             </Card>

@@ -164,14 +164,19 @@ export function SwapRequestsPanel({
                   ) : (
                     <div className="space-y-1">
                       <p className="text-xs font-medium">
-                        応募者から代講者を選んで承認:
+                        {r.isPast
+                          ? "終了したコマのため承認できません (却下は可能です):"
+                          : "応募者から代講者を選んで承認:"}
                       </p>
                       <div className="flex flex-wrap gap-2">
                         {r.applicants.map((a) => (
                           <Button
                             key={a.applicationId}
                             size="sm"
-                            disabled={isPending}
+                            // #178: 終了したコマの承認は weekly_shifts を事後に
+                            // 書き換える = 勤怠・給与の履歴が崩れる。サーバー側も
+                            // 弾くので、ここは押せてしまう dead button だった。
+                            disabled={isPending || r.isPast}
                             onClick={() =>
                               run(
                                 () =>

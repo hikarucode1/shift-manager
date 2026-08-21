@@ -21,6 +21,7 @@ import {
 } from "@/db/schema";
 import { busySlotKey } from "@/lib/slot-key";
 import { getSlotMeta } from "@/lib/slot-meta";
+import { isSlotPast } from "@/lib/slot-time";
 import { jstToday, weekdayOf } from "@/lib/week";
 
 export type SwapKind = "named" | "open";
@@ -69,16 +70,39 @@ export type OpenSwap = {
   reason: string;
   /** 自分が応募済みか (取り下げていない) */
   applied: boolean;
+  /**
+   * コマが既に終了しているか (#178)。過去日 pending は取下げ導線のため一覧に
+   * 残しているので、**応募/承認だけを落とす**ための印。
+   */
+  isPast: boolean;
 };
 
 export type AdminSwapRequest = MySwapRequest & {
   requesterId: string;
+  /** コマが既に終了しているか (#178)。承認だけを落とす。却下は残す */
+  isPast: boolean;
   requesterName: string;
 };
 
 function labelOf(meta: Awaited<ReturnType<typeof getSlotMeta>>, n: number) {
   const m = meta.get(n);
   return { label: m?.label ?? `${n}限`, start: m?.start ?? "", end: m?.end ?? "" };
+}
+
+/**
+ * コマ定義を引いて終了済みか判定する (#178)。
+ *
+ * ⚠️ 交代・代講のガードは元々**日付粒度** (`date < jstToday()`) で、
+ * 「今朝終わったコマを午後に交代」が素通りしていた。承認は weekly_shifts の
+ * 担当を付け替えるので、実施済みコマが事後に書き換わると勤怠・給与の履歴が崩れる。
+ * 申請 / 応募 / 承認の 3 経路すべてでこれを通すこと。
+ */
+export async function hasSlotEnded(
+  date: string,
+  slotNumber: number,
+): Promise<boolean> {
+  const meta = await getSlotMeta();
+  return isSlotPast(date, meta.get(slotNumber)?.end ?? "");
 }
 
 /** 講師: 交代申請できる「今日以降の自分の確定シフト」(有効な申請があるものは除外) */
@@ -116,6 +140,9 @@ export async function getTutorSwappableShifts(
     if (blocked.has(k) || seen.has(k)) continue;
     seen.add(k);
     const l = labelOf(meta, s.slotNumber);
+    // #178: gte(date, today) だと**今日の終了済みコマ**まで候補に残る。
+    // 選んで送信して初めて弾かれるので、ここで落とす。
+    if (isSlotPast(s.date, l.end)) continue;
     out.push({
       date: s.date,
       slotNumber: s.slotNumber,
@@ -415,6 +442,7 @@ export async function getOpenSwapsForTutor(
     weekdayLabel: weekdayOf(r.date).label,
     reason: r.reason,
     applied: appliedSet.has(r.id),
+    isPast: isSlotPast(r.date, labelOf(meta, r.slotNumber).end),
   }));
 }
 
@@ -458,6 +486,7 @@ export async function getPendingSwapRequests(): Promise<AdminSwapRequest[]> {
     reason: r.reason,
     status: r.status as SwapStatus,
     nominatedName: r.nominatedName,
+    isPast: isSlotPast(r.date, labelOf(meta, r.slotNumber).end),
     approvedApplicantName: null,
     decisionNote: r.decisionNote,
     applicants: applicants.get(r.id) ?? [],

@@ -5,8 +5,7 @@ import { z } from "zod";
 import { and, eq, inArray, isNull } from "drizzle-orm";
 import { requireRole } from "@/lib/auth";
 import { notify } from "@/lib/notifications";
-import { isTutorBusyAt } from "@/lib/swaps";
-import { jstToday } from "@/lib/week";
+import { hasSlotEnded, isTutorBusyAt } from "@/lib/swaps";
 import { db } from "@/db/client";
 import {
   absenceRequests,
@@ -123,12 +122,15 @@ export async function decideSwapRequest(
       }
       const req = reqRows[0];
 
-      // #165: 過去日 (実施済み) のコマは承認しない。承認は weekly_shifts を
-      // 代講者へ付け替えるため、実施済みコマを事後に書き換えてしまう。ここが
-      // 実際の変更点なので、応募側 (applyToSwap) だけでなく承認側でも塞ぐ。
-      if (req.date < jstToday()) {
+      // #165/#178: 実施済みのコマは承認しない。承認は weekly_shifts を代講者へ
+      // 付け替えるため、実施済みコマを事後に書き換えてしまう。ここが実際の
+      // 変更点なので、応募側 (applyToSwap) だけでなく承認側でも塞ぐ。
+      //
+      // ⚠️ 日付粒度 (`req.date < jstToday()`) だと「今朝終わったコマを午後に
+      // 承認」が通り、勤怠・給与の履歴が崩れる。コマの終了時刻まで見る。
+      if (await hasSlotEnded(req.date, req.slotNumber)) {
         throw new SwapBizError(
-          "過去のコマの交代は承認できません (既に実施済みです)。",
+          "終了したコマの交代は承認できません (既に実施済みです)。",
         );
       }
 

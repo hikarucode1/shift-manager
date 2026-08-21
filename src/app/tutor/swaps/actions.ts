@@ -15,8 +15,8 @@ import {
   weeklyShifts,
 } from "@/db/schema";
 import { isUniqueViolation } from "@/lib/db-errors";
-import { getEligibleApplicantIds, isTutorBusyAt } from "@/lib/swaps";
-import { isValidIsoDate, jstToday } from "@/lib/week";
+import { getEligibleApplicantIds, hasSlotEnded, isTutorBusyAt } from "@/lib/swaps";
+import { isValidIsoDate } from "@/lib/week";
 
 type ActionResult = { ok: true } | { ok: false; error: string };
 
@@ -56,8 +56,9 @@ export async function createSwapRequest(
   const nominatedTutorId =
     kind === "named" ? parsed.data.nominatedTutorId ?? null : null;
 
-  if (date < jstToday()) {
-    return { ok: false, error: "過去の日付は申請できません。" };
+  // #178: 日付粒度だと「今朝終わったコマを午後に交代」が通ってしまう
+  if (await hasSlotEnded(date, slotNumber)) {
+    return { ok: false, error: "終了したコマは申請できません。" };
   }
 
   // 自分の実在する確定シフトか
@@ -244,9 +245,10 @@ export async function applyToSwap(input: unknown): Promise<ActionResult> {
   if (r.kind === "named" && r.nominatedTutorId !== profile.id) {
     return { ok: false, error: "この交代はあなた宛ではありません。" };
   }
-  // #165: 過去日のコマには応募不可 (実施済みコマの担当が事後に書き換わるのを防ぐ)
-  if (r.date < jstToday()) {
-    return { ok: false, error: "過去のコマには応募できません。" };
+  // #165/#178: 実施済みコマには応募不可 (担当が事後に書き換わるのを防ぐ)。
+  // 日付粒度では同日の終了済みコマを取りこぼすのでコマ単位で見る。
+  if (await hasSlotEnded(r.date, r.slotNumber)) {
+    return { ok: false, error: "終了したコマには応募できません。" };
   }
 
   // 同じコマに自分が既に出勤している場合は代講不可
