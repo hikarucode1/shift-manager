@@ -2,7 +2,7 @@
 
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
-import { and, eq, inArray, isNull } from "drizzle-orm";
+import { and, eq, inArray, isNull, ne } from "drizzle-orm";
 import { requireRole } from "@/lib/auth";
 import { notify } from "@/lib/notifications";
 import { isTutorBusyAt } from "@/lib/swaps";
@@ -220,7 +220,7 @@ export async function decideSwapRequest(
         .update(absenceRequests)
         .set({
           status: "cancelled",
-          decisionNote: "交代成立により自動失効",
+          decisionNote: ABSENCE_AUTO_EXPIRED_NOTE,
           updatedAt: new Date(),
         })
         .where(
@@ -275,11 +275,19 @@ export async function decideSwapRequest(
   return { ok: true };
 }
 
+/** 交代成立時に同一コマの欠勤申請を失効させるときの decision_note。
+ *  書く側 (承認) と読む側 (取り消し) で共有する。片方だけ変えると数えられなくなる */
+const ABSENCE_AUTO_EXPIRED_NOTE = "交代成立により自動失効";
+
 const CancelApprovedInput = z.object({
   // zod 既定の英語メッセージ ("Invalid UUID") がそのまま画面に出るのを防ぐ。
   // 失敗文言は parsed.error.issues[0].message を返す作りなので、ここで日本語にする
   id: z.string().uuid("対象が正しく指定されていません。"),
-  reason: z.string().trim().min(1, "取り消し理由を入力してください。").max(500),
+  reason: z
+    .string()
+    .trim()
+    .min(1, "取り消し理由を入力してください。")
+    .max(500, "取り消し理由は 500 文字以内で入力してください。"),
 });
 
 /**
@@ -314,7 +322,7 @@ export async function cancelApprovedSwap(
   const { id, reason } = parsed.data;
 
   try {
-    const expiredAbsences = await db.transaction(async (tx) => {
+    const info = await db.transaction(async (tx) => {
       const reqRows = await tx
         .select({
           requesterId: swapRequests.requesterId,
@@ -330,6 +338,46 @@ export async function cancelApprovedSwap(
       if (!req) throw new SwapBizError("承認済みの交代が見つかりません。");
       if (!req.approvedApplicantId) {
         throw new SwapBizError("代講者の記録が無いため取り消せません。");
+      }
+
+      const names = await tx
+        .select({ id: profiles.id, name: profiles.displayName })
+        .from(profiles)
+        .where(inArray(profiles.id, [req.requesterId, req.approvedApplicantId]));
+      const nameOf = (pid: string) =>
+        names.find((n) => n.id === pid)?.name ?? "不明";
+
+      // ⚠️ 元講師が既にそのコマに居ると、戻す UPDATE が
+      // weekly_shifts_unique (upload_id, tutor_id, date, slot_number) に衝突して
+      // 23505 になり、汎用 catch の「時間をおいて再度お試しください」= **何度
+      // やっても失敗するのに再試行を促す嘘**になる。到達経路は実在する:
+      // A→B 承認後に A が別の代講で同じコマに入ると A は二重出勤になる。
+      // 承認側 (isTutorBusyAt) と同じ意味のガードをここにも置く。
+      if (await isTutorBusyAt(req.date, req.slotNumber, req.requesterId, tx)) {
+        throw new SwapBizError(
+          "元の講師は既にそのコマに出勤予定のため、担当を戻せません。",
+        );
+      }
+
+      // ⚠️ 同じコマに他の承認済み代講がある (玉突き: A→B の後に B→C) 場合、
+      // 元に戻すと「1 つ前」ではなく CSV 初期値まで戻ってしまい、生きている
+      // 方の代講の痕跡 (is_override / note) まで消える。順番に取り消して
+      // もらうため、ここでは止める。
+      const others = await tx
+        .select({ id: swapRequests.id })
+        .from(swapRequests)
+        .where(
+          and(
+            eq(swapRequests.status, "approved"),
+            eq(swapRequests.date, req.date),
+            eq(swapRequests.slotNumber, req.slotNumber),
+            ne(swapRequests.id, id),
+          ),
+        );
+      if (others.length > 0) {
+        throw new SwapBizError(
+          "同じコマに別の承認済み代講があります。新しい方から順に取り消してください。",
+        );
       }
 
       // 元講師へ戻す。⚠️ **現在の担当が承認された代講者である場合に限る**。
@@ -360,6 +408,8 @@ export async function cancelApprovedSwap(
           status: "cancelled",
           decisionNote: reason,
           decidedBy: profile.id,
+          // 承認時刻のままだと「誰が」と「いつ」が別イベントを指してしまう
+          decidedAt: new Date(),
           updatedAt: new Date(),
         })
         .where(and(eq(swapRequests.id, id), eq(swapRequests.status, "approved")))
@@ -378,16 +428,43 @@ export async function cancelApprovedSwap(
             eq(absenceRequests.date, req.date),
             eq(absenceRequests.slotNumber, req.slotNumber),
             eq(absenceRequests.status, "cancelled"),
-            eq(absenceRequests.decisionNote, "交代成立により自動失効"),
+            eq(absenceRequests.decisionNote, ABSENCE_AUTO_EXPIRED_NOTE),
           ),
         );
 
-      return expired.length;
+      return {
+        expiredAbsences: expired.length,
+        requesterId: req.requesterId,
+        applicantId: req.approvedApplicantId,
+        requesterName: nameOf(req.requesterId),
+        applicantName: nameOf(req.approvedApplicantId),
+        date: req.date,
+        slotNumber: req.slotNumber,
+      };
     });
+
+    // ⚠️ 承認は A・B 両方に通知するのに取り消しが無音だと、**A が「代わって
+    // もらった」と思ったまま来ない = コマに誰も居ない**が起きる。B 側には
+    // 「引き受けた代講」の一覧が無い (getTutorSwapRequests は requesterId 基準)
+    // ので、B にとっては通知が唯一の手がかり。承認と同じく tx の外で送る。
+    await Promise.all([
+      notify([info.requesterId], {
+        type: "swap_result",
+        title: "代講の取り消し（あなたが担当に戻りました）",
+        body: `対象: ${info.date} ${info.slotNumber}限 ／ 理由: ${reason}`,
+        href: "/tutor",
+      }),
+      notify([info.applicantId], {
+        type: "swap_result",
+        title: "引き受けた代講が取り消されました",
+        body: `対象: ${info.date} ${info.slotNumber}限 (${info.requesterName}さんの代講) ／ 理由: ${reason}`,
+        href: "/tutor",
+      }),
+    ]);
 
     revalidateAll();
     revalidatePath("/admin/weekly");
-    return { ok: true, expiredAbsences };
+    return { ok: true, expiredAbsences: info.expiredAbsences };
   } catch (e) {
     if (e instanceof SwapBizError) return { ok: false, error: e.message };
     console.error("cancelApprovedSwap failed", e);
