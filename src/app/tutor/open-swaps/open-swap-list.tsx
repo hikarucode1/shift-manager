@@ -109,18 +109,35 @@ export function OpenSwapList({ swaps }: { swaps: OpenSwap[] }) {
                     応募を取り下げる
                   </Button>
                 ) : (
-                  <Button
-                    className="w-full"
-                    disabled={isPending}
-                    onClick={() =>
-                      run(
-                        () => applyToSwap({ swapRequestId: s.id }),
-                        "応募しました。",
+                  <>
+                    <Button
+                      className="w-full"
+                      // #165/#178: 過去日はサーバー側が弾くので落とす (押せると
+                      // 必ずエラーになる dead button だった)。**終了しただけの
+                      // 同日コマは落とさない** — 実際に代わった人が応募して
+                      // 記録に残すのは正当な操作なので、注意表示に留める。
+                      disabled={isPending || s.isPastDate}
+                      onClick={() =>
+                        run(
+                          () => applyToSwap({ swapRequestId: s.id }),
+                          "応募しました。",
+                        )
+                      }
+                    >
+                      応募する
+                    </Button>
+                    {s.isPastDate ? (
+                      <p className="text-center text-xs text-muted-foreground">
+                        過去のコマのため応募できません
+                      </p>
+                    ) : (
+                      s.isEnded && (
+                        <p className="text-center text-xs text-muted-foreground">
+                          このコマは終了しています（実際に代わった場合のみ応募してください）
+                        </p>
                       )
-                    }
-                  >
-                    応募する
-                  </Button>
+                    )}
+                  </>
                 )}
               </CardContent>
             </Card>

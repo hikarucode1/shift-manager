@@ -15,7 +15,7 @@ import {
   weeklyShifts,
 } from "@/db/schema";
 import { isUniqueViolation } from "@/lib/db-errors";
-import { getEligibleApplicantIds, isTutorBusyAt } from "@/lib/swaps";
+import { getEligibleApplicantIds, hasSlotEnded, isTutorBusyAt } from "@/lib/swaps";
 import { isValidIsoDate, jstToday } from "@/lib/week";
 
 type ActionResult = { ok: true } | { ok: false; error: string };
@@ -56,8 +56,10 @@ export async function createSwapRequest(
   const nominatedTutorId =
     kind === "named" ? parsed.data.nominatedTutorId ?? null : null;
 
-  if (date < jstToday()) {
-    return { ok: false, error: "過去の日付は申請できません。" };
+  // #178: 新規の募集だけはコマ単位で弾く。終了したコマを今から募集しても
+  // 代わってもらう相手が居ないため (既に済んだ分の記録は承認側で扱う)。
+  if (await hasSlotEnded(date, slotNumber)) {
+    return { ok: false, error: "終了したコマは申請できません。" };
   }
 
   // 自分の実在する確定シフトか
@@ -244,7 +246,15 @@ export async function applyToSwap(input: unknown): Promise<ActionResult> {
   if (r.kind === "named" && r.nominatedTutorId !== profile.id) {
     return { ok: false, error: "この交代はあなた宛ではありません。" };
   }
-  // #165: 過去日のコマには応募不可 (実施済みコマの担当が事後に書き換わるのを防ぐ)
+  // #165: 過去日のコマには応募不可 (実施済みコマの担当が事後に書き換わるのを防ぐ)。
+  //
+  // ⚠️ **ここは日付粒度のまま**にする (#178 のレビュー結論)。承認は
+  // 「誰が実際にそのコマに入ったか」を記録できる唯一の業務経路で、
+  // is_override と note で監査痕跡も残る。同日の終了済みコマを塞ぐと、
+  // 実際は代講が入ったのに記録は元の講師のまま確定してしまう
+  // (weekly_shifts を直す admin 画面は無く、CSV 再取り込みはその日の代講記録を
+  // 全消しする)。塾の運用では 8 限が 21:25 に終わり、教室長の事務作業は
+  // その後なので、同日中の処理を残すことが要る。
   if (r.date < jstToday()) {
     return { ok: false, error: "過去のコマには応募できません。" };
   }

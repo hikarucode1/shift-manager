@@ -6,7 +6,9 @@ import { OpenSwapList } from "./open-swap-list";
 export default async function TutorOpenSwapsPage() {
   const { profile } = await requireRole("tutor");
   const swaps = await getOpenSwapsForTutor(profile.id);
-  const openCount = swaps.filter((s) => !s.applied).length;
+    // #178: 過去日は応募できないので「応募できる募集」に数えない。終了しただけの
+  // 同日コマは応募できる (実際に代わった人が記録を残す経路) ので数える。
+  const openCount = swaps.filter((s) => !s.applied && !s.isPastDate).length;
 
   return (
     <div className="space-y-5">
