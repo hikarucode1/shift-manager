@@ -1,3 +1,5 @@
+import { StalledLoadingHint } from "@/components/stalled-loading-hint";
+
 /**
  * 講師画面セグメントの読み込み fallback (#186)。
  *
@@ -21,6 +23,10 @@ export default function TutorLoading() {
   return (
     <div className="space-y-5" role="status">
       <span className="sr-only">読み込み中</span>
+
+      {/* #189: hydration しないクライアントはここまでしか到達しない。
+          CSS で 10 秒後に出す (JS は一度も走らない前提) */}
+      <StalledLoadingHint contactLabel="教室長" />
 
       {/* hero (実ページと同じ rounded-xl / bg-primary) */}
       <section className="rounded-xl bg-primary p-4" aria-hidden>

@@ -122,3 +122,55 @@ body {
     margin: 8mm;
   }
 }
+
+/**
+ * 読み込みが進まないときのヒント (#189)。
+ *
+ * ⚠️ **CSS だけで遅延表示すること**。この機能が救いたいのは「JS チャンクの取得に
+ * 失敗して hydration が完了しない」状況で、そのとき React の setTimeout は
+ * **一度も走らない**。noscript も「JS 無効」にしか効かず、一番起きる
+ * 「JS は有効だが届かない」を救えない。CSS アニメーションは JS が来なくても動く。
+ *
+ * ⚠️ この 3 ルールは Tailwind の @layer の**外**に出るので常に勝つ。将来この要素に
+ * `opacity-*` や `animate-*` のユーティリティを足しても黙って無視される。
+ *
+ * ⚠️ CSS 自体が届かなかった場合は、このルールが存在しないのでヒントは**即座に**
+ * 出る (素の HTML になるが文言と導線は見える)。スタイルシートは render-blocking
+ * なので「スケルトンが見えている = CSS は適用済み」でもあり、どちらの分岐でも安全。
+ *
+ * visibility も切り替えるのは、表示前にスクリーンリーダーへ読まれないようにするため。
+ */
+@keyframes stalled-hint {
+  from {
+    opacity: 0;
+    visibility: hidden;
+    position: absolute;
+  }
+  to {
+    opacity: 1;
+    visibility: visible;
+    position: static;
+  }
+}
+
+.stalled-hint {
+  animation: stalled-hint 0.3s ease-in 10s forwards;
+  opacity: 0;
+  visibility: hidden;
+  /*
+   * ⚠️ **`position: absolute` も要る**。`visibility: hidden` は
+   * レイアウトボックスを残すので、これが無いとスケルトンの先頭に常時
+   * 空白が確保され、データ到着時に全体が跳ねる。loading.tsx が明示している
+   * 「実データ描画時のガタつきを抑える」目的を、この要素自体が壊してしまう
+   * (レビューで 94px の押し下げを実測)。`position` は離散アニメーションなので
+   * 表示に切り替わる瞬間に static へ戻る。
+   */
+  position: absolute;
+}
+
+/* 動きを減らす設定でも「出る」ことは必要。フェードだけ省く */
+@media (prefers-reduced-motion: reduce) {
+  .stalled-hint {
+    animation-duration: 0s;
+  }
+}

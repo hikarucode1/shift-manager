@@ -1,3 +1,5 @@
+import { StalledLoadingHint } from "@/components/stalled-loading-hint";
+
 /**
  * 管理画面セグメントの読み込み fallback (#186)。
  *
@@ -43,6 +45,10 @@ export default function AdminLoading() {
   return (
     <div className="space-y-5" role="status">
       <span className="sr-only">読み込み中</span>
+
+      {/* #189: hydration しないクライアントはここまでしか到達しない。
+          CSS で 10 秒後に出す (JS は一度も走らない前提) */}
+      <StalledLoadingHint contactLabel="開発者" />
 
       <div className="h-7 w-40 motion-safe:animate-pulse rounded bg-muted" />
 
