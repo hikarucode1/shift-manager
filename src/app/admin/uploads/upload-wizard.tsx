@@ -111,6 +111,8 @@ export function UploadWizard({ tutors }: { tutors: Tutor[] }) {
   const [result, setResult] = useState<
     | {
         insertedShiftRows: number;
+        reappliedSwaps: number;
+        unreappliedSwaps: { date: string; slotNumber: number }[];
         insertedAssignmentRows: number;
         upsertedStudents: number;
       }
@@ -199,6 +201,8 @@ export function UploadWizard({ tutors }: { tutors: Tutor[] }) {
       }
       setResult({
         insertedShiftRows: res.insertedShiftRows,
+        reappliedSwaps: res.reappliedSwaps,
+        unreappliedSwaps: res.unreappliedSwaps,
         insertedAssignmentRows: res.insertedAssignmentRows,
         upsertedStudents: res.upsertedStudents,
       });
@@ -237,6 +241,37 @@ export function UploadWizard({ tutors }: { tutors: Tutor[] }) {
               suffix="名"
             />
           </div>
+
+          {/* #210: 取り込みは対象日の weekly_shifts を作り直すので、承認済みの
+              代講は放っておくと黙って巻き戻る。復元した件数と、復元できなかった
+              分を必ず出す (黙って消すと #210 と同じ形になる)。 */}
+          {result.reappliedSwaps > 0 && (
+            <p className="text-sm text-muted-foreground">
+              承認済みの代講 {result.reappliedSwaps} 件を再適用しました。
+            </p>
+          )}
+          {result.unreappliedSwaps.length > 0 && (
+            <div
+              role="alert"
+              className="space-y-1 rounded-md border border-destructive/40 bg-destructive/10 px-3 py-2 text-sm text-destructive"
+            >
+              <p className="font-medium">
+                承認済みの代講 {result.unreappliedSwaps.length}{" "}
+                件を再適用できませんでした。
+              </p>
+              <p className="text-xs">
+                新しい CSV で元の講師がそのコマに居ないため、付け替え先が
+                ありません。座席表と申請履歴が食い違うので確認してください。
+              </p>
+              <ul className="text-xs">
+                {result.unreappliedSwaps.map((u) => (
+                  <li key={`${u.date}|${u.slotNumber}`}>
+                    {u.date} {u.slotNumber}限
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
           <div className="flex gap-2">
             <Button onClick={reset}>もう1週分アップロード</Button>
           </div>

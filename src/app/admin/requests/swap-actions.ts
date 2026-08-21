@@ -6,6 +6,7 @@ import { and, eq, inArray, isNull, ne } from "drizzle-orm";
 import { requireRole } from "@/lib/auth";
 import { notify } from "@/lib/notifications";
 import { isTutorBusyAt } from "@/lib/swaps";
+import { substitutionNote } from "@/lib/substitution-note";
 import { jstToday } from "@/lib/week";
 import { db } from "@/db/client";
 import {
@@ -173,7 +174,10 @@ export async function decideSwapRequest(
         .where(inArray(profiles.id, [req.requesterId, applicantId]));
       const nameOf = (id: string) =>
         names.find((n) => n.id === id)?.name ?? "不明";
-      const subNote = `代講(承認済): ${nameOf(req.requesterId)} → ${nameOf(applicantId)}`;
+      const subNote = substitutionNote(
+        nameOf(req.requesterId),
+        nameOf(applicantId),
+      );
 
       // requester の確定シフトを代講者へ付け替え
       const reassigned = await tx
