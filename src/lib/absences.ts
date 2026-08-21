@@ -3,6 +3,7 @@ import { and, asc, between, desc, eq, gte, inArray } from "drizzle-orm";
 import { db } from "@/db/client";
 import { absenceRequests, profiles, weeklyShifts } from "@/db/schema";
 import { getSlotMeta } from "@/lib/slot-meta";
+import { isSlotPast } from "@/lib/slot-time";
 import { jstToday, weekdayOf } from "@/lib/week";
 
 export type AbsenceStatus = "pending" | "approved" | "rejected" | "cancelled";
@@ -32,6 +33,12 @@ export type AbsenceRequestRow = {
 export type PendingAbsence = AbsenceRequestRow & {
   tutorId: string;
   tutorName: string;
+  /**
+   * コマが既に終了しているか (#211)。**承認は塞がない** — 後から欠勤を登録する
+   * のは正当な実務で、塞ぐと実態に合わせる手段が無くなる (#178/#213 と同じ形)。
+   * 「過去のコマの欠勤を承認しようとしている」と気づけるようにするための印。
+   */
+  isEnded: boolean;
 };
 
 function slotLabelOf(
@@ -166,6 +173,7 @@ export async function getPendingAbsenceRequests(): Promise<PendingAbsence[]> {
     decisionNote: r.decisionNote,
     decidedAt: r.decidedAt ? r.decidedAt.toISOString() : null,
     createdAt: r.createdAt.toISOString(),
+    isEnded: isSlotPast(r.date, slotLabelOf(meta, r.slotNumber).end),
   }));
 }
 

@@ -165,7 +165,35 @@ const DecideInput = z.object({
   decisionNote: z.string().trim().max(500).optional().default(""),
 });
 
-/** 教室長: 欠勤申請を承認 / 却下 */
+/**
+ * 教室長: 欠勤申請を承認 / 却下。
+ *
+ * ⚠️ **日付・コマのガードを意図的に置いていない** (#211)。交代・代講の承認
+ * (`decideSwapRequest`) には `date < jstToday()` があるので「片方だけ直し忘れ」に
+ * 見えるが、非対称は意図したもの:
+ *
+ * - **交代の承認は `weekly_shifts` を書き換える** = 誰が実際にそのコマに入ったかの
+ *   実績台帳を触る。日を跨いだ書き換えを塞ぐ理由がある (#165/#178)
+ * - **欠勤の承認は `absence_requests.status` しか触らない**。表示側はこの status を
+ *   読むだけで、台帳そのものは変わらない:
+ *   - 週次シフト表の取り消し線 = `getApprovedAbsenceKeysAll` (全講師分)
+ *   - 講師ホームの「欠勤」バッジ = `getApprovedAbsenceKeys` (講師単位)
+ *
+ * そして「**後から欠勤を登録する**」(当日中に講師が出し忘れに気づいた / 教室長が
+ * 後でまとめて処理する) は正当な実務。ここを塞ぐと #178・#213 と同じ
+ * 「実態に合わせる手段が無い」詰みを作る。**ガードを足さないこと。**
+ *
+ * ⚠️ **作成側 (`createAbsenceRequest`) も日付粒度のままにしてあること**が、
+ * この「後から登録する」を成立させている。交代側は #178 でピッカーから
+ * 終了済みコマを落とし (`getTutorSwappableShifts`)、サーバー側も `hasSlotEnded` で
+ * 塞いだが、**欠勤側はどちらもやっていない** (`getTutorUpcomingShifts` は
+ * `gte(date, today)` のみ)。#178 を読んで「揃っていない」と見えても、
+ * ここに `hasSlotEnded` を足さないこと。足すと当日の欠勤すら出せなくなる。
+ *
+ * ⚠️ 既知の穴 (#217): それでも**翌日以降は誰も登録できない**
+ * (`createAbsenceRequest` が `date < jstToday()` で弾き、admin が代理で作る導線も
+ * 無い)。承認側を緩く保っているのはその穴を広げないためでもある。
+ */
 export async function decideAbsenceRequest(
   input: unknown,
 ): Promise<ActionResult> {
