@@ -1,14 +1,18 @@
 import { requireRole } from "@/lib/auth";
 import { getPendingAbsenceRequests } from "@/lib/absences";
-import { getPendingSwapRequests } from "@/lib/swaps";
+import {
+  getApprovedSwapRequests,
+  getPendingSwapRequests,
+} from "@/lib/swaps";
 import { RequestsTabs } from "./requests-tabs";
 
 export default async function AdminRequestsPage() {
   await requireRole("admin");
 
-  const [pendingAbsences, pendingSwaps] = await Promise.all([
+  const [pendingAbsences, pendingSwaps, approvedSwaps] = await Promise.all([
     getPendingAbsenceRequests(),
     getPendingSwapRequests(),
+    getApprovedSwapRequests(),
   ]);
 
   return (
@@ -22,6 +26,7 @@ export default async function AdminRequestsPage() {
       <RequestsTabs
         pendingAbsences={pendingAbsences}
         pendingSwaps={pendingSwaps}
+        approvedSwaps={approvedSwaps}
       />
     </div>
   );

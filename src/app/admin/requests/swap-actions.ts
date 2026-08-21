@@ -274,3 +274,126 @@ export async function decideSwapRequest(
   revalidateAll();
   return { ok: true };
 }
+
+const CancelApprovedInput = z.object({
+  // zod 既定の英語メッセージ ("Invalid UUID") がそのまま画面に出るのを防ぐ。
+  // 失敗文言は parsed.error.issues[0].message を返す作りなので、ここで日本語にする
+  id: z.string().uuid("対象が正しく指定されていません。"),
+  reason: z.string().trim().min(1, "取り消し理由を入力してください。").max(500),
+});
+
+/**
+ * 承認済みの交代・代講を取り消す (#213)。
+ *
+ * ⚠️ **これが無いと `approved` は終端状態**で、承認後に代講が流れた
+ * (B が結局来なかった / 選び間違えた / 編成が変わった) ときに記録を実態へ
+ * 戻す手段がアプリに存在しなかった。唯一の是正手段が「CSV を上げ直すと
+ * weekly_shifts が作り直されて巻き戻る」という副作用の大きいバグ (#210) 頼み
+ * という状態だった。
+ *
+ * ⚠️ 日付・コマのガードは付けない。#178 の結論どおり、これも「改竄」ではなく
+ * **実態を記録する操作**で、むしろ過去のコマこそ是正したい場面がある。
+ *
+ * ⚠️ 承認時に自動失効させた同一コマの欠勤申請は**戻さない**。失効前が pending
+ * だったか approved だったかは記録されておらず、推測で復元すると別の嘘になる。
+ * 代わりに戻り値で呼び出し側に伝え、画面で再申請を促す。
+ */
+export async function cancelApprovedSwap(
+  input: unknown,
+): Promise<
+  { ok: true; expiredAbsences: number } | { ok: false; error: string }
+> {
+  const { profile } = await requireRole("admin");
+  const parsed = CancelApprovedInput.safeParse(input);
+  if (!parsed.success) {
+    return {
+      ok: false,
+      error: parsed.error.issues[0]?.message ?? "入力が不正です。",
+    };
+  }
+  const { id, reason } = parsed.data;
+
+  try {
+    const expiredAbsences = await db.transaction(async (tx) => {
+      const reqRows = await tx
+        .select({
+          requesterId: swapRequests.requesterId,
+          approvedApplicantId: swapRequests.approvedApplicantId,
+          date: swapRequests.date,
+          slotNumber: swapRequests.slotNumber,
+        })
+        .from(swapRequests)
+        .where(and(eq(swapRequests.id, id), eq(swapRequests.status, "approved")))
+        .limit(1);
+
+      const req = reqRows[0];
+      if (!req) throw new SwapBizError("承認済みの交代が見つかりません。");
+      if (!req.approvedApplicantId) {
+        throw new SwapBizError("代講者の記録が無いため取り消せません。");
+      }
+
+      // 元講師へ戻す。⚠️ **現在の担当が承認された代講者である場合に限る**。
+      // CSV 取り込みや別の代講で既に変わっていたら、上書きせず止める
+      // (黙って踏み潰すと、この機能が直そうとしている #210 の再演になる)。
+      const restored = await tx
+        .update(weeklyShifts)
+        .set({ tutorId: req.requesterId, isOverride: false, note: null })
+        .where(
+          and(
+            eq(weeklyShifts.tutorId, req.approvedApplicantId),
+            eq(weeklyShifts.date, req.date),
+            eq(weeklyShifts.slotNumber, req.slotNumber),
+          ),
+        )
+        .returning({ id: weeklyShifts.id });
+
+      if (restored.length === 0) {
+        throw new SwapBizError(
+          "このコマの担当が既に変わっているため取り消せません。週次シフトを確認してください。",
+        );
+      }
+
+      // status='approved' を条件に「奪う」更新。同時操作は rowcount 0 で弾く
+      const claimed = await tx
+        .update(swapRequests)
+        .set({
+          status: "cancelled",
+          decisionNote: reason,
+          decidedBy: profile.id,
+          updatedAt: new Date(),
+        })
+        .where(and(eq(swapRequests.id, id), eq(swapRequests.status, "approved")))
+        .returning({ id: swapRequests.id });
+      if (claimed.length === 0) {
+        throw new SwapBizError("既に他の操作で確定済みです。");
+      }
+
+      // 承認時に自動失効させた欠勤申請の件数を数えるだけ (戻さない)
+      const expired = await tx
+        .select({ id: absenceRequests.id })
+        .from(absenceRequests)
+        .where(
+          and(
+            eq(absenceRequests.tutorId, req.requesterId),
+            eq(absenceRequests.date, req.date),
+            eq(absenceRequests.slotNumber, req.slotNumber),
+            eq(absenceRequests.status, "cancelled"),
+            eq(absenceRequests.decisionNote, "交代成立により自動失効"),
+          ),
+        );
+
+      return expired.length;
+    });
+
+    revalidateAll();
+    revalidatePath("/admin/weekly");
+    return { ok: true, expiredAbsences };
+  } catch (e) {
+    if (e instanceof SwapBizError) return { ok: false, error: e.message };
+    console.error("cancelApprovedSwap failed", e);
+    return {
+      ok: false,
+      error: "取り消しに失敗しました。時間をおいて再度お試しください。",
+    };
+  }
+}

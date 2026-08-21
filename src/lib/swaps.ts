@@ -501,3 +501,66 @@ export async function getPendingSwapRequests(): Promise<AdminSwapRequest[]> {
     createdAt: r.createdAt.toISOString(),
   }));
 }
+
+/**
+ * 承認済みの交代・代講 (#213)。取り消しの対象を教室長が見るための一覧。
+ *
+ * ⚠️ これが無いと**承認済みを取り消す画面が存在しない**。`approved` は終端状態で、
+ * 唯一の是正手段が「CSV を上げ直して巻き戻す」という副作用の大きいバグ頼み
+ * だった (#210)。
+ *
+ * 直近のものから見せる。過去のコマこそ「実際は代講が流れた」の是正対象なので
+ * 日付では絞らない。
+ */
+export async function getApprovedSwapRequests(
+  limit = 50,
+): Promise<AdminSwapRequest[]> {
+  const today = jstToday();
+  const meta = await getSlotMeta();
+  const requester = alias(profiles, "requester");
+  const nominee = alias(profiles, "nominee");
+  const approved = alias(profiles, "approvedApplicant");
+
+  const rows = await db
+    .select({
+      id: swapRequests.id,
+      kind: swapRequests.kind,
+      requesterId: swapRequests.requesterId,
+      requesterName: requester.displayName,
+      nominatedName: nominee.displayName,
+      approvedApplicantName: approved.displayName,
+      date: swapRequests.date,
+      slotNumber: swapRequests.slotNumber,
+      reason: swapRequests.reason,
+      status: swapRequests.status,
+      decisionNote: swapRequests.decisionNote,
+      createdAt: swapRequests.createdAt,
+    })
+    .from(swapRequests)
+    .innerJoin(requester, eq(requester.id, swapRequests.requesterId))
+    .leftJoin(nominee, eq(nominee.id, swapRequests.nominatedTutorId))
+    .leftJoin(approved, eq(approved.id, swapRequests.approvedApplicantId))
+    .where(eq(swapRequests.status, "approved"))
+    .orderBy(desc(swapRequests.date), asc(swapRequests.slotNumber))
+    .limit(limit);
+
+  return rows.map((r) => ({
+    id: r.id,
+    kind: r.kind as SwapKind,
+    requesterId: r.requesterId,
+    requesterName: r.requesterName,
+    date: r.date,
+    slotNumber: r.slotNumber,
+    slotLabel: labelOf(meta, r.slotNumber).label,
+    weekdayLabel: weekdayOf(r.date).label,
+    reason: r.reason,
+    status: r.status as SwapStatus,
+    nominatedName: r.nominatedName,
+    isEnded: isSlotPast(r.date, labelOf(meta, r.slotNumber).end),
+    isPastDate: r.date < today,
+    approvedApplicantName: r.approvedApplicantName,
+    decisionNote: r.decisionNote,
+    applicants: [],
+    createdAt: r.createdAt.toISOString(),
+  }));
+}
