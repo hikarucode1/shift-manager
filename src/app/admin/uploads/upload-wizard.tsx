@@ -112,7 +112,12 @@ export function UploadWizard({ tutors }: { tutors: Tutor[] }) {
     | {
         insertedShiftRows: number;
         reappliedSwaps: number;
-        unreappliedSwaps: { date: string; slotNumber: number }[];
+        unreappliedSwaps: {
+          date: string;
+          slotNumber: number;
+          reason: "requester-absent" | "applicant-conflict";
+        }[];
+        missingApplicantSwaps: number;
         insertedAssignmentRows: number;
         upsertedStudents: number;
       }
@@ -203,6 +208,7 @@ export function UploadWizard({ tutors }: { tutors: Tutor[] }) {
         insertedShiftRows: res.insertedShiftRows,
         reappliedSwaps: res.reappliedSwaps,
         unreappliedSwaps: res.unreappliedSwaps,
+        missingApplicantSwaps: res.missingApplicantSwaps,
         insertedAssignmentRows: res.insertedAssignmentRows,
         upsertedStudents: res.upsertedStudents,
       });
@@ -250,27 +256,54 @@ export function UploadWizard({ tutors }: { tutors: Tutor[] }) {
               承認済みの代講 {result.reappliedSwaps} 件を再適用しました。
             </p>
           )}
+          {/* ⚠️ 理由ごとに分ける。「CSV が既に代講を反映している」は正常なのに
+              一括で赤にすると偽陽性になり、警告が無視される訓練になる。 */}
           {result.unreappliedSwaps.length > 0 && (
             <div
               role="alert"
-              className="space-y-1 rounded-md border border-destructive/40 bg-destructive/10 px-3 py-2 text-sm text-destructive"
+              className="space-y-2 rounded-md border border-destructive/40 bg-destructive/10 px-3 py-2 text-sm text-destructive"
             >
               <p className="font-medium">
                 承認済みの代講 {result.unreappliedSwaps.length}{" "}
                 件を再適用できませんでした。
               </p>
-              <p className="text-xs">
-                新しい CSV で元の講師がそのコマに居ないため、付け替え先が
-                ありません。座席表と申請履歴が食い違うので確認してください。
-              </p>
-              <ul className="text-xs">
-                {result.unreappliedSwaps.map((u) => (
-                  <li key={`${u.date}|${u.slotNumber}`}>
-                    {u.date} {u.slotNumber}限
-                  </li>
-                ))}
-              </ul>
+              {(
+                [
+                  {
+                    reason: "requester-absent" as const,
+                    text: "新しい CSV で元の講師がそのコマに居ないため、付け替え先がありません。座席表と申請履歴が食い違うので確認してください。",
+                  },
+                  {
+                    reason: "applicant-conflict" as const,
+                    text: "代講者が既にそのコマに入っています（CSV が代講後の状態を含んでいる可能性があります）。座席表を確認してください。",
+                  },
+                ] as const
+              ).map(({ reason, text }) => {
+                const rows = result.unreappliedSwaps.filter(
+                  (u) => u.reason === reason,
+                );
+                if (rows.length === 0) return null;
+                return (
+                  <div key={reason} className="space-y-0.5">
+                    <p className="text-xs">{text}</p>
+                    <ul className="list-disc pl-4 text-xs">
+                      {rows.map((u, i) => (
+                        <li key={`${u.date}|${u.slotNumber}|${i}`}>
+                          {u.date} {u.slotNumber}限
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                );
+              })}
             </div>
+          )}
+
+          {result.missingApplicantSwaps > 0 && (
+            <p role="alert" className="text-sm text-destructive">
+              承認済みなのに代講者の記録が無い申請が{" "}
+              {result.missingApplicantSwaps} 件あります（復元できません）。
+            </p>
           )}
           <div className="flex gap-2">
             <Button onClick={reset}>もう1週分アップロード</Button>
