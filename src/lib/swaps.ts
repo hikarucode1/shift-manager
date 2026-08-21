@@ -501,3 +501,90 @@ export async function getPendingSwapRequests(): Promise<AdminSwapRequest[]> {
     createdAt: r.createdAt.toISOString(),
   }));
 }
+
+/**
+ * 承認済みの交代・代講 (#213)。取り消しの対象を教室長が見るための一覧。
+ *
+ * ⚠️ これが無いと**承認済みを取り消す画面が存在しない**。`approved` は終端状態で、
+ * 唯一の是正手段が「CSV を上げ直して巻き戻す」という副作用の大きいバグ頼み
+ * だった (#210)。
+ *
+ * 直近のものから見せる。過去のコマこそ「実際は代講が流れた」の是正対象なので
+ * 日付では絞らない。
+ */
+export type SwapHistory = {
+  rows: AdminSwapRequest[];
+  /** limit で切り捨てた件数 (0 なら全部出ている) */
+  truncated: number;
+};
+
+/**
+ * 承認済み / 取り消し済みの交代・代講 (#213)。
+ *
+ * ⚠️ **`cancelled` も返す**。取り消し理由を必須にしておきながら admin から
+ * 読む画面が無いと、書かせた本人が二度と読めない (write-only) 状態になる。
+ * 給与でモメたときに「一度代講が入って取り消された」を確認する唯一の手段。
+ *
+ * ⚠️ 日付では絞らない。過去のコマこそ「実際は代講が流れた」の是正対象。
+ * 代わりに件数で切り、**切り捨てた件数を返す** (黙って落とすと、取り消したい
+ * 古い代講が一覧から消えたことに気づけない)。
+ */
+export async function getSwapHistory(
+  status: "approved" | "cancelled",
+  limit = 50,
+): Promise<SwapHistory> {
+  const today = jstToday();
+  const meta = await getSlotMeta();
+  const requester = alias(profiles, "requester");
+  const nominee = alias(profiles, "nominee");
+  const approved = alias(profiles, "approvedApplicant");
+
+  const rows = await db
+    .select({
+      id: swapRequests.id,
+      kind: swapRequests.kind,
+      requesterId: swapRequests.requesterId,
+      requesterName: requester.displayName,
+      nominatedName: nominee.displayName,
+      approvedApplicantName: approved.displayName,
+      date: swapRequests.date,
+      slotNumber: swapRequests.slotNumber,
+      reason: swapRequests.reason,
+      status: swapRequests.status,
+      decisionNote: swapRequests.decisionNote,
+      createdAt: swapRequests.createdAt,
+    })
+    .from(swapRequests)
+    .innerJoin(requester, eq(requester.id, swapRequests.requesterId))
+    .leftJoin(nominee, eq(nominee.id, swapRequests.nominatedTutorId))
+    .leftJoin(approved, eq(approved.id, swapRequests.approvedApplicantId))
+    .where(eq(swapRequests.status, status))
+    .orderBy(desc(swapRequests.date), asc(swapRequests.slotNumber))
+    .limit(limit + 1);
+
+  const truncated = rows.length > limit ? 1 : 0;
+  const visible = rows.slice(0, limit);
+
+  return {
+    truncated,
+    rows: visible.map((r) => ({
+      id: r.id,
+      kind: r.kind as SwapKind,
+      requesterId: r.requesterId,
+      requesterName: r.requesterName,
+      date: r.date,
+      slotNumber: r.slotNumber,
+      slotLabel: labelOf(meta, r.slotNumber).label,
+      weekdayLabel: weekdayOf(r.date).label,
+      reason: r.reason,
+      status: r.status as SwapStatus,
+      nominatedName: r.nominatedName,
+      isEnded: isSlotPast(r.date, labelOf(meta, r.slotNumber).end),
+      isPastDate: r.date < today,
+      approvedApplicantName: r.approvedApplicantName,
+      decisionNote: r.decisionNote,
+      applicants: [],
+      createdAt: r.createdAt.toISOString(),
+    })),
+  };
+}

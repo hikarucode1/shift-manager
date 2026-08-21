@@ -1,15 +1,18 @@
 import { requireRole } from "@/lib/auth";
 import { getPendingAbsenceRequests } from "@/lib/absences";
-import { getPendingSwapRequests } from "@/lib/swaps";
+import { getPendingSwapRequests, getSwapHistory } from "@/lib/swaps";
 import { RequestsTabs } from "./requests-tabs";
 
 export default async function AdminRequestsPage() {
   await requireRole("admin");
 
-  const [pendingAbsences, pendingSwaps] = await Promise.all([
-    getPendingAbsenceRequests(),
-    getPendingSwapRequests(),
-  ]);
+  const [pendingAbsences, pendingSwaps, approvedSwaps, cancelledSwaps] =
+    await Promise.all([
+      getPendingAbsenceRequests(),
+      getPendingSwapRequests(),
+      getSwapHistory("approved"),
+      getSwapHistory("cancelled"),
+    ]);
 
   return (
     <div className="space-y-6">
@@ -22,6 +25,8 @@ export default async function AdminRequestsPage() {
       <RequestsTabs
         pendingAbsences={pendingAbsences}
         pendingSwaps={pendingSwaps}
+        approvedSwaps={approvedSwaps}
+        cancelledSwaps={cancelledSwaps}
       />
     </div>
   );

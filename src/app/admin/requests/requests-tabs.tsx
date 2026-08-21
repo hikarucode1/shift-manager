@@ -2,13 +2,14 @@
 
 import { useState } from "react";
 import type { PendingAbsence } from "@/lib/absences";
-import type { AdminSwapRequest } from "@/lib/swaps";
+import type { AdminSwapRequest, SwapHistory } from "@/lib/swaps";
 import { Badge } from "@/components/ui/badge";
 import { cn } from "@/lib/utils";
 import { RequestsPanel } from "./requests-panel";
 import { SwapRequestsPanel } from "./swap-requests-panel";
+import { ApprovedSwapsPanel } from "./approved-swaps-panel";
 
-type Tab = "absence" | "swap";
+type Tab = "absence" | "swap" | "approved" | "cancelled";
 
 /**
  * 申請承認のタブ切替 (#129 デザイン screen 8)。
@@ -18,9 +19,15 @@ type Tab = "absence" | "swap";
 export function RequestsTabs({
   pendingAbsences,
   pendingSwaps,
+  approvedSwaps,
+  cancelledSwaps,
 }: {
   pendingAbsences: PendingAbsence[];
   pendingSwaps: AdminSwapRequest[];
+  /** #213: 取り消しの対象。承認済みは終端ではなくなった */
+  approvedSwaps: SwapHistory;
+  /** #213: 取り消し理由を書かせた以上、書いた本人が読める場所が要る */
+  cancelledSwaps: SwapHistory;
 }) {
   const [tab, setTab] = useState<Tab>("absence");
 
@@ -45,6 +52,20 @@ export function RequestsTabs({
           label="交代・代講"
           count={pendingSwaps.length}
         />
+        <TabButton
+          tab="approved"
+          active={tab === "approved"}
+          onClick={() => setTab("approved")}
+          label="承認済み"
+          count={approvedSwaps.rows.length}
+        />
+        <TabButton
+          tab="cancelled"
+          active={tab === "cancelled"}
+          onClick={() => setTab("cancelled")}
+          label="取り消し済み"
+          count={cancelledSwaps.rows.length}
+        />
       </div>
 
       <div
@@ -54,8 +75,12 @@ export function RequestsTabs({
       >
         {tab === "absence" ? (
           <RequestsPanel pending={pendingAbsences} />
-        ) : (
+        ) : tab === "swap" ? (
           <SwapRequestsPanel pending={pendingSwaps} />
+        ) : tab === "approved" ? (
+          <ApprovedSwapsPanel history={approvedSwaps} />
+        ) : (
+          <ApprovedSwapsPanel history={cancelledSwaps} readOnly />
         )}
       </div>
     </div>
