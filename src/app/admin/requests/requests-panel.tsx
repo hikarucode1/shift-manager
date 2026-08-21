@@ -92,6 +92,13 @@ export function RequestsPanel({ pending }: { pending: PendingAbsence[] }) {
                   <div className="flex flex-wrap items-center gap-2">
                     <span className="font-medium">{p.tutorName}</span>
                     <Badge variant="accent">未対応</Badge>
+                    {/* #211: 承認は塞がない (後から欠勤を登録するのは正当な実務)。
+                        ただし過去のコマを承認しようとしていることは分かるように */}
+                    {p.isEnded && (
+                      <Badge variant="outline" className="text-[10px]">
+                        実施済み
+                      </Badge>
+                    )}
                   </div>
                   <p className="text-sm text-muted-foreground">
                     {shortDate(p.date)}（{p.weekdayLabel}） {p.slotLabel}
