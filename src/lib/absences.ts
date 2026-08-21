@@ -136,7 +136,6 @@ export async function getTutorAbsenceRequests(
     decisionNote: r.decisionNote,
     decidedAt: r.decidedAt ? r.decidedAt.toISOString() : null,
     createdAt: r.createdAt.toISOString(),
-    isEnded: isSlotPast(r.date, slotLabelOf(meta, r.slotNumber).end),
   }));
 }
 

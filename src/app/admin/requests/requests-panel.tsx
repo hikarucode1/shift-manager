@@ -106,6 +106,13 @@ export function RequestsPanel({ pending }: { pending: PendingAbsence[] }) {
                   <p className="text-sm text-muted-foreground">
                     理由: {p.reason}
                   </p>
+                  {/* #211: 「実施済み = 押してはいけない」と誤読されないように。
+                      後から欠勤を登録するのは正当な実務なので承認してよい */}
+                  {p.isEnded && (
+                    <p className="text-xs text-muted-foreground">
+                      終了したコマです。実際に欠勤していた場合は承認して構いません。
+                    </p>
+                  )}
                 </div>
               </div>
 
