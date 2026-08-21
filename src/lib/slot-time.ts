@@ -31,5 +31,9 @@ export function jstTimeOfDay(now: Date = new Date()): string {
     hour: "2-digit",
     minute: "2-digit",
     hour12: false,
+    // ⚠️ h23 を明示する。古い ICU では h24 に落ちて深夜 0 時台に "24:00" を返し、
+    // そのとき「今日のコマが全部終了済み」になる (この環境では h23 だが
+    // ランタイム依存なので固定する)。
+    hourCycle: "h23",
   }).format(now);
 }

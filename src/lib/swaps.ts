@@ -71,16 +71,20 @@ export type OpenSwap = {
   /** 自分が応募済みか (取り下げていない) */
   applied: boolean;
   /**
-   * コマが既に終了しているか (#178)。過去日 pending は取下げ導線のため一覧に
-   * 残しているので、**応募/承認だけを落とす**ための印。
+   * コマが既に終了しているか (#178)。**操作は塞がない** — 同日中の応募・承認は
+   * 「実際に誰が入ったか」を記録する正当な操作なので残す。注意表示のための印。
    */
-  isPast: boolean;
+  isEnded: boolean;
+  /** 過去日で、応募がサーバー側で弾かれるか (#165)。ボタンを落とす印 */
+  isPastDate: boolean;
 };
 
 export type AdminSwapRequest = MySwapRequest & {
   requesterId: string;
-  /** コマが既に終了しているか (#178)。承認だけを落とす。却下は残す */
-  isPast: boolean;
+  /** コマが既に終了しているか (#178)。注意表示のみ。承認は同日中なら通る */
+  isEnded: boolean;
+  /** 過去日で、承認がサーバー側で弾かれるか (#165)。承認ボタンを落とす印 */
+  isPastDate: boolean;
   requesterName: string;
 };
 
@@ -384,6 +388,7 @@ export async function getTutorSwapRequests(
 export async function getOpenSwapsForTutor(
   tutorId: string,
 ): Promise<OpenSwap[]> {
+  const today = jstToday();
   const meta = await getSlotMeta();
   // #165: 過去日 pending の実害 (実施済みコマの再割当) は承認側 (decideSwapRequest)
   // で塞ぐ。一覧から過去日を除外すると、応募済みの過去 pending が withdraw 導線ごと
@@ -442,12 +447,14 @@ export async function getOpenSwapsForTutor(
     weekdayLabel: weekdayOf(r.date).label,
     reason: r.reason,
     applied: appliedSet.has(r.id),
-    isPast: isSlotPast(r.date, labelOf(meta, r.slotNumber).end),
+    isEnded: isSlotPast(r.date, labelOf(meta, r.slotNumber).end),
+    isPastDate: r.date < today,
   }));
 }
 
 /** 教室長: 未対応の交代申請 + 応募者 */
 export async function getPendingSwapRequests(): Promise<AdminSwapRequest[]> {
+  const today = jstToday();
   const meta = await getSlotMeta();
   const requester = alias(profiles, "requester");
   const nominee = alias(profiles, "nominee");
@@ -486,7 +493,8 @@ export async function getPendingSwapRequests(): Promise<AdminSwapRequest[]> {
     reason: r.reason,
     status: r.status as SwapStatus,
     nominatedName: r.nominatedName,
-    isPast: isSlotPast(r.date, labelOf(meta, r.slotNumber).end),
+    isEnded: isSlotPast(r.date, labelOf(meta, r.slotNumber).end),
+    isPastDate: r.date < today,
     approvedApplicantName: null,
     decisionNote: r.decisionNote,
     applicants: applicants.get(r.id) ?? [],
