@@ -54,6 +54,8 @@ export type CommitUploadResult = {
    * 居ない = 基礎シフト自体が変わった場合。**握り潰さず呼び出し側に返す**。
    */
   unreappliedSwaps: {
+    /** 同じ日・同じコマで 2 件失敗したときに区別できるように残す */
+    swapId: string;
     date: string;
     slotNumber: number;
     reason: SkipReason;
@@ -294,6 +296,7 @@ export async function commitShiftUpload(
               date: swapRequests.date,
               slotNumber: swapRequests.slotNumber,
               decidedAt: swapRequests.decidedAt,
+              createdAt: swapRequests.createdAt,
             })
             .from(swapRequests)
             .where(
@@ -315,6 +318,7 @@ export async function commitShiftUpload(
               date: a.date,
               slotNumber: a.slotNumber,
               decidedAt: a.decidedAt,
+              createdAt: a.createdAt,
             }]
           : [],
       ),
@@ -324,7 +328,7 @@ export async function commitShiftUpload(
     const missingApplicant = approved.filter((a) => !a.applicantId).length;
 
     const nameIds = [
-      ...new Set(plan.applies.flatMap((a) => [a.fromTutorId, a.toTutorId])),
+      ...new Set(plan.applies.flatMap((a) => [a.noteFromId, a.noteToId])),
     ];
     const names =
       nameIds.length > 0
@@ -340,14 +344,14 @@ export async function commitShiftUpload(
       await tx
         .update(weeklyShifts)
         .set({
-          tutorId: a.toTutorId,
+          tutorId: a.setTutorId,
           isOverride: true,
-          note: substitutionNote(nameOf(a.fromTutorId), nameOf(a.toTutorId)),
+          note: substitutionNote(nameOf(a.noteFromId), nameOf(a.noteToId)),
         })
         .where(
           and(
             eq(weeklyShifts.uploadId, uploadId),
-            eq(weeklyShifts.tutorId, a.fromTutorId),
+            eq(weeklyShifts.tutorId, a.matchTutorId),
             eq(weeklyShifts.date, a.date),
             eq(weeklyShifts.slotNumber, a.slotNumber),
           ),
@@ -362,6 +366,7 @@ export async function commitShiftUpload(
       replacedDateCount: parsed.days.filter((d) => !d.isHoliday).length,
       reappliedSwaps: plan.applies.length,
       unreappliedSwaps: plan.skipped.map((sk) => ({
+        swapId: sk.swapId,
         date: sk.date,
         slotNumber: sk.slotNumber,
         reason: sk.reason,

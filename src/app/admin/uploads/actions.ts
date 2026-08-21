@@ -103,6 +103,7 @@ export type CommitUploadResponse =
       reappliedSwaps: number;
       /** #210: 復元できなかった承認済み代講と、その理由 */
       unreappliedSwaps: {
+        swapId: string;
         date: string;
         slotNumber: number;
         reason: SkipReason;

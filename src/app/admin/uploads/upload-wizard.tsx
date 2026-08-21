@@ -10,6 +10,7 @@ import {
   UploadCloud,
 } from "lucide-react";
 import { isIndeterminate, toFailedResult } from "@/lib/action-failure";
+import type { SkipReason } from "@/lib/swap-reapplication";
 import type { ParsedShiftCsv } from "@/lib/shift-csv-parser";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -99,6 +100,22 @@ type ParsedBundle = {
   fileBytes: number;
 };
 
+/**
+ * 再適用できなかった理由ごとの説明。
+ *
+ * ⚠️ **`Record<SkipReason, string>` にすること**。ハードコードの配列にしていた
+ * ときは、reason を増やしても**その分が黙って表示から落ちて件数だけ合わなく
+ * なる**状態だった (レビュー指摘)。網羅漏れをコンパイルエラーにする。
+ */
+const SKIP_TEXT: Record<SkipReason, string> = {
+  "requester-absent":
+    "新しい CSV にそのコマ自体がありません（編成の組み直し・休講など）。座席表と申請履歴が食い違うので確認してください。",
+  "already-reflected":
+    "CSV が既に代講後の状態を含んでいたため、付け替えは不要でした（座席表と申請履歴は一致しています）。「代講」の表示だけ付け直しました。",
+  "applicant-conflict":
+    "元の講師と代講者が両方そのコマに入っています。CSV から片方を消し忘れている可能性があります。",
+};
+
 export function UploadWizard({ tutors }: { tutors: Tutor[] }) {
   const router = useRouter();
   const [stage, setStage] = useState<Stage>("idle");
@@ -113,9 +130,10 @@ export function UploadWizard({ tutors }: { tutors: Tutor[] }) {
         insertedShiftRows: number;
         reappliedSwaps: number;
         unreappliedSwaps: {
+          swapId: string;
           date: string;
           slotNumber: number;
-          reason: "requester-absent" | "applicant-conflict";
+          reason: SkipReason;
         }[];
         missingApplicantSwaps: number;
         insertedAssignmentRows: number;
@@ -267,18 +285,8 @@ export function UploadWizard({ tutors }: { tutors: Tutor[] }) {
                 承認済みの代講 {result.unreappliedSwaps.length}{" "}
                 件を再適用できませんでした。
               </p>
-              {(
-                [
-                  {
-                    reason: "requester-absent" as const,
-                    text: "新しい CSV で元の講師がそのコマに居ないため、付け替え先がありません。座席表と申請履歴が食い違うので確認してください。",
-                  },
-                  {
-                    reason: "applicant-conflict" as const,
-                    text: "代講者が既にそのコマに入っています（CSV が代講後の状態を含んでいる可能性があります）。座席表を確認してください。",
-                  },
-                ] as const
-              ).map(({ reason, text }) => {
+              {(Object.keys(SKIP_TEXT) as SkipReason[]).map((reason) => {
+                const text = SKIP_TEXT[reason];
                 const rows = result.unreappliedSwaps.filter(
                   (u) => u.reason === reason,
                 );
@@ -287,8 +295,8 @@ export function UploadWizard({ tutors }: { tutors: Tutor[] }) {
                   <div key={reason} className="space-y-0.5">
                     <p className="text-xs">{text}</p>
                     <ul className="list-disc pl-4 text-xs">
-                      {rows.map((u, i) => (
-                        <li key={`${u.date}|${u.slotNumber}|${i}`}>
+                      {rows.map((u) => (
+                        <li key={u.swapId}>
                           {u.date} {u.slotNumber}限
                         </li>
                       ))}
