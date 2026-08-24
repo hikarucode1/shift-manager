@@ -209,12 +209,18 @@ export async function updatePeriod(input: unknown): Promise<ActionResult> {
   } catch (err) {
     console.error("updatePeriod failed", err);
     const code = pgErrorCode(err);
-    // 0026 trigger: 範囲外 child (course_confirmations.date) が残っているケース。
+    // 親側 trigger が範囲外の child を検出したケース。
+    // 0026 = course_confirmations.date、0033 = training_preferences.date (#176)。
+    //
+    // ⚠️ **どちらが原因かは 23514 だけでは判別できない** (pgErrorCode は SQLSTATE
+    // しか見ない)。trigger のメッセージ本文を読めば分かるが、DB の生エラー文言を
+    // 画面に出さない方針なので両方を挙げる。片方だけ書くと、もう片方が原因の
+    // ときに「確定枠は無いのに」と利用者を迷わせる。
     if (code === "23514") {
       return {
         ok: false,
         error:
-          "期間内に範囲外の確定枠が存在します。先に該当枠を削除してから期間を変更してください。",
+          "期間内に範囲外の確定枠または講習希望が存在します。先に該当分を削除してから期間を変更してください。",
       };
     }
     return { ok: false, error: "更新に失敗しました。" };

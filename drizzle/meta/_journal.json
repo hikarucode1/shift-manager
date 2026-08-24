@@ -232,6 +232,13 @@
       "when": 1785223359887,
       "tag": "0032_exotic_fixer",
       "breakpoints": true
+    },
+    {
+      "idx": 33,
+      "version": "7",
+      "when": 1785223359888,
+      "tag": "0033_period_range_covers_training_preferences",
+      "breakpoints": true
     }
   ]
 }
