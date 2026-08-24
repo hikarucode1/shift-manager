@@ -68,6 +68,9 @@ staging が無いため、**migration は本番に直接適用される**。破�
 ### 本番適用状況 (2026-07-30 確認・0032 まで適用済) ← 最新
 
 > 以降の節は履歴。現在の到達点はこの節 (**0032 まで適用済、recorded=33**)。
+>
+> **0033 (#176) は 2026-08-24 時点で未適用。** 適用時は必ず下記
+> 「0033 適用前の検証 (必須)」を先に実施すること。
 
 **⚠️ 「任意」と書かれた migration は自動では流れない** — 2026-07-30 の監査で、本番が
 **0028 までしか適用されていない**ことが判明した (recorded=29)。`notifications` テーブルと
@@ -148,6 +151,33 @@ CHECK / trigger / NOT NULL すべてオブジェクト単位で存在確認)。�
 | 0030 | `notifications.dedup_key` + unique index (#155) | 非破壊 (追加のみ) | **2026-07-30 適用済** |
 | 0031 | `fixed_shift_submissions` の effective_to>=effective_from CHECK + `training_preferences` 日付範囲 trigger + 0010 関数の search_path hardening (#165) | **CHECK 追加** (違反行があれば失敗) + trigger/関数追加 | CHECK は `effective_to < effective_from` の行が 0 件であることを確認後に適用。trigger/関数は非破壊。**2026-07-30 適用済** (違反 0 件確認のうえ) |
 | 0032 | `notification_type` enum に `swap_posted` 追加 (#155 後続) | 非破壊 (`ALTER TYPE ADD VALUE`) | **コード deploy より先に適用**。値追加自体は既存行に影響なしだが、`swap_posted` を使うコードが migration より前に稼働すると notify insert が invalid-enum で失敗する (fire-and-forget で握り潰され通知がロストするだけで致命ではないが、deploy⇔migrate の順序に注意)。**⚠️ tx 境界**: `drizzle-kit migrate` は未適用 migration を 1 トランザクションでまとめて流すため、PG は「同一 tx 内で追加した enum 値の *使用*」を拒否する。将来 `swap_posted` を DML/DEFAULT で使う migration を作る場合、0032 と同じ未適用バッチに入ると `unsafe use of new value` でバッチ全体が失敗する。0032 は `ALTER TYPE ADD VALUE` 単独で main は 0031 まで適用済みのため今回は問題なし。enum 値を使う migration は必ず 0032 適用後の別バッチにすること。**2026-07-30 適用済** |
+| 0033 | 親 period 更新時に範囲外 `training_preferences` を検出する BEFORE UPDATE trigger (#176)。0026 (`course_confirmations` / `regular_assignments`) の子テーブル違いのクローン | 非破壊 (BEFORE trigger は既存行を評価しないため**適用自体は必ず通る**) | **適用前に下記「0033 適用前の検証」の SELECT で 0 件を確認すること**。違反行を残したまま適用すると、その期は以後 `updatePeriod` で日付を変更できなくなる。しかも**エラー文言は「先に該当分を削除してください」と言うのに、UI から削除する手段が無い** — 講師画面 (`src/lib/training.ts`) も admin ヒートマップ (`src/lib/training-overview.ts`) も `eachDate(p.startDate, p.endDate)` で日を組み立てるため範囲外の希望は**表示されず**、唯一の削除経路 `applyTrainingSlots` (`src/app/tutor/training/actions.ts`) も on/off を区別する**前**に範囲外日付を弾くため **OFF (DELETE) も拒否される**。逃げ道は「その行を覆う方向に期を広げる」か direct SQL のみ |
+
+### 0033 適用前の検証 (必須)
+
+0033 は BEFORE trigger なので**既存の違反行があっても適用は成功する**。危険なのは適用後で、
+違反行が残っている期は日付変更が恒久的にブロックされ、かつ**アプリ側にその行を消す経路が無い**
+(上表 0033 の行を参照)。したがって適用前に下記が **0 件**であることを必ず確認する:
+
+```sql
+SELECT tp.period_id, tp.date, p.start_date, p.end_date, count(*) OVER () AS total
+FROM training_preferences tp
+JOIN periods p ON p.id = tp.period_id
+WHERE tp.date < p.start_date OR tp.date > p.end_date;
+```
+
+0 件でなければ**先に direct SQL で清掃してから**適用する (アプリ経由では消せない)。
+
+> 2026-07-30 の 0029-0032 適用時は「期範囲外 `training_preferences` 0 件」を確認済み。
+> ただし**親側 (期を縮める操作) の穴は 0033 まで塞がっていなかった**ため、
+> 7/30 以降に期を縮めていれば新たに発生している可能性がある。**再確認は省略しないこと。**
+
+**マージ⇔適用の順序**: `.github/workflows/check-migrations.yml` (#204) は `push: main` と
+毎朝 06:00 JST に走る。0033 を main にマージした時点で journal=0033 / 本番=0032 となり、
+**本番へ適用するまで migration guard は赤のまま**になる (それが期待動作)。
+PR の CI が green なのはこの workflow が `pull_request` では動かないためで、
+「CI green = 適用済み」ではない。
+
 
 ### ⚠️ 0027 の安全前提の誤り (#165 監査で判明)
 
