@@ -92,6 +92,13 @@ export function RequestsPanel({ pending }: { pending: PendingAbsence[] }) {
                   <div className="flex flex-wrap items-center gap-2">
                     <span className="font-medium">{p.tutorName}</span>
                     <Badge variant="accent">未対応</Badge>
+                    {/* #211: 承認は塞がない (後から欠勤を登録するのは正当な実務)。
+                        ただし過去のコマを承認しようとしていることは分かるように */}
+                    {p.isEnded && (
+                      <Badge variant="outline" className="text-[10px]">
+                        実施済み
+                      </Badge>
+                    )}
                   </div>
                   <p className="text-sm text-muted-foreground">
                     {shortDate(p.date)}（{p.weekdayLabel}） {p.slotLabel}
@@ -99,6 +106,13 @@ export function RequestsPanel({ pending }: { pending: PendingAbsence[] }) {
                   <p className="text-sm text-muted-foreground">
                     理由: {p.reason}
                   </p>
+                  {/* #211: 「実施済み = 押してはいけない」と誤読されないように。
+                      後から欠勤を登録するのは正当な実務なので承認してよい */}
+                  {p.isEnded && (
+                    <p className="text-xs text-muted-foreground">
+                      終了したコマです。実際に欠勤していた場合は承認して構いません。
+                    </p>
+                  )}
                 </div>
               </div>
 
