@@ -135,6 +135,9 @@ export async function createSwapRequest(
   try {
     await db.insert(swapRequests).values({
       requesterId: profile.id,
+      // #227: 本人申請であることを残す。教室長の代理募集
+      // (createOpenSwapOnBehalf) と DB 上で区別できるのはこの列だけ
+      createdBy: profile.id,
       kind,
       nominatedTutorId,
       date,

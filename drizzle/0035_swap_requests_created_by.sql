@@ -1,0 +1,2 @@
+ALTER TABLE "swap_requests" ADD COLUMN "created_by" uuid;--> statement-breakpoint
+ALTER TABLE "swap_requests" ADD CONSTRAINT "swap_requests_created_by_profiles_id_fk" FOREIGN KEY ("created_by") REFERENCES "public"."profiles"("id") ON DELETE set null ON UPDATE no action;

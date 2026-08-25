@@ -71,8 +71,10 @@ staging が無いため、**migration は本番に直接適用される**。破�
 >
 > **0033 (#176) は 2026-08-25 に適用済 (recorded=34)。**
 >
-> **0034 (#217) は未適用。** 非破壊なので適用前検証は不要だが、
-> **コード deploy より先に適用**すること (上表 0034 の行を参照)。
+> **0034 (#217) は 2026-08-25 に適用済 (recorded=35)。**
+>
+> **0035 (#227) は未適用。** 非破壊なので適用前検証は不要だが、
+> **コード deploy より先に適用**すること (上表 0035 の行を参照)。
 
 **⚠️ 「任意」と書かれた migration は自動では流れない** — 2026-07-30 の監査で、本番が
 **0028 までしか適用されていない**ことが判明した (recorded=29)。`notifications` テーブルと
@@ -155,6 +157,7 @@ CHECK / trigger / NOT NULL すべてオブジェクト単位で存在確認)。�
 | 0032 | `notification_type` enum に `swap_posted` 追加 (#155 後続) | 非破壊 (`ALTER TYPE ADD VALUE`) | **コード deploy より先に適用**。値追加自体は既存行に影響なしだが、`swap_posted` を使うコードが migration より前に稼働すると notify insert が invalid-enum で失敗する (fire-and-forget で握り潰され通知がロストするだけで致命ではないが、deploy⇔migrate の順序に注意)。**⚠️ tx 境界**: `drizzle-kit migrate` は未適用 migration を 1 トランザクションでまとめて流すため、PG は「同一 tx 内で追加した enum 値の *使用*」を拒否する。将来 `swap_posted` を DML/DEFAULT で使う migration を作る場合、0032 と同じ未適用バッチに入ると `unsafe use of new value` でバッチ全体が失敗する。0032 は `ALTER TYPE ADD VALUE` 単独で main は 0031 まで適用済みのため今回は問題なし。enum 値を使う migration は必ず 0032 適用後の別バッチにすること。**2026-07-30 適用済** |
 | 0033 | 親 period 更新時に範囲外 `training_preferences` を検出する BEFORE UPDATE trigger (#176)。0026 (`course_confirmations` / `regular_assignments`) の子テーブル違いのクローン | 非破壊 (BEFORE trigger は既存行を評価しないため**適用自体は必ず通る**) | **適用前に下記「0033 適用前の検証」の SELECT で 0 件を確認すること**。違反行を残したまま適用すると、その期は以後 `updatePeriod` で日付を変更できなくなる。しかも**エラー文言は「先に該当分を削除してください」と言うのに、UI から削除する手段が無い** — 講師画面 (`src/lib/training.ts`) も admin ヒートマップ (`src/lib/training-overview.ts`) も `eachDate(p.startDate, p.endDate)` で日を組み立てるため範囲外の希望は**表示されず**、唯一の削除経路 `applyTrainingSlots` (`src/app/tutor/training/actions.ts`) も on/off を区別する**前**に範囲外日付を弾くため **OFF (DELETE) も拒否される**。逃げ道は「その行を覆う方向に期を広げる」か direct SQL のみ |
 | 0034 | `absence_requests.created_by` 追加 (#217) | 非破壊 (nullable 列 + FK 追加のみ) | **コード deploy より先に適用（必須）**。教室長の代理登録 (`createAbsenceOnBehalf`) と 講師本人の申請の insert がこの列に書くため、列が無い状態でコードが動くと insert が 落ちて欠勤を登録できない。既存行は null のままでよい。**0032 より深刻**で、0032 の未適用は通知ロストで済むのに対し、0034 の未適用は講師の申請と教室長の代理登録の**両方**が insert 失敗して欠勤機能が全停止する |
+| 0035 | `swap_requests.created_by` 追加 (#227) | 非破壊 (nullable 列 + FK 追加のみ) | **コード deploy より先に適用（必須）**。0034 と同じ理由 — 講師の交代申請と教室長の代理募集の insert がこの列に書くため、列が無い状態でコードが動くと**交代・代講機能が全停止**する |
 
 ### 0033 適用前の検証 (必須)
 

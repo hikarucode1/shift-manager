@@ -1,13 +1,16 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
+import { after } from "next/server";
 import { z } from "zod";
 import { and, eq, inArray, isNull, ne } from "drizzle-orm";
 import { requireRole } from "@/lib/auth";
 import { notify } from "@/lib/notifications";
-import { isTutorBusyAt } from "@/lib/swaps";
+import { getEligibleApplicantIds, isTutorBusyAt } from "@/lib/swaps";
 import { substitutionNote } from "@/lib/substitution-note";
-import { jstToday } from "@/lib/week";
+import { isValidIsoDate, jstToday } from "@/lib/week";
+import { isUniqueViolation } from "@/lib/db-errors";
+import { getSlotMeta } from "@/lib/slot-meta";
 import { db } from "@/db/client";
 import {
   absenceRequests,
@@ -483,4 +486,138 @@ export async function cancelApprovedSwap(
       error: "取り消しに失敗しました。時間をおいて再度お試しください。",
     };
   }
+}
+
+
+/* ------------------------------------------------------------------ */
+/*  #227 代理募集 — 欠勤が確定したコマの代講を教室長が募集する          */
+/* ------------------------------------------------------------------ */
+
+const OnBehalfSwapInput = z.object({
+  tutorId: z.string().uuid("講師が正しく指定されていません。"),
+  date: z.string().refine(isValidIsoDate, "日付が不正です。"),
+  slotNumber: z.number().int().min(1).max(20),
+  reason: z
+    .string()
+    .trim()
+    .min(1, "理由を入力してください。")
+    .max(500, "理由は 500 文字以内で入力してください。"),
+});
+
+/**
+ * 教室長が代理で代講を募集する (#227)。
+ *
+ * ⚠️ **`db.insert(swapRequests)` は従来 `createSwapRequest` の 1 本だけ**で、
+ * `requireRole("tutor")` かつ `requesterId = profile.id` だった。つまり
+ * **教室長が代講を募集する経路がアプリに存在しなかった**。#217 で教室長が
+ * 欠勤を代理登録できるようにした結果、「自分で登録した欠勤に自分が塞がれて
+ * 代講を手配できない」詰みが表に出た。
+ *
+ * ⚠️ **#33 の欠勤ガードを意図的に適用しない**。`createSwapRequest` は同一コマに
+ * 非終端の欠勤があると弾くが、「欠勤が確定していて、その穴を代講で埋める」は
+ * 矛盾しない。むしろそれが本命の流れ。1 コマ 1 ワークフローの原則は講師の
+ * 自己申請には残し、教室長の手配には適用しない。
+ *
+ * ⚠️ **当日以降のみ**。`decideSwapRequest` が過去日の承認を拒否するため、
+ * 過去日に募集を作っても誰も承認できない死に行になる。過去のコマは「募集」
+ * ではなく「誰が入ったかの記録」の問題で、そちらは #215。
+ *
+ * ⚠️ `kind` は `open` 固定。指名 (`named`) は講師同士の関係に踏み込む操作で、
+ * 教室長が指名すると指名先からは「頼まれた」のか「割り当てられた」のか
+ * 区別が付かない。応募するかどうかは応募側に残す。
+ */
+export async function createOpenSwapOnBehalf(
+  input: unknown,
+): Promise<ActionResult> {
+  const { profile } = await requireRole("admin");
+
+  const parsed = OnBehalfSwapInput.safeParse(input);
+  if (!parsed.success) {
+    return {
+      ok: false,
+      error: parsed.error.issues[0]?.message ?? "入力が不正です。",
+    };
+  }
+  const { tutorId, date, slotNumber, reason } = parsed.data;
+
+  if (date < jstToday()) {
+    return {
+      ok: false,
+      error:
+        "過去のコマは募集できません（承認できないため）。実際に入った代講の記録は別途対応します。",
+    };
+  }
+
+  // 実在する確定シフトか。交代が承認済みなら weekly_shifts は代講者に
+  // 付け替わっているので、ここで弾かれる
+  const shift = await db
+    .select({ id: weeklyShifts.id })
+    .from(weeklyShifts)
+    .where(
+      and(
+        eq(weeklyShifts.tutorId, tutorId),
+        eq(weeklyShifts.date, date),
+        eq(weeklyShifts.slotNumber, slotNumber),
+      ),
+    )
+    .limit(1);
+  if (shift.length === 0) {
+    return { ok: false, error: "その講師はこのコマの担当ではありません。" };
+  }
+
+  try {
+    await db.insert(swapRequests).values({
+      requesterId: tutorId,
+      createdBy: profile.id,
+      kind: "open",
+      date,
+      slotNumber,
+      reason,
+    });
+  } catch (e) {
+    if (isUniqueViolation(e, "swap_requests_active_uniq")) {
+      return { ok: false, error: "このコマには既に交代申請があります。" };
+    }
+    console.error("createOpenSwapOnBehalf failed", e);
+    return {
+      ok: false,
+      error: "募集の作成に失敗しました。時間をおいてお試しください。",
+    };
+  }
+
+  // #155 と同じ形。応答をブロックしないよう after() で送る
+  after(async () => {
+    try {
+      const meta = await getSlotMeta();
+      const slotLabel = meta.get(slotNumber)?.label ?? `${slotNumber}限`;
+      const recipientIds = await getEligibleApplicantIds(
+        date,
+        slotNumber,
+        tutorId,
+      );
+      await Promise.all([
+        notify(recipientIds, {
+          type: "swap_posted",
+          title: "代講募集が追加されました",
+          body: `対象: ${date} ${slotLabel}`,
+          href: "/tutor/open-swaps",
+        }),
+        // ⚠️ 本人は募集を作っていないので、通知が唯一の手がかり。これが無いと
+        // 「代講を手配してもらえたのか」が分からず、当日出勤するか迷う。
+        // 型は swap_result が最も近い (募集の "結果" ではないが、講師向けの
+        // 交代チャンネルはこれ)。href は本人の申請一覧へ向ける
+        notify([tutorId], {
+          type: "swap_result",
+          title: "代講の募集が作成されました（教室長による代理）",
+          body: `対象: ${date} ${slotLabel} ／ ${reason}`,
+          href: "/tutor/swaps",
+        }),
+      ]);
+    } catch (e) {
+      console.error("createOpenSwapOnBehalf notify failed", e);
+    }
+  });
+
+  revalidateAll();
+  return { ok: true };
 }

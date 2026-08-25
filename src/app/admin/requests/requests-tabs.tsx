@@ -10,6 +10,7 @@ import { SwapRequestsPanel } from "./swap-requests-panel";
 import { ApprovedSwapsPanel } from "./approved-swaps-panel";
 import { DecidedAbsencesPanel } from "./decided-absences-panel";
 import { AbsenceOnBehalfForm } from "./absence-on-behalf-form";
+import { OpenSwapOnBehalfForm } from "./swap-on-behalf-form";
 
 type Tab = "absence" | "swap" | "approved" | "cancelled";
 
@@ -89,7 +90,10 @@ export function RequestsTabs({
             <RequestsPanel pending={pendingAbsences} />
           </div>
         ) : tab === "swap" ? (
-          <SwapRequestsPanel pending={pendingSwaps} />
+          <div className="space-y-4">
+            <OpenSwapOnBehalfForm today={today} />
+            <SwapRequestsPanel pending={pendingSwaps} />
+          </div>
         ) : tab === "approved" ? (
           <div className="space-y-6">
             <Section title="交代・代講">
