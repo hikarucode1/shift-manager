@@ -1,4 +1,5 @@
 import { requireRole } from "@/lib/auth";
+import { jstToday } from "@/lib/week";
 import { getAbsenceHistory, getPendingAbsenceRequests } from "@/lib/absences";
 import { getPendingSwapRequests, getSwapHistory } from "@/lib/swaps";
 import { RequestsTabs } from "./requests-tabs";
@@ -37,6 +38,7 @@ export default async function AdminRequestsPage() {
         cancelledSwaps={cancelledSwaps}
         approvedAbsences={approvedAbsences}
         cancelledAbsences={cancelledAbsences}
+        today={jstToday()}
       />
     </div>
   );

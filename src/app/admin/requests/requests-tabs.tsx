@@ -9,6 +9,7 @@ import { RequestsPanel } from "./requests-panel";
 import { SwapRequestsPanel } from "./swap-requests-panel";
 import { ApprovedSwapsPanel } from "./approved-swaps-panel";
 import { DecidedAbsencesPanel } from "./decided-absences-panel";
+import { AbsenceOnBehalfForm } from "./absence-on-behalf-form";
 
 type Tab = "absence" | "swap" | "approved" | "cancelled";
 
@@ -24,6 +25,7 @@ export function RequestsTabs({
   cancelledSwaps,
   approvedAbsences,
   cancelledAbsences,
+  today,
 }: {
   pendingAbsences: PendingAbsence[];
   pendingSwaps: AdminSwapRequest[];
@@ -34,6 +36,8 @@ export function RequestsTabs({
   /** #219: 欠勤も approved が終端ではなくなった。交代と同じタブに並べる */
   approvedAbsences: AbsenceHistory;
   cancelledAbsences: AbsenceHistory;
+  /** #217: 代理登録フォームの既定日。JST の今日をサーバーで決める */
+  today: string;
 }) {
   const [tab, setTab] = useState<Tab>("absence");
 
@@ -80,7 +84,10 @@ export function RequestsTabs({
         aria-labelledby={`requests-tab-${tab}`}
       >
         {tab === "absence" ? (
-          <RequestsPanel pending={pendingAbsences} />
+          <div className="space-y-4">
+            <AbsenceOnBehalfForm today={today} />
+            <RequestsPanel pending={pendingAbsences} />
+          </div>
         ) : tab === "swap" ? (
           <SwapRequestsPanel pending={pendingSwaps} />
         ) : tab === "approved" ? (

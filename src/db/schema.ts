@@ -681,6 +681,16 @@ export const absenceRequests = pgTable(
     slotNumber: smallint("slot_number").notNull(),
     reason: text("reason").notNull(),
     status: requestStatusEnum("status").notNull().default("pending"),
+    /**
+     * この行を作った人 (#217)。講師本人の申請なら `tutor_id` と同じ、教室長の
+     * 代理登録なら教室長の id が入る。**両者は他のどの列でも区別できない**
+     * (代理登録も承認済みとして入るので `decided_by` は両方とも教室長になる)。
+     * 「本人が申告したのか、聞き取って入れたのか」は勤怠でモメたときに要る。
+     * #217 以前の行は null (不明)。
+     */
+    createdBy: uuid("created_by").references(() => profiles.id, {
+      onDelete: "set null",
+    }),
     decidedBy: uuid("decided_by").references(() => profiles.id, {
       onDelete: "set null",
     }),
