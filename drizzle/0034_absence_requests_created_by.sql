@@ -1,0 +1,2 @@
+ALTER TABLE "absence_requests" ADD COLUMN "created_by" uuid;--> statement-breakpoint
+ALTER TABLE "absence_requests" ADD CONSTRAINT "absence_requests_created_by_profiles_id_fk" FOREIGN KEY ("created_by") REFERENCES "public"."profiles"("id") ON DELETE set null ON UPDATE no action;

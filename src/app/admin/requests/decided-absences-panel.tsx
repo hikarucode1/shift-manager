@@ -116,6 +116,12 @@ export function DecidedAbsencesPanel({
                   実施済み
                 </Badge>
               )}
+              {/* #217: 本人申告か代理登録かは created_by でしか分からない */}
+              {r.isProxy && (
+                <Badge variant="secondary" className="text-[10px]">
+                  代理登録
+                </Badge>
+              )}
             </div>
             <p className="text-muted-foreground">{r.tutorName}</p>
             <p className="text-xs text-muted-foreground">理由: {r.reason}</p>

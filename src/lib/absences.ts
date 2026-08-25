@@ -52,6 +52,11 @@ export type DecidedAbsence = PendingAbsence & {
    * 登録し直せない = #217)。画面で警告するための印で、取り消し自体は塞がない。
    */
   isPastDate: boolean;
+  /**
+   * 教室長の代理登録か (#217)。`created_by !== tutor_id` で判定する。
+   * `created_by` が null の行 (#217 以前) は false = 不明扱い。
+   */
+  isProxy: boolean;
 };
 
 export type AbsenceHistory = {
@@ -226,6 +231,7 @@ export async function getAbsenceHistory(
       status: absenceRequests.status,
       decisionNote: absenceRequests.decisionNote,
       decidedAt: absenceRequests.decidedAt,
+      createdBy: absenceRequests.createdBy,
       createdAt: absenceRequests.createdAt,
     })
     .from(absenceRequests)
@@ -255,6 +261,7 @@ export async function getAbsenceHistory(
       createdAt: r.createdAt.toISOString(),
       isEnded: isSlotPast(r.date, slotLabelOf(meta, r.slotNumber).end),
       isPastDate: r.date < today,
+      isProxy: r.createdBy !== null && r.createdBy !== r.tutorId,
     })),
   };
 }

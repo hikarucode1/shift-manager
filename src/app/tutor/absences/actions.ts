@@ -106,6 +106,9 @@ export async function createAbsenceRequest(
   try {
     await db.insert(absenceRequests).values({
       tutorId: profile.id,
+      // #217: 本人申告であることを残す。教室長の代理登録
+      // (createAbsenceOnBehalf) と DB 上で区別できるのはこの列だけ
+      createdBy: profile.id,
       date,
       slotNumber,
       reason,
