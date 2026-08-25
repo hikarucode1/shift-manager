@@ -288,11 +288,15 @@ export async function createAbsenceOnBehalf(
 
   // ⚠️ 本人が申請していないので、記録したことは通知でしか本人に届かない。
   // 「聞いた内容と違う」に気づける唯一の経路
+  // ⚠️ `${slotNumber}限` と直書きしない。slot_definitions.label は自由文で
+  // admin が変更できるため、直書きすると通知だけ他の画面とズレる
+  const meta = await getSlotMeta();
+  const slotLabel = meta.get(slotNumber)?.label ?? `${slotNumber}限`;
   const { label } = weekdayOf(date);
   await notify([tutorId], {
     type: "absence_result",
     title: "欠勤が登録されました（教室長による代理登録）",
-    body: `対象日: ${date}（${label}）${slotNumber}限 ／ ${reason}`,
+    body: `対象日: ${date}（${label}）${slotLabel} ／ ${reason}`,
     href: "/tutor/absences",
   });
 

@@ -74,11 +74,18 @@ export function AbsenceOnBehalfForm({ today }: { today: string }) {
         if (isIndeterminate(res)) router.refresh();
         return;
       }
+      // ⚠️ 代理登録の直後に代講を手配しようとすると詰む: 教室長が代講募集を
+      // 作る画面が無く、講師に頼んでも #33 のガード (承認済み欠勤があるコマは
+      // 交代申請不可) で拒否される。逃げ道は「この欠勤を取り消してから講師に
+      // 出してもらう」だけ。#214/#219 と同じく、詰みは隠さず先に伝える
+      const needsSubstitute = date >= today;
       setNotice({
         type: "ok",
         text: res.pendingSwap
           ? "登録しました。このコマには未処理の交代申請が残っています。交代・代講タブで処理してください。"
-          : "登録しました。講師に通知が届きます。",
+          : needsSubstitute
+            ? "登録しました。講師に通知が届きます。代講を立てる場合は、いったんこの欠勤を取り消してから講師に交代申請を出してもらってください（教室長が代講を募集する画面はまだありません）。"
+            : "登録しました。講師に通知が届きます。",
       });
       setReason("");
       setPicked("");

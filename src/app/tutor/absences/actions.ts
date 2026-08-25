@@ -83,6 +83,10 @@ export async function createAbsenceRequest(
   // (通常操作でなく低確率、結果は破損でなく二重ハンドリング)。最悪ケース
   // (stale approved 欠勤) は交代承認時の auto-cancel が掃除するため比例的に
   // 受容。昇格条件: 自動化/高頻度化した場合は DB trigger で厳密化する。
+  //
+  // ⚠️ #217 追記: 「approved 欠勤 + pending 交代」は**もう TOCTOU 限定では
+  // ない**。教室長の代理登録がこの併存を通常経路で作る。交代承認時の
+  // auto-cancel は後始末ではなく前提の一部になった。
   const swapDup = await db
     .select({ id: swapRequests.id })
     .from(swapRequests)

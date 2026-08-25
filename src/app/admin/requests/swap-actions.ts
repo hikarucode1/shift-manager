@@ -218,8 +218,14 @@ export async function decideSwapRequest(
       }
 
       // クロス整合 (#33): requester はこのコマを失うので、同一コマの
-      // 非終端 欠勤申請を自動失効。通常は作成時ガードで併存しないが、
-      // 旧データ / すり抜け分の掃除 + #31 表示整合のため defensive に実施。
+      // 非終端 欠勤申請を自動失効。
+      //
+      // ⚠️ **これは defensive な掃除ではなく通常経路** (#217 で変わった)。
+      // 教室長の代理登録 (`createAbsenceOnBehalf`) は pending 交代を塞がない
+      // (「交代を募集したが応募が無く結局休んだ」を塞ぐと詰むため) ので、
+      // 「approved 欠勤 + pending 交代」は正規の手順で作れる状態になった。
+      // #217 以前は受容済み TOCTOU からしか到達しない状態だったが、
+      // **今はここが主経路**。dead code と誤認して削らないこと。
       await tx
         .update(absenceRequests)
         .set({

@@ -29,6 +29,13 @@ export type AbsenceRequestRow = {
   decisionNote: string | null;
   decidedAt: string | null;
   createdAt: string;
+  /**
+   * 教室長の代理登録か (#217)。`created_by !== tutor_id` で判定する。
+   * `created_by` が null の行は false。null は「#217 以前に作られた」か
+   * 「登録者の profile が削除された (FK は set null)」のどちらかで、
+   * **本人申告であることの証明にはならない**。
+   */
+  isProxy: boolean;
 };
 
 export type PendingAbsence = AbsenceRequestRow & {
@@ -52,11 +59,6 @@ export type DecidedAbsence = PendingAbsence & {
    * 登録し直せない = #217)。画面で警告するための印で、取り消し自体は塞がない。
    */
   isPastDate: boolean;
-  /**
-   * 教室長の代理登録か (#217)。`created_by !== tutor_id` で判定する。
-   * `created_by` が null の行 (#217 以前) は false = 不明扱い。
-   */
-  isProxy: boolean;
 };
 
 export type AbsenceHistory = {
@@ -151,6 +153,7 @@ export async function getTutorAbsenceRequests(
 
   return rows.map((r) => ({
     id: r.id,
+    isProxy: r.createdBy !== null && r.createdBy !== r.tutorId,
     date: r.date,
     slotNumber: r.slotNumber,
     slotLabel: slotLabelOf(meta, r.slotNumber).label,
@@ -177,6 +180,7 @@ export async function getPendingAbsenceRequests(): Promise<PendingAbsence[]> {
       status: absenceRequests.status,
       decisionNote: absenceRequests.decisionNote,
       decidedAt: absenceRequests.decidedAt,
+      createdBy: absenceRequests.createdBy,
       createdAt: absenceRequests.createdAt,
     })
     .from(absenceRequests)
@@ -197,6 +201,9 @@ export async function getPendingAbsenceRequests(): Promise<PendingAbsence[]> {
     decisionNote: r.decisionNote,
     decidedAt: r.decidedAt ? r.decidedAt.toISOString() : null,
     createdAt: r.createdAt.toISOString(),
+    // 代理登録は approved で入るので pending には出ないが、判定は 1 箇所に
+    // 寄せず各取得関数で素直に計算する (将来 pending 経由を足しても壊れない)
+    isProxy: r.createdBy !== null && r.createdBy !== r.tutorId,
     isEnded: isSlotPast(r.date, slotLabelOf(meta, r.slotNumber).end),
   }));
 }

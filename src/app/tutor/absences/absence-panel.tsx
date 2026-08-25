@@ -286,6 +286,11 @@ export function AbsencePanel({
                         {shortDate(h.date)}（{h.weekdayLabel}） {h.slotLabel}
                       </span>
                       <Badge variant={st.variant}>{st.text}</Badge>
+                      {/* #217: 自分で出していない行が「承認済み」とだけ出ると、
+                          自分が申請したものと区別が付かない */}
+                      {h.isProxy && (
+                        <Badge variant="secondary">教室長が登録</Badge>
+                      )}
                       {h.status === "pending" && (
                         <Button
                           variant="ghost"
