@@ -143,6 +143,7 @@ export function ApprovedSwapsPanel({
                   onChange={(e) => setReason(e.target.value)}
                   rows={2}
                   maxLength={500}
+                  placeholder="取り消しの理由を入力（講師に表示されます）"
                   className="w-full rounded-md border bg-background px-2 py-1 text-sm"
                 />
                 <p className="text-xs text-muted-foreground">

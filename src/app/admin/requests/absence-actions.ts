@@ -39,10 +39,17 @@ const CancelApprovedAbsenceInput = z.object({
  * status を戻すだけで表示も戻る。`cancelApprovedSwap` (#213) が担当の
  * 付け替えを確認する必要があったのに対し、こちらが単純なのはこの差による。
  *
- * ⚠️ `pending` へは戻さない。`approved` にした事実まで消えると、
- * 「一度承認された欠勤が取り消された」を後から追えない。前進のみ。
- * 部分 unique の `absence_requests_active_uniq` は `pending` / `approved` だけを
- * 対象にしているので、`cancelled` にすれば講師の出し直しは自然に通る。
+ * ⚠️ `pending` へは戻さない。理由は監査ではなく**運用**:
+ *   1. `getPendingAbsenceRequests` の未対応キューに戻り、講師が出していない
+ *      申請を教室長が再び処理することになる
+ *   2. 部分 unique `absence_requests_active_uniq` は `pending` / `approved` が
+ *      対象なので、`pending` に戻すと講師の出し直しを塞いだままになる
+ *   `cancelled` にすれば両方とも解ける。
+ *
+ * ⚠️ **`cancelled` 行を見ても「承認を経由したか」は判別できない**。`cancelled`
+ * には講師の自己取り下げ (`cancelAbsenceRequest`) と交代成立の自動失効
+ * (`swap-actions.ts`) からも到達し、どちらも `decided_by` を触らないため。
+ * 承認履歴が要るなら別テーブルが要る (現状そこまでの要求は無い)。
  */
 export async function cancelApprovedAbsence(
   input: unknown,
