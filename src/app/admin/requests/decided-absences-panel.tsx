@@ -3,30 +3,30 @@
 import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { AlertCircle, Info } from "lucide-react";
-import type { SwapHistory } from "@/lib/swaps";
+import type { AbsenceHistory } from "@/lib/absences";
 import { Badge } from "@/components/ui/badge";
 import { toFailedResult, isIndeterminate } from "@/lib/action-failure";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { cn } from "@/lib/utils";
-import { cancelApprovedSwap } from "./swap-actions";
+import { cancelApprovedAbsence } from "./absence-actions";
 
 /**
- * 承認済みの交代・代講と、その取り消し (#213)。
+ * 承認済みの欠勤と、その取り消し (#219)。
  *
- * 承認後に代講が流れた (B が結局来なかった / 選び間違えた / 編成が変わった) とき、
- * これが無いと記録を実態へ戻す手段が無い。取り消しは weekly_shifts を元講師へ
- * 戻すので、**却下と同じく理由を必須**にしている。
+ * これが無いと `approved` は終端で、誤承認した欠勤の取り消し線が週次シフト表から
+ * 消せなかった。`ApprovedSwapsPanel` (#213) と対称だが、欠勤は `weekly_shifts` を
+ * 触らない (status を戻せば表示も戻る) ぶん単純。
  */
-export function ApprovedSwapsPanel({
+export function DecidedAbsencesPanel({
   history,
   readOnly = false,
 }: {
-  history: SwapHistory;
-  /** 取り消し済みタブ。閲覧のみ (#213: 理由が write-only にならないように) */
+  history: AbsenceHistory;
+  /** 取り消し済みタブ。閲覧のみ (理由が write-only にならないように) */
   readOnly?: boolean;
 }) {
-  const approved = history.rows;
+  const rows = history.rows;
   const router = useRouter();
   const [isPending, startTransition] = useTransition();
   const [openId, setOpenId] = useState<string | null>(null);
@@ -43,7 +43,7 @@ export function ApprovedSwapsPanel({
     }
     setNotice(null);
     startTransition(async () => {
-      const res = await cancelApprovedSwap({ id, reason: trimmed }).catch(
+      const res = await cancelApprovedAbsence({ id, reason: trimmed }).catch(
         toFailedResult,
       );
       if (!res.ok) {
@@ -53,10 +53,7 @@ export function ApprovedSwapsPanel({
       }
       setNotice({
         type: "ok",
-        text:
-          res.expiredAbsences > 0
-            ? "取り消しました。このコマの欠勤申請が交代成立時に自動失効しています。必要なら講師に再申請を依頼してください。"
-            : "取り消しました。担当を元の講師に戻しました。",
+        text: "取り消しました。週次シフト表の欠勤表示も戻ります。",
       });
       setOpenId(null);
       setReason("");
@@ -64,13 +61,13 @@ export function ApprovedSwapsPanel({
     });
   }
 
-  if (approved.length === 0) {
+  if (rows.length === 0) {
     return (
       <Card>
         <CardContent className="py-10 text-center text-sm text-muted-foreground">
           {readOnly
-            ? "取り消した交代・代講はありません。"
-            : "承認済みの交代・代講はありません。"}
+            ? "取り消した欠勤はありません。"
+            : "承認済みの欠勤はありません。"}
         </CardContent>
       </Card>
     );
@@ -94,19 +91,19 @@ export function ApprovedSwapsPanel({
       {!readOnly && (
         <p className="flex items-start gap-1.5 text-xs text-muted-foreground">
           <Info className="mt-0.5 size-3.5 shrink-0" aria-hidden />
-          取り消すと、そのコマの担当を元の講師に戻します。実際に代講が入った場合は
-          取り消さないでください（週次シフト表が実態と食い違います）。
+          取り消すと、週次シフト表からこのコマの欠勤表示が消えます。実際に休んだ場合は
+          取り消さないでください（表が実態と食い違います）。
         </p>
       )}
 
       {history.truncated > 0 && (
         <p className="text-xs text-muted-foreground">
-          直近 {approved.length} 件のみ表示しています（これより古いものは
+          直近 {rows.length} 件のみ表示しています（これより古いものは
           出ていません）。
         </p>
       )}
 
-      {approved.map((r) => (
+      {rows.map((r) => (
         <Card key={r.id}>
           <CardContent className="space-y-2 p-4 text-sm">
             {/* Badge は <div> を返すので <p> に入れると hydration が壊れる */}
@@ -114,18 +111,19 @@ export function ApprovedSwapsPanel({
               <span>
                 {r.date}（{r.weekdayLabel}）{r.slotLabel}
               </span>
-              {/* #213: 実施済みかどうかは判断の前提。取得済みなのに出していないと
-                  「来週の予定の取り消し」と見た目で区別が付かない */}
               {r.isEnded && (
                 <Badge variant="outline" className="text-[10px]">
                   実施済み
                 </Badge>
               )}
             </div>
-            <p className="text-muted-foreground">
-              {r.requesterName} → {r.approvedApplicantName ?? "不明"}
-            </p>
+            <p className="text-muted-foreground">{r.tutorName}</p>
             <p className="text-xs text-muted-foreground">理由: {r.reason}</p>
+            {r.decidedByName && (
+              <p className="text-xs text-muted-foreground">
+                {readOnly ? "取り消し" : "承認"}: {r.decidedByName}
+              </p>
+            )}
             {readOnly && r.decisionNote && (
               <p className="text-xs text-muted-foreground">
                 取り消し理由: {r.decisionNote}
@@ -134,11 +132,11 @@ export function ApprovedSwapsPanel({
 
             {readOnly ? null : openId === r.id ? (
               <div className="space-y-2">
-                <label className="block text-xs" htmlFor={`cancel-${r.id}`}>
+                <label className="block text-xs" htmlFor={`cancel-abs-${r.id}`}>
                   取り消し理由（必須）
                 </label>
                 <textarea
-                  id={`cancel-${r.id}`}
+                  id={`cancel-abs-${r.id}`}
                   value={reason}
                   onChange={(e) => setReason(e.target.value)}
                   rows={2}
@@ -146,12 +144,13 @@ export function ApprovedSwapsPanel({
                   placeholder="取り消しの理由を入力（講師に表示されます）"
                   className="w-full rounded-md border bg-background px-2 py-1 text-sm"
                 />
-                <p className="text-xs text-muted-foreground">
-                  {r.requesterName} さんを担当に戻し、{r.approvedApplicantName ?? "代講者"}{" "}
-                  さんの代講記録を消します。
-                  {r.isEnded &&
-                    "このコマは既に終了しているため、取り消すと元に戻せません。"}
-                </p>
+                {/* ⚠️ 過去日は createAbsenceRequest が弾くので登録し直せない。
+                    #214 と同じく、詰みは隠さず明示する (#217 で解消予定) */}
+                {r.isPastDate && (
+                  <p className="text-xs text-destructive">
+                    このコマは過去日のため、取り消すと欠勤として登録し直せません。
+                  </p>
+                )}
                 <div className="flex gap-2">
                   <Button
                     size="sm"
@@ -185,7 +184,7 @@ export function ApprovedSwapsPanel({
                   setNotice(null);
                 }}
               >
-                この代講を取り消す
+                この欠勤を取り消す
               </Button>
             )}
           </CardContent>

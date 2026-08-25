@@ -1,13 +1,14 @@
 "use client";
 
 import { useState } from "react";
-import type { PendingAbsence } from "@/lib/absences";
+import type { AbsenceHistory, PendingAbsence } from "@/lib/absences";
 import type { AdminSwapRequest, SwapHistory } from "@/lib/swaps";
 import { Badge } from "@/components/ui/badge";
 import { cn } from "@/lib/utils";
 import { RequestsPanel } from "./requests-panel";
 import { SwapRequestsPanel } from "./swap-requests-panel";
 import { ApprovedSwapsPanel } from "./approved-swaps-panel";
+import { DecidedAbsencesPanel } from "./decided-absences-panel";
 
 type Tab = "absence" | "swap" | "approved" | "cancelled";
 
@@ -21,6 +22,8 @@ export function RequestsTabs({
   pendingSwaps,
   approvedSwaps,
   cancelledSwaps,
+  approvedAbsences,
+  cancelledAbsences,
 }: {
   pendingAbsences: PendingAbsence[];
   pendingSwaps: AdminSwapRequest[];
@@ -28,6 +31,9 @@ export function RequestsTabs({
   approvedSwaps: SwapHistory;
   /** #213: 取り消し理由を書かせた以上、書いた本人が読める場所が要る */
   cancelledSwaps: SwapHistory;
+  /** #219: 欠勤も approved が終端ではなくなった。交代と同じタブに並べる */
+  approvedAbsences: AbsenceHistory;
+  cancelledAbsences: AbsenceHistory;
 }) {
   const [tab, setTab] = useState<Tab>("absence");
 
@@ -57,14 +63,14 @@ export function RequestsTabs({
           active={tab === "approved"}
           onClick={() => setTab("approved")}
           label="承認済み"
-          count={approvedSwaps.rows.length}
+          count={approvedSwaps.rows.length + approvedAbsences.rows.length}
         />
         <TabButton
           tab="cancelled"
           active={tab === "cancelled"}
           onClick={() => setTab("cancelled")}
           label="取り消し済み"
-          count={cancelledSwaps.rows.length}
+          count={cancelledSwaps.rows.length + cancelledAbsences.rows.length}
         />
       </div>
 
@@ -78,12 +84,42 @@ export function RequestsTabs({
         ) : tab === "swap" ? (
           <SwapRequestsPanel pending={pendingSwaps} />
         ) : tab === "approved" ? (
-          <ApprovedSwapsPanel history={approvedSwaps} />
+          <div className="space-y-6">
+            <Section title="交代・代講">
+              <ApprovedSwapsPanel history={approvedSwaps} />
+            </Section>
+            <Section title="欠勤">
+              <DecidedAbsencesPanel history={approvedAbsences} />
+            </Section>
+          </div>
         ) : (
-          <ApprovedSwapsPanel history={cancelledSwaps} readOnly />
+          <div className="space-y-6">
+            <Section title="交代・代講">
+              <ApprovedSwapsPanel history={cancelledSwaps} readOnly />
+            </Section>
+            <Section title="欠勤">
+              <DecidedAbsencesPanel history={cancelledAbsences} readOnly />
+            </Section>
+          </div>
         )}
       </div>
     </div>
+  );
+}
+
+/** #219: 1 タブに 2 種類 (交代・欠勤) が並ぶので、どちらの一覧かを明示する */
+function Section({
+  title,
+  children,
+}: {
+  title: string;
+  children: React.ReactNode;
+}) {
+  return (
+    <section className="space-y-3">
+      <h2 className="text-sm font-semibold text-muted-foreground">{title}</h2>
+      {children}
+    </section>
   );
 }
 
