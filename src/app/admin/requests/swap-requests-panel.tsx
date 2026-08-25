@@ -95,6 +95,9 @@ export function SwapRequestsPanel({
                   <div className="flex flex-wrap items-center gap-2">
                     <span className="font-medium">{r.requesterName}</span>
                     <Badge variant="accent">未対応</Badge>
+                    {r.isProxy && (
+                      <Badge variant="secondary">代理募集</Badge>
+                    )}
                     <Badge variant="outline">
                       {r.kind === "named"
                         ? `指名: ${r.nominatedName ?? "—"}`

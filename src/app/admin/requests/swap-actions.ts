@@ -6,7 +6,7 @@ import { z } from "zod";
 import { and, eq, inArray, isNull, ne } from "drizzle-orm";
 import { requireRole } from "@/lib/auth";
 import { notify } from "@/lib/notifications";
-import { getEligibleApplicantIds, isTutorBusyAt } from "@/lib/swaps";
+import { getEligibleApplicantIds, hasSlotEnded, isTutorBusyAt } from "@/lib/swaps";
 import { substitutionNote } from "@/lib/substitution-note";
 import { isValidIsoDate, jstToday } from "@/lib/week";
 import { isUniqueViolation } from "@/lib/db-errors";
@@ -540,11 +540,19 @@ export async function createOpenSwapOnBehalf(
   }
   const { tutorId, date, slotNumber, reason } = parsed.data;
 
-  if (date < jstToday()) {
+  // #178 と同じ規則: **新規の募集はコマ単位で弾く**。終了したコマを今から
+  // 募集しても代わってもらう相手が居ないため。講師側 (`createSwapRequest`) が
+  // 同じ理由で `hasSlotEnded` を通しており、代理募集もこれと同じ「新規の募集」。
+  // 日付粒度だけだと**当日の終了済みコマ**がすり抜け、誰も応募できない死に行が
+  // できる (承認側は #178 の判断で当日を通すので、そこでは止まらない)。
+  //
+  // ⚠️ `decideSwapRequest` の「hasSlotEnded を使うな」は tx 内でプールを
+  // 二重に掴む話。ここは tx を張っていないので該当しない。
+  if (date < jstToday() || (await hasSlotEnded(date, slotNumber))) {
     return {
       ok: false,
       error:
-        "過去のコマは募集できません（承認できないため）。実際に入った代講の記録は別途対応します。",
+        "終了したコマは募集できません（今から代わってもらう相手が居ないため）。実際に入った代講の記録は別途対応します。",
     };
   }
 

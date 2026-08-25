@@ -56,6 +56,12 @@ export type MySwapRequest = {
   approvedApplicantName: string | null;
   decisionNote: string | null;
   applicants: SwapApplicant[];
+  /**
+   * 教室長の代理募集か (#227)。`created_by !== requester_id` で判定する。
+   * `requester_id` は「休む講師」なので、これが無いと本人が出した申請と
+   * 区別できない。null は #227 以前か、作成者の profile 削除済み。
+   */
+  isProxy: boolean;
   createdAt: string;
 };
 
@@ -357,6 +363,7 @@ export async function getTutorSwapRequests(
       decisionNote: swapRequests.decisionNote,
       nominatedName: nominee.displayName,
       approvedApplicantName: approved.displayName,
+      createdBy: swapRequests.createdBy,
       createdAt: swapRequests.createdAt,
     })
     .from(swapRequests)
@@ -380,6 +387,7 @@ export async function getTutorSwapRequests(
     approvedApplicantName: r.approvedApplicantName,
     decisionNote: r.decisionNote,
     applicants: applicants.get(r.id) ?? [],
+    isProxy: r.createdBy !== null && r.createdBy !== tutorId,
     createdAt: r.createdAt.toISOString(),
   }));
 }
@@ -471,6 +479,7 @@ export async function getPendingSwapRequests(): Promise<AdminSwapRequest[]> {
       reason: swapRequests.reason,
       status: swapRequests.status,
       decisionNote: swapRequests.decisionNote,
+      createdBy: swapRequests.createdBy,
       createdAt: swapRequests.createdAt,
     })
     .from(swapRequests)
@@ -498,6 +507,7 @@ export async function getPendingSwapRequests(): Promise<AdminSwapRequest[]> {
     approvedApplicantName: null,
     decisionNote: r.decisionNote,
     applicants: applicants.get(r.id) ?? [],
+    isProxy: r.createdBy !== null && r.createdBy !== r.requesterId,
     createdAt: r.createdAt.toISOString(),
   }));
 }
@@ -552,6 +562,7 @@ export async function getSwapHistory(
       reason: swapRequests.reason,
       status: swapRequests.status,
       decisionNote: swapRequests.decisionNote,
+      createdBy: swapRequests.createdBy,
       createdAt: swapRequests.createdAt,
     })
     .from(swapRequests)
@@ -584,6 +595,7 @@ export async function getSwapHistory(
       approvedApplicantName: r.approvedApplicantName,
       decisionNote: r.decisionNote,
       applicants: [],
+      isProxy: r.createdBy !== null && r.createdBy !== r.requesterId,
       createdAt: r.createdAt.toISOString(),
     })),
   };

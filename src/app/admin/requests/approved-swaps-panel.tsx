@@ -55,7 +55,7 @@ export function ApprovedSwapsPanel({
         type: "ok",
         text:
           res.expiredAbsences > 0
-            ? "取り消しました。このコマの欠勤申請が交代成立時に自動失効しています。必要なら講師に再申請を依頼してください。"
+            ? "取り消しました。このコマの欠勤申請が交代成立時に自動失効しています。必要なら欠勤申請タブの「代理で欠勤を登録する」から登録し直してください。"
             : "取り消しました。担当を元の講師に戻しました。",
       });
       setOpenId(null);
@@ -119,6 +119,11 @@ export function ApprovedSwapsPanel({
               {r.isEnded && (
                 <Badge variant="outline" className="text-[10px]">
                   実施済み
+                </Badge>
+              )}
+              {r.isProxy && (
+                <Badge variant="secondary" className="text-[10px]">
+                  代理募集
                 </Badge>
               )}
             </div>

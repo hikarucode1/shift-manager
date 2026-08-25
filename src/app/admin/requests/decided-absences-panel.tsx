@@ -150,11 +150,13 @@ export function DecidedAbsencesPanel({
                   placeholder="取り消しの理由を入力（講師に表示されます）"
                   className="w-full rounded-md border bg-background px-2 py-1 text-sm"
                 />
-                {/* ⚠️ 過去日は createAbsenceRequest が弾くので登録し直せない。
-                    #214 と同じく、詰みは隠さず明示する (#217 で解消予定) */}
+                {/* #217 で「代理で欠勤を登録する」が入り、過去日でも登録し直せる
+                    ようになった。詰みではなくなったので destructive をやめる。
+                    ただし講師側の createAbsenceRequest は今も過去日を弾く */}
                 {r.isPastDate && (
-                  <p className="text-xs text-destructive">
-                    このコマは過去日のため、取り消すと欠勤として登録し直せません。
+                  <p className="text-xs text-muted-foreground">
+                    このコマは過去日のため、講師は自分で登録し直せません。必要なら
+                    「代理で欠勤を登録する」から登録してください。
                   </p>
                 )}
                 <div className="flex gap-2">

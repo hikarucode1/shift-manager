@@ -11,6 +11,7 @@ import {
   weeklyShifts,
 } from "@/db/schema";
 import { getSlotMeta } from "@/lib/slot-meta";
+import { isSlotPast } from "@/lib/slot-time";
 import { isValidIsoDate } from "@/lib/week";
 
 export type AssignmentOption = {
@@ -18,7 +19,9 @@ export type AssignmentOption = {
   tutorName: string;
   slotNumber: number;
   slotLabel: string;
-  /** その用途では選べない (重複して作れない) コマ */
+  /** コマが既に終了しているか。欠勤は選べる (むしろ本命)、代講の募集は不可 */
+  isEnded: boolean;
+  /** その用途では選べないコマ */
   blocked: boolean;
   /** 選択肢に添える短い注記。blocked の理由か、判断材料 */
   note: string | null;
@@ -61,6 +64,7 @@ export async function listAssignmentsForDate(
       .select({
         tutorId: weeklyShifts.tutorId,
         tutorName: profiles.displayName,
+        date: weeklyShifts.date,
         slotNumber: weeklyShifts.slotNumber,
       })
       .from(weeklyShifts)
@@ -105,19 +109,32 @@ export async function listAssignmentsForDate(
       // 欠勤の代理登録: 同一コマの pending/approved 欠勤が部分 unique で衝突する
       // 代講の代理募集: 同一コマの pending 交代が swap_requests_active_uniq で衝突する。
       //   欠勤があっても**塞がない** — 「欠勤が確定していて代講を探す」は #227 の本命
-      const blocked = purpose === "absence" ? absent.has(k) : swapping.has(k);
+      const slot = meta.get(s.slotNumber);
+      const isEnded = isSlotPast(s.date, slot?.end ?? "");
+      // 欠勤: 同一コマの pending/approved 欠勤が部分 unique で衝突する。
+      //   終了済みでも選べる — 事後に実態を記録するのが目的 (#217)
+      // 代講の募集: 同一コマの pending 交代が衝突する。加えて**終了済みは不可** —
+      //   今から代わってもらう相手が居ないため (#178 と同じ規則、#227)。
+      //   欠勤があっても塞がない — 「欠勤が確定していて代講を探す」が本命
+      const blocked =
+        purpose === "absence" ? absent.has(k) : swapping.has(k) || isEnded;
       const note = blocked
         ? purpose === "absence"
           ? "既に欠勤の申請あり"
-          : "既に交代申請あり"
+          : swapping.has(k)
+            ? "既に交代申請あり"
+            : "終了済み"
         : purpose === "swap" && absent.has(k)
           ? "欠勤あり（代講が必要）"
-          : null;
+          : purpose === "absence" && isEnded
+            ? "実施済み"
+            : null;
       return {
         tutorId: s.tutorId,
         tutorName: s.tutorName,
         slotNumber: s.slotNumber,
-        slotLabel: meta.get(s.slotNumber)?.label ?? `${s.slotNumber}限`,
+        slotLabel: slot?.label ?? `${s.slotNumber}限`,
+        isEnded,
         blocked,
         note,
       };
