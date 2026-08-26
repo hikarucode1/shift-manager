@@ -2,11 +2,11 @@
 
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
-import { and, asc, eq, inArray } from "drizzle-orm";
+import { and, eq } from "drizzle-orm";
 import { requireRole } from "@/lib/auth";
 import { notify } from "@/lib/notifications";
 import { db } from "@/db/client";
-import { absenceRequests, profiles, swapRequests, weeklyShifts } from "@/db/schema";
+import { absenceRequests, swapRequests, weeklyShifts } from "@/db/schema";
 import { isUniqueViolation } from "@/lib/db-errors";
 import { getSlotMeta } from "@/lib/slot-meta";
 import { isValidIsoDate, weekdayOf } from "@/lib/week";
@@ -112,80 +112,6 @@ export async function cancelApprovedAbsence(
 /* ------------------------------------------------------------------ */
 /*  #217 代理登録 — 電話 / LINE / 口頭で来た欠勤を教室長が記録する       */
 /* ------------------------------------------------------------------ */
-
-export type AssignmentOption = {
-  tutorId: string;
-  tutorName: string;
-  slotNumber: number;
-  slotLabel: string;
-  /** 既に pending/approved の欠勤があるコマ。選ばせても unique で弾かれる */
-  alreadyRequested: boolean;
-};
-
-/**
- * 指定日の確定シフト一覧 (代理登録の選択肢)。
- *
- * ⚠️ 日付で絞るだけで**過去日を除外しない**。急な欠勤は事後報告になるため、
- * 過去日を選べることがこの機能の目的そのもの (#217)。
- *
- * ⚠️ `weekly_shifts` を出典にしているので、交代が承認済みのコマは**代講者が**
- * 出る。休んだのが元の講師なら、そのコマは既に元講師の担当ではないので
- * 欠勤ではなく交代の取り消し (#213) 側の話になる。
- */
-export async function listAssignmentsForDate(
-  input: unknown,
-): Promise<
-  { ok: true; assignments: AssignmentOption[] } | { ok: false; error: string }
-> {
-  await requireRole("admin");
-
-  const parsed = z
-    .object({ date: z.string().refine(isValidIsoDate, "日付が不正です。") })
-    .safeParse(input);
-  if (!parsed.success) {
-    return { ok: false, error: parsed.error.issues[0]?.message ?? "入力が不正です。" };
-  }
-  const { date } = parsed.data;
-
-  const meta = await getSlotMeta();
-  const [shifts, taken] = await Promise.all([
-    db
-      .select({
-        tutorId: weeklyShifts.tutorId,
-        tutorName: profiles.displayName,
-        slotNumber: weeklyShifts.slotNumber,
-      })
-      .from(weeklyShifts)
-      .innerJoin(profiles, eq(profiles.id, weeklyShifts.tutorId))
-      .where(eq(weeklyShifts.date, date))
-      .orderBy(asc(weeklyShifts.slotNumber), asc(profiles.displayName)),
-    db
-      .select({
-        tutorId: absenceRequests.tutorId,
-        slotNumber: absenceRequests.slotNumber,
-      })
-      .from(absenceRequests)
-      .where(
-        and(
-          eq(absenceRequests.date, date),
-          inArray(absenceRequests.status, ["pending", "approved"]),
-        ),
-      ),
-  ]);
-
-  const takenKeys = new Set(taken.map((t) => `${t.tutorId}|${t.slotNumber}`));
-
-  return {
-    ok: true,
-    assignments: shifts.map((s) => ({
-      tutorId: s.tutorId,
-      tutorName: s.tutorName,
-      slotNumber: s.slotNumber,
-      slotLabel: meta.get(s.slotNumber)?.label ?? `${s.slotNumber}限`,
-      alreadyRequested: takenKeys.has(`${s.tutorId}|${s.slotNumber}`),
-    })),
-  };
-}
 
 const OnBehalfInput = z.object({
   tutorId: z.string().uuid("講師が正しく指定されていません。"),

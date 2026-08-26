@@ -730,6 +730,15 @@ export const swapRequests = pgTable(
       .notNull()
       .references(() => profiles.id, { onDelete: "cascade" }),
     kind: swapKindEnum("kind").notNull(),
+    /**
+     * この行を作った人 (#227)。講師本人の申請なら `requester_id` と同じ、
+     * 教室長の代理募集なら教室長の id。**両者は他のどの列でも区別できない**
+     * (`requester_id` は「休む講師」なので代理でも本人になる)。
+     * 「私は交代を頼んでいない」に答えられる必要がある。#227 以前は null。
+     */
+    createdBy: uuid("created_by").references(() => profiles.id, {
+      onDelete: "set null",
+    }),
     /** 指名交代時のみ */
     nominatedTutorId: uuid("nominated_tutor_id").references(() => profiles.id, {
       onDelete: "set null",
