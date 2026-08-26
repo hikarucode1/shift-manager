@@ -99,8 +99,8 @@ export function DecidedAbsencesPanel({
 
       {history.truncated > 0 && (
         <p className="text-xs text-muted-foreground">
-          直近 {rows.length} 件のみ表示しています（これより古いものは
-          出ていません）。
+          直近 {rows.length} 件のみ表示しています（これより前に決定した
+          ものは出ていません）。
         </p>
       )}
 

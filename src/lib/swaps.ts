@@ -537,7 +537,7 @@ export async function getPendingSwapRequests(): Promise<AdminSwapRequest[]> {
  */
 export type SwapHistory = {
   rows: AdminSwapRequest[];
-  /** limit で切り捨てた件数 (0 なら全部出ている) */
+  /** limit を超える行がまだ残っているか (1 = 残っている)。**件数ではない** */
   truncated: number;
 };
 
@@ -549,8 +549,8 @@ export type SwapHistory = {
  * 給与でモメたときに「一度代講が入って取り消された」を確認する唯一の手段。
  *
  * ⚠️ 日付では絞らない。過去のコマこそ「実際は代講が流れた」の是正対象。
- * 代わりに件数で切り、**切り捨てた件数を返す** (黙って落とすと、取り消したい
- * 古い代講が一覧から消えたことに気づけない)。
+ * 代わりに件数で切り、**まだ残りがあることを `truncated` で伝える** (黙って
+ * 落とすと、取り消したい古い代講が一覧から消えたことに気づけない)。
  */
 export async function getSwapHistory(
   status: "approved" | "cancelled",

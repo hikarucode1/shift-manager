@@ -197,9 +197,10 @@ const DecideInput = z.object({
  * `gte(date, today)` のみ)。#178 を読んで「揃っていない」と見えても、
  * ここに `hasSlotEnded` を足さないこと。足すと当日の欠勤すら出せなくなる。
  *
- * ⚠️ 既知の穴 (#217): それでも**翌日以降は誰も登録できない**
- * (`createAbsenceRequest` が `date < jstToday()` で弾き、admin が代理で作る導線も
- * 無い)。承認側を緩く保っているのはその穴を広げないためでもある。
+ * ⚠️ 元は「翌日以降は誰も登録できない」穴があった (#217) が、**解消済み** —
+ * `createAbsenceOnBehalf` (教室長の代理登録、日付ガード無し) が入った。
+ * 講師側の `createAbsenceRequest` は今も `date < jstToday()` で弾くので、
+ * 過去日は教室長の代理登録が唯一の入口。承認側を緩く保つ判断は変えない。
  */
 export async function decideAbsenceRequest(
   input: unknown,

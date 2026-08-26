@@ -102,8 +102,8 @@ export function ApprovedSwapsPanel({
 
       {history.truncated > 0 && (
         <p className="text-xs text-muted-foreground">
-          直近 {approved.length} 件のみ表示しています（これより古いものは
-          出ていません）。
+          直近 {approved.length} 件のみ表示しています（これより前に決定した
+          ものは出ていません）。
         </p>
       )}
 
@@ -143,7 +143,12 @@ export function ApprovedSwapsPanel({
             {/* #233: 一覧を決定順に並べたので、その根拠を出す */}
             {r.decidedAt && (
               <p className="text-xs text-muted-foreground">
-                {readOnly ? "取り消し日時" : "承認日時"}:{" "}
+                {readOnly
+                  ? "取り消し日時"
+                  : r.kind === "recorded"
+                    ? "記録日時"
+                    : "承認日時"}
+                :{" "}
                 {fmtDateTimeJst(r.decidedAt)}
               </p>
             )}
