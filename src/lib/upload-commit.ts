@@ -280,7 +280,8 @@ export async function commitShiftUpload(
     // `代講(承認済): A → B` の note が消える)。しかも swap_requests は approved の
     // まま残るので、申請履歴と座席表が食い違ったままになる。
     //
-    // 「誰が実際にそのコマに入ったか」は承認でしか記録できない (#178/#213) ので、
+    // 「誰が実際にそのコマに入ったか」は swap_requests の approved 行にしか
+    // 残らない (#178/#213。#215 の `recordSubstitution` も同じ形の行を作る) ので、
     // CSV で基礎を作り直したうえに、その事実を積み直す。
     //
     // ⚠️ **どれを適用するかは純関数 planSwapReapplication が決める**。順序

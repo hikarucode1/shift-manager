@@ -3,7 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { after } from "next/server";
 import { z } from "zod";
-import { and, eq, inArray, isNull, ne } from "drizzle-orm";
+import { and, arrayContains, eq, inArray, isNull, ne } from "drizzle-orm";
 import { requireRole } from "@/lib/auth";
 import { notify } from "@/lib/notifications";
 import { getEligibleApplicantIds, hasSlotEnded, isTutorBusyAt } from "@/lib/swaps";
@@ -131,8 +131,11 @@ export async function decideSwapRequest(
       // 代講者へ付け替えるため、日を跨いだ書き換えを防ぐ。
       //
       // ⚠️ **コマ単位まで厳しくしないこと** (#178 のレビュー結論)。承認は
-      // 「誰が実際にそのコマに入ったか」を記録できる唯一の業務経路で、
-      // is_override と `代講(承認済): A → B` の note で監査痕跡も残る。同日の
+      // 「誰が実際にそのコマに入ったか」を記録する経路で、is_override と
+      // `代講(承認済): A → B` の note で監査痕跡も残る (#215 で
+      // `recordSubstitution` が加わり「唯一の経路」ではなくなったが、
+      // **承認をコマ単位で塞ぐ理由にはならない** — 応募まで進んだ案件を
+      // 記録側へ移し替えさせるのは遠回り)。同日の
       // 終了済みコマを塞ぐと、実際は代講が入ったのに記録は元の講師のまま
       // 確定する (weekly_shifts を直す admin 画面は無く、CSV 再取り込みは
       // その日の代講記録を全消しする)。8 限は 21:25 終了で、教室長の事務作業は
@@ -317,7 +320,9 @@ const CancelApprovedInput = z.object({
  *
  * ⚠️ 承認時に自動失効させた同一コマの欠勤申請は**戻さない**。失効前が pending
  * だったか approved だったかは記録されておらず、推測で復元すると別の嘘になる。
- * 代わりに戻り値で呼び出し側に伝え、画面で再申請を促す。
+ * 代わりに戻り値で呼び出し側に伝え、画面で「代理で欠勤を登録する」(#217) を
+ * 促す。**講師の再申請を促してはいけない** — `createAbsenceRequest` は過去日を
+ * 弾くので、終了したコマでは実行不能な案内になる。
  */
 export async function cancelApprovedSwap(
   input: unknown,
@@ -552,7 +557,7 @@ export async function createOpenSwapOnBehalf(
     return {
       ok: false,
       error:
-        "終了したコマは募集できません（今から代わってもらう相手が居ないため）。実際に入った代講の記録は別途対応します。",
+        "終了したコマは募集できません（今から代わってもらう相手が居ないため）。実際に入った代講は「代講を記録する」から記録してください。",
     };
   }
 
@@ -628,4 +633,228 @@ export async function createOpenSwapOnBehalf(
 
   revalidateAll();
   return { ok: true };
+}
+
+/* ------------------------------------------------------------------ */
+/*  #215 実施済みの代講を記録する / 教室長が代講者を確定させる            */
+/* ------------------------------------------------------------------ */
+
+const RecordSubstitutionInput = z.object({
+  tutorId: z.string().uuid("担当の講師が正しく指定されていません。"),
+  substituteId: z.string().uuid("代講者が正しく指定されていません。"),
+  date: z.string().refine(isValidIsoDate, "日付が不正です。"),
+  slotNumber: z.number().int().min(1).max(20),
+  reason: z
+    .string()
+    .trim()
+    .min(1, "理由を入力してください。")
+    .max(500, "理由は 500 文字以内で入力してください。"),
+});
+
+/**
+ * 教室長が「このコマは誰が入ったか」を直接記録する (#215)。
+ *
+ * ⚠️ **日付・コマのガードは付けない。** #227 の代理募集とはここが逆で、
+ * あちらは「募集」なので終了したコマでは成立しない (代わってもらう相手が
+ * 居ない) のに対し、こちらは**記録**。#178 / #211 / #213 / #219 と同じ結論で、
+ * 過去こそ本命。用途は 2 つある:
+ *   - 過去: 「先週、実際は B が入っていた」を後から記録する (#215 の起票理由)
+ *   - 当日・未来: 「A が休む。B に電話したら入れると言った」を確定させる
+ * 後者は #227 で意図的に外した「教室長による指名」の正しい形でもある。
+ * 電話で手配済みの相手を、募集を出して応募を待たないと登録できないのは
+ * 実務に合わない。
+ *
+ * ⚠️ `note` は `substitutionNote` を使い、承認経由の代講と**同じ形**にする。
+ * `planSwapReapplication` (#212) が CSV 再取り込み後に承認済みの交代を
+ * 再適用する際も同じ関数を使うため、ここだけ別形式にすると**CSV を上げ直した
+ * 瞬間に標準形へ書き戻されて食い違う** (`substitution-note.ts` の警告どおり)。
+ *
+ * ⚠️ 同一コマの欠勤は `decideSwapRequest` と同じく自動失効させる。A は
+ * そのコマの担当ではなくなるので、欠勤の記録を残すと週次シフト表と食い違う。
+ *
+ * ⚠️ 可逆。`cancelApprovedSwap` (#213) は日付ガードが無いので、記録を
+ * 間違えても取り消して記録し直せる。新しい詰みは作らない。
+ */
+export async function recordSubstitution(
+  input: unknown,
+): Promise<
+  | { ok: true; pendingSwap: boolean; expiredAbsences: number }
+  | { ok: false; error: string }
+> {
+  const { profile } = await requireRole("admin");
+
+  const parsed = RecordSubstitutionInput.safeParse(input);
+  if (!parsed.success) {
+    return {
+      ok: false,
+      error: parsed.error.issues[0]?.message ?? "入力が不正です。",
+    };
+  }
+  const { tutorId, substituteId, date, slotNumber, reason } = parsed.data;
+
+  if (tutorId === substituteId) {
+    return { ok: false, error: "同じ講師を代講者にはできません。" };
+  }
+
+  // 未処理の交代申請が残っていないか (塞がないが、記録後は付け替え対象が
+  // 変わって承認できなくなるので呼び出し側に伝える)
+  const pending = await db
+    .select({ id: swapRequests.id })
+    .from(swapRequests)
+    .where(
+      and(
+        eq(swapRequests.requesterId, tutorId),
+        eq(swapRequests.date, date),
+        eq(swapRequests.slotNumber, slotNumber),
+        eq(swapRequests.status, "pending"),
+      ),
+    )
+    .limit(1);
+
+  let expiredAbsences = 0;
+  try {
+    await db.transaction(async (tx) => {
+      const sub = await tx
+        .select({ id: profiles.id, name: profiles.displayName })
+        .from(profiles)
+        .where(
+          and(
+            eq(profiles.id, substituteId),
+            arrayContains(profiles.roles, ["tutor"]),
+            eq(profiles.isActive, true),
+          ),
+        )
+        .limit(1);
+      if (sub.length === 0) {
+        throw new SwapBizError("代講者の講師が見つかりません。");
+      }
+
+      // 代講者が同じコマに既に出勤予定なら不可 (weekly_shifts_unique)
+      if (await isTutorBusyAt(date, slotNumber, substituteId, tx)) {
+        throw new SwapBizError("その代講者は既にそのコマに出勤予定です。");
+      }
+
+      // ⚠️ 同一コマに承認済みの代講が既にあると**両方とも取り消せなくなる**。
+      // `cancelApprovedSwap` は同一 date/slot に自分以外の approved 行が 1 本でも
+      // あれば無条件に弾く (元に戻すと CSV 初期値まで戻り、生きている方の痕跡が
+      // 消えるため)。2 本ある状態ではどちらを選んでもその分岐に落ちるので、
+      // 「新しい方から順に」という案内も実行できない。
+      // 記録は「既に代講が入っているコマ」を主対象にするので、ここを開けると
+      // この PR が消しに来た一方通行のドアが別の形で戻る。先に取り消させる。
+      const approvedDup = await tx
+        .select({ id: swapRequests.id })
+        .from(swapRequests)
+        .where(
+          and(
+            eq(swapRequests.status, "approved"),
+            eq(swapRequests.date, date),
+            eq(swapRequests.slotNumber, slotNumber),
+          ),
+        )
+        .limit(1);
+      if (approvedDup.length > 0) {
+        throw new SwapBizError(
+          "このコマには既に承認済みの代講があります。先に承認済みタブでそれを取り消してから記録してください。",
+        );
+      }
+
+      const owner = await tx
+        .select({ id: profiles.id, name: profiles.displayName })
+        .from(profiles)
+        .where(eq(profiles.id, tutorId))
+        .limit(1);
+      const ownerName = owner[0]?.name ?? "不明";
+
+      const inserted = await tx
+        .insert(swapRequests)
+        .values({
+          requesterId: tutorId,
+          createdBy: profile.id,
+          kind: "recorded",
+          date,
+          slotNumber,
+          reason,
+          status: "approved",
+          approvedApplicantId: substituteId,
+          decidedBy: profile.id,
+          decidedAt: new Date(),
+        })
+        .returning({ id: swapRequests.id });
+      if (inserted.length === 0) {
+        throw new SwapBizError("記録に失敗しました。");
+      }
+
+      const reassigned = await tx
+        .update(weeklyShifts)
+        .set({
+          tutorId: substituteId,
+          isOverride: true,
+          note: substitutionNote(ownerName, sub[0].name),
+        })
+        .where(
+          and(
+            eq(weeklyShifts.tutorId, tutorId),
+            eq(weeklyShifts.date, date),
+            eq(weeklyShifts.slotNumber, slotNumber),
+          ),
+        )
+        .returning({ id: weeklyShifts.id });
+      if (reassigned.length === 0) {
+        throw new SwapBizError("その講師はこのコマの担当ではありません。");
+      }
+
+      // decideSwapRequest と同じ扱い。A は担当ではなくなるので、欠勤を
+      // 残すと週次シフト表と食い違う
+      const expired = await tx
+        .update(absenceRequests)
+        .set({
+          status: "cancelled",
+          decisionNote: ABSENCE_AUTO_EXPIRED_NOTE,
+          updatedAt: new Date(),
+        })
+        .where(
+          and(
+            eq(absenceRequests.tutorId, tutorId),
+            eq(absenceRequests.date, date),
+            eq(absenceRequests.slotNumber, slotNumber),
+            inArray(absenceRequests.status, ["pending", "approved"]),
+          ),
+        )
+        .returning({ id: absenceRequests.id });
+      // ⚠️ 黙って失効させない。`cancelApprovedSwap` が expiredAbsences を返して
+      // 画面に出しているのと揃える。#217 で登録した欠勤が消えたことに
+      // 教室長が気づけないと、記録を取り消しても戻し忘れる
+      expiredAbsences = expired.length;
+    });
+  } catch (e) {
+    if (e instanceof SwapBizError) return { ok: false, error: e.message };
+    console.error("recordSubstitution failed", e);
+    return {
+      ok: false,
+      error: "記録に失敗しました。時間をおいて再度お試しください。",
+    };
+  }
+
+  const meta = await getSlotMeta();
+  const slotLabel = meta.get(slotNumber)?.label ?? `${slotNumber}限`;
+  // ⚠️ 二人とも自分では何もしていないので、通知が唯一の手がかり。
+  // 承認経由の代講が両者に通知しているのと揃える
+  await Promise.all([
+    notify([tutorId], {
+      type: "swap_result",
+      title: "代講が記録されました（教室長による記録）",
+      body: `対象: ${date} ${slotLabel} ／ ${reason}`,
+      href: "/tutor",
+    }),
+    notify([substituteId], {
+      type: "swap_result",
+      title: "代講の担当として記録されました",
+      body: `対象: ${date} ${slotLabel} ／ ${reason}`,
+      href: "/tutor",
+    }),
+  ]);
+
+  revalidateAll();
+  revalidatePath("/admin/weekly");
+  return { ok: true, pendingSwap: pending.length > 0, expiredAbsences };
 }

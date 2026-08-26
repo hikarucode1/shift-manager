@@ -121,10 +121,18 @@ export function ApprovedSwapsPanel({
                   実施済み
                 </Badge>
               )}
-              {r.isProxy && (
+              {/* #215: 記録行も created_by が教室長なので isProxy が立つ。
+                  「募集した」と「記録した」は別物なので kind で出し分ける */}
+              {r.kind === "recorded" ? (
                 <Badge variant="secondary" className="text-[10px]">
-                  代理募集
+                  記録
                 </Badge>
+              ) : (
+                r.isProxy && (
+                  <Badge variant="secondary" className="text-[10px]">
+                    代理募集
+                  </Badge>
+                )
               )}
             </div>
             <p className="text-muted-foreground">
@@ -155,7 +163,7 @@ export function ApprovedSwapsPanel({
                   {r.requesterName} さんを担当に戻し、{r.approvedApplicantName ?? "代講者"}{" "}
                   さんの代講記録を消します。
                   {r.isEnded &&
-                    "このコマは既に終了しているため、取り消すと元に戻せません。"}
+                    "このコマは既に終了しているため、講師の再申請では戻せません。戻す場合は「代講を記録する」から記録し直してください。"}
                 </p>
                 <div className="flex gap-2">
                   <Button

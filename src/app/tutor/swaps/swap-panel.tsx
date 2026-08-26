@@ -323,15 +323,23 @@ export function SwapPanel({
                         {shortDate(r.date)}（{r.weekdayLabel}） {r.slotLabel}
                       </span>
                       <Badge variant="outline">
+                        {/* #215: recorded を足したので二値では嘘になる
+                            (記録行が「代講募集」と出ていた) */}
                         {r.kind === "named"
                           ? `指名: ${r.nominatedName ?? "—"}`
-                          : "代講募集"}
+                          : r.kind === "recorded"
+                            ? "代講の記録"
+                            : "代講募集"}
                       </Badge>
                       <Badge variant={st.variant}>{st.text}</Badge>
                       {/* #227: 自分で出していない募集が一覧に出るので、
                           本人の申請と区別が付くようにする */}
-                      {r.isProxy && (
-                        <Badge variant="secondary">教室長が募集</Badge>
+                      {r.kind === "recorded" ? (
+                        <Badge variant="secondary">教室長が記録</Badge>
+                      ) : (
+                        r.isProxy && (
+                          <Badge variant="secondary">教室長が募集</Badge>
+                        )
                       )}
                       {r.status === "pending" && (
                         <Button

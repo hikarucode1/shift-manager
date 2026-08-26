@@ -32,6 +32,10 @@ export const requestStatusEnum = pgEnum("request_status", [
 export const swapKindEnum = pgEnum("swap_kind", [
   "named", // 指名交代
   "open",  // 代講募集
+  // #215: 募集も応募も経由せず、教室長が「誰が入ったか」を直接記録したもの。
+  // named/open はどちらも「講師が誰かに代わってもらう依頼」を表すので、
+  // 起きていない募集を主張しないために別の値にする。
+  "recorded",
 ]);
 
 export const weekdayEnum = pgEnum("weekday", [

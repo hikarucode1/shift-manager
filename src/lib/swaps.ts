@@ -16,6 +16,7 @@ import { db } from "@/db/client";
 import {
   profiles,
   swapApplications,
+  swapKindEnum,
   swapRequests,
   weeklyShifts,
 } from "@/db/schema";
@@ -24,7 +25,11 @@ import { getSlotMeta } from "@/lib/slot-meta";
 import { isSlotPast } from "@/lib/slot-time";
 import { jstToday, weekdayOf } from "@/lib/week";
 
-export type SwapKind = "named" | "open";
+/**
+ * ⚠️ enum から導出する。手書きで並べていたため #215 で `recorded` を足したとき
+ * 二重管理になっていた (tsc が比較の不整合として検出した)。
+ */
+export type SwapKind = (typeof swapKindEnum.enumValues)[number];
 export type SwapStatus = "pending" | "approved" | "rejected" | "cancelled";
 
 export type SwappableShift = {

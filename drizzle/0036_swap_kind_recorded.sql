@@ -1,0 +1,1 @@
+ALTER TYPE "public"."swap_kind" ADD VALUE 'recorded';

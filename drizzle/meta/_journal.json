@@ -253,6 +253,13 @@
       "when": 1787649667116,
       "tag": "0035_swap_requests_created_by",
       "breakpoints": true
+    },
+    {
+      "idx": 36,
+      "version": "7",
+      "when": 1787717302036,
+      "tag": "0036_swap_kind_recorded",
+      "breakpoints": true
     }
   ]
 }
