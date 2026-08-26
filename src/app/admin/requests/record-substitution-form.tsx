@@ -116,7 +116,7 @@ export function RecordSubstitutionForm({ today }: { today: string }) {
       }
       if (res.pendingSwap) {
         parts.push(
-          "未処理の交代申請が残っています。担当が変わったため承認できないので、交代・代講タブで却下してください。",
+          "未処理の交代申請が残っています。担当が変わったため承認できないので、交代・代講タブで却下（教室長が出した代理募集なら取り下げ）してください。",
         );
       }
       setNotice({ type: "ok", text: parts.join(" ") });

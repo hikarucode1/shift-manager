@@ -194,6 +194,37 @@ export async function cancelSwapRequest(
   const parsed = IdInput.safeParse(input);
   if (!parsed.success) return { ok: false, error: "入力が不正です。" };
 
+  // ⚠️ **教室長の代理募集 (#227) は講師が取り下げられない** (#231)。
+  // `requester_id` は「休む講師」なので、代理で作られた募集も講師の一覧に出て
+  // このボタンで消せてしまう。しかし `cancelSwapRequest` は通知を出さず、
+  // **教室長は通知画面を持たない** (`/tutor/notifications` は tutor 限定) ため、
+  // 教室長は募集が消えたことに気づけず応募を待ち続ける。
+  // 塞いでも詰まない — 教室長側に `cancelOpenSwapOnBehalf` がある。
+  const target = await db
+    .select({
+      id: swapRequests.id,
+      createdBy: swapRequests.createdBy,
+      status: swapRequests.status,
+    })
+    .from(swapRequests)
+    .where(
+      and(
+        eq(swapRequests.id, parsed.data.id),
+        eq(swapRequests.requesterId, profile.id),
+      ),
+    )
+    .limit(1);
+  if (target.length === 0) {
+    return { ok: false, error: "取り消せませんでした。" };
+  }
+  if (target[0].createdBy !== null && target[0].createdBy !== profile.id) {
+    return {
+      ok: false,
+      error:
+        "この募集は教室長が作成したものです。取り下げは教室長に依頼してください。",
+    };
+  }
+
   const updated = await db
     .update(swapRequests)
     .set({ status: "cancelled", updatedAt: new Date() })

@@ -88,7 +88,7 @@ export async function createAbsenceRequest(
   // ない**。教室長の代理登録がこの併存を通常経路で作る。交代承認時の
   // auto-cancel は後始末ではなく前提の一部になった。
   const swapDup = await db
-    .select({ id: swapRequests.id })
+    .select({ id: swapRequests.id, createdBy: swapRequests.createdBy })
     .from(swapRequests)
     .where(
       and(
@@ -100,10 +100,14 @@ export async function createAbsenceRequest(
     )
     .limit(1);
   if (swapDup.length > 0) {
+    // ⚠️ #231 で講師は代理募集を取り下げられなくなったので、「交代申請で対応
+    // してください」だけだと閉じたドアを指す。作成者で文言を分ける
     return {
       ok: false,
       error:
-        "このコマには交代申請があります。欠勤申請ではなく交代申請で対応してください。",
+        swapDup[0].createdBy !== null && swapDup[0].createdBy !== profile.id
+          ? "このコマには教室長が出した代講の募集があります。欠勤の扱いは教室長にご相談ください。"
+          : "このコマには交代申請があります。欠勤申請ではなく交代申請で対応してください。",
     };
   }
 

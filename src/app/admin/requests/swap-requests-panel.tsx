@@ -10,7 +10,7 @@ import { Badge } from "@/components/ui/badge";
 import { shortDate } from "@/lib/week";
 import { cn } from "@/lib/utils";
 import { avatarColor, avatarInitial } from "@/lib/avatar";
-import { decideSwapRequest } from "./swap-actions";
+import { cancelOpenSwapOnBehalf, decideSwapRequest } from "./swap-actions";
 
 export function SwapRequestsPanel({
   pending,
@@ -25,6 +25,9 @@ export function SwapRequestsPanel({
   } | null>(null);
   const [rejectId, setRejectId] = useState<string | null>(null);
   const [rejectNote, setRejectNote] = useState("");
+  // #231: 代理募集 (教室長が作ったもの) は「却下」ではなく「取り下げ」。
+  // 却下すると本人が出していない申請が却下されたことになる
+  const [mode, setMode] = useState<"reject" | "withdraw">("reject");
 
   useEffect(() => {
     if (!notice) return;
@@ -120,7 +123,11 @@ export function SwapRequestsPanel({
                     onChange={(e) => setRejectNote(e.target.value)}
                     rows={2}
                     maxLength={500}
-                    placeholder="却下の理由を入力（講師に表示されます）"
+                    placeholder={
+                      mode === "withdraw"
+                        ? "取り下げの理由を入力（講師と応募者に表示されます）"
+                        : "却下の理由を入力（講師に表示されます）"
+                    }
                     className="w-full rounded-md border bg-background px-3 py-2 text-sm focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
                   />
                   <div className="flex gap-2">
@@ -131,12 +138,19 @@ export function SwapRequestsPanel({
                       onClick={() =>
                         run(
                           () =>
-                            decideSwapRequest({
-                              decision: "rejected",
-                              id: r.id,
-                              decisionNote: rejectNote.trim(),
-                            }),
-                          "却下しました。",
+                            mode === "withdraw"
+                              ? cancelOpenSwapOnBehalf({
+                                  id: r.id,
+                                  reason: rejectNote.trim(),
+                                })
+                              : decideSwapRequest({
+                                  decision: "rejected",
+                                  id: r.id,
+                                  decisionNote: rejectNote.trim(),
+                                }),
+                          mode === "withdraw"
+                            ? "募集を取り下げました。講師と応募者に通知が届きます。"
+                            : "却下しました。",
                           () => {
                             setRejectId(null);
                             setRejectNote("");
@@ -144,7 +158,7 @@ export function SwapRequestsPanel({
                         )
                       }
                     >
-                      却下を確定
+                      {mode === "withdraw" ? "取り下げを確定" : "却下を確定"}
                     </Button>
                     <Button
                       variant="ghost"
@@ -168,7 +182,9 @@ export function SwapRequestsPanel({
                     <div className="space-y-1">
                       <p className="text-xs font-medium">
                         {r.isPastDate
-                          ? "過去のコマのため承認できません (却下は可能です):"
+                          ? r.isProxy
+                            ? "過去のコマのため承認できません (取り下げは可能です):"
+                            : "過去のコマのため承認できません (却下は可能です):"
                           : r.isEnded
                             ? "終了したコマです。実際に代講が入った場合のみ承認してください:"
                             : "応募者から代講者を選んで承認:"}
@@ -209,9 +225,10 @@ export function SwapRequestsPanel({
                     onClick={() => {
                       setRejectId(r.id);
                       setRejectNote("");
+                      setMode(r.isProxy ? "withdraw" : "reject");
                     }}
                   >
-                    却下
+                    {r.isProxy ? "募集を取り下げる" : "却下"}
                   </Button>
                 </div>
               )}

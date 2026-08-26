@@ -870,3 +870,129 @@ export async function recordSubstitution(
   revalidatePath("/admin/weekly");
   return { ok: true, pendingSwap: pending.length > 0, expiredAbsences };
 }
+
+const CancelProxySwapInput = z.object({
+  id: z.string().uuid("対象が正しく指定されていません。"),
+  reason: z
+    .string()
+    .trim()
+    .min(1, "取り下げ理由を入力してください。")
+    .max(500, "取り下げ理由は 500 文字以内で入力してください。"),
+});
+
+/**
+ * 教室長が自分の代理募集を取り下げる (#231)。
+ *
+ * ⚠️ **却下ではない。** 従来これを閉じる手段は `decideSwapRequest` の却下だけで、
+ * 講師に「交代・代講申請が却下されました」と通知が飛んでいた。**本人は申請して
+ * いない**ので、身に覚えのない申請が却下されたことになる。
+ *
+ * ⚠️ 対象は**代理募集のみ** (`created_by !== requester_id`)。講師本人の申請を
+ * 閉じるのは教室長の「判断」なので、そちらは理由つきの却下が正しい。
+ *
+ * ⚠️ **応募者にも通知する。** 引き受けるつもりで予定を空けている可能性があり、
+ * 募集が消えたことを知らせないと当日まで待たせる。
+ * (`decideSwapRequest` の却下は応募者に通知していない = 既存の穴。同じ穴を
+ * 知りながら開けたくないので、こちらは通知する)
+ */
+export async function cancelOpenSwapOnBehalf(
+  input: unknown,
+): Promise<ActionResult> {
+  const { profile } = await requireRole("admin");
+
+  const parsed = CancelProxySwapInput.safeParse(input);
+  if (!parsed.success) {
+    return {
+      ok: false,
+      error: parsed.error.issues[0]?.message ?? "入力が不正です。",
+    };
+  }
+  const { id, reason } = parsed.data;
+
+  const rows = await db
+    .select({
+      requesterId: swapRequests.requesterId,
+      createdBy: swapRequests.createdBy,
+      date: swapRequests.date,
+      slotNumber: swapRequests.slotNumber,
+    })
+    .from(swapRequests)
+    .where(and(eq(swapRequests.id, id), eq(swapRequests.status, "pending")))
+    .limit(1);
+  if (rows.length === 0) {
+    return {
+      ok: false,
+      error: "取り下げできませんでした（既に対応済みの可能性があります）。",
+    };
+  }
+  const req = rows[0];
+  if (req.createdBy === null || req.createdBy === req.requesterId) {
+    return {
+      ok: false,
+      error:
+        "これは講師本人の申請です。取り下げではなく、理由を添えて却下してください。",
+    };
+  }
+
+  const updated = await db
+    .update(swapRequests)
+    .set({
+      status: "cancelled",
+      decidedBy: profile.id,
+      decidedAt: new Date(),
+      decisionNote: reason,
+      updatedAt: new Date(),
+    })
+    .where(and(eq(swapRequests.id, id), eq(swapRequests.status, "pending")))
+    .returning({ id: swapRequests.id });
+  if (updated.length === 0) {
+    return {
+      ok: false,
+      error: "取り下げできませんでした（既に対応済みの可能性があります）。",
+    };
+  }
+
+  // ⚠️ **応募者は UPDATE の「後」に取る**。先に取ると、SELECT と UPDATE の間に
+  // 入った応募を取りこぼして通知が届かない (募集は消えるのに本人は待ち続ける)。
+  // 後で取れば `applyToSwap` の行ロックで両方向とも安全:
+  //   - 応募が先にコミット → こちらの UPDATE がロック待ちになり、解放後の
+  //     SELECT にその応募が見える
+  //   - こちらが先にコミット → `applyToSwap` は `FOR UPDATE` 後の status 再検証
+  //     (`pending` でない) で弾かれ、応募自体が生まれない
+  // なお取り消しで `swap_applications` の行は変化しない (withdrawnAt を立てる
+  // のは講師の自己取り下げだけ) ので、後から引いても同じ結果になる。
+  const applicants = await db
+    .select({ applicantId: swapApplications.applicantId })
+    .from(swapApplications)
+    .where(
+      and(
+        eq(swapApplications.swapRequestId, id),
+        isNull(swapApplications.withdrawnAt),
+      ),
+    );
+
+  const meta = await getSlotMeta();
+  const slotLabel = meta.get(req.slotNumber)?.label ?? `${req.slotNumber}限`;
+  await Promise.all([
+    notify([req.requesterId], {
+      type: "swap_result",
+      title: "代講の募集が取り下げられました",
+      body: `対象: ${req.date} ${slotLabel} ／ ${reason}`,
+      href: "/tutor/swaps",
+    }),
+    applicants.length > 0
+      ? notify(
+          applicants.map((a) => a.applicantId),
+          {
+            type: "swap_result",
+            title: "応募していた代講の募集が取り下げられました",
+            body: `対象: ${req.date} ${slotLabel} ／ ${reason}`,
+            href: "/tutor/open-swaps",
+          },
+        )
+      : Promise.resolve(),
+  ]);
+
+  revalidateAll();
+  return { ok: true };
+}
