@@ -5,6 +5,7 @@ import { db } from "@/db/client";
 import { absenceRequests, profiles, swapRequests } from "@/db/schema";
 import { ABSENCE_AUTO_EXPIRED_NOTE } from "@/lib/absence-expiry";
 import { getSlotMeta } from "@/lib/slot-meta";
+import { isSlotPast } from "@/lib/slot-time";
 import {
   mergeLogEntries,
   toAbsenceLogEntry,
@@ -12,7 +13,7 @@ import {
   type LogStatus,
   type RequestLogEntry,
 } from "@/lib/request-log";
-import { weekdayOf } from "@/lib/week";
+import { jstToday, weekdayOf } from "@/lib/week";
 
 /** 台帳に出す状態。`pending` は未対応タブの担当なので含めない */
 export const LOG_STATES = ["approved", "cancelled", "rejected"] as const;
@@ -29,10 +30,20 @@ export type RequestLog = {
 
 const DEFAULT_LIMIT = 50;
 
-function sinceIso(period: LogPeriodFilter, now: Date): Date | null {
+/**
+ * 期間フィルタの下限。
+ *
+ * ⚠️ `setMonth` は日のオーバーフローで**月をまたぐ**。3/31 に 1 ヶ月前を取ると
+ * 2/31 → 3/3 になり、窓が 28 日に縮んで 2/28〜3/3 の記録が黙って消える
+ * (`truncated` も立たないので警告も出ない)。日がずれたら前月末にクランプする。
+ */
+export function sinceOf(period: LogPeriodFilter, now: Date): Date | null {
   if (period === "all") return null;
+  const months = period === "1m" ? 1 : 3;
   const d = new Date(now);
-  d.setMonth(d.getMonth() - (period === "1m" ? 1 : 3));
+  const day = d.getDate();
+  d.setMonth(d.getMonth() - months);
+  if (d.getDate() !== day) d.setDate(0); // 前月末へ戻す
   return d;
 }
 
@@ -59,9 +70,12 @@ export async function getRequestLog(opts: {
   const limit = opts.limit ?? DEFAULT_LIMIT;
   const states: LogStatus[] =
     opts.state === "all" ? [...LOG_STATES] : [opts.state];
-  const since = sinceIso(opts.period, opts.now ?? new Date());
+  const since = sinceOf(opts.period, opts.now ?? new Date());
   const meta = await getSlotMeta();
   const label = (n: number) => meta.get(n)?.label ?? `${n}限`;
+  const ended = (date: string, n: number) =>
+    isSlotPast(date, meta.get(n)?.end ?? "");
+  const today = jstToday();
 
   const absenceOccurred = sql`coalesce(${absenceRequests.decidedAt}, ${absenceRequests.updatedAt})`;
   const swapOccurred = sql`coalesce(${swapRequests.decidedAt}, ${swapRequests.updatedAt})`;
@@ -150,6 +164,8 @@ export async function getRequestLog(opts: {
       slotNumber: r.slotNumber,
       slotLabel: label(r.slotNumber),
       weekdayLabel: weekdayOf(r.date).label,
+      isEnded: ended(r.date, r.slotNumber),
+      isPastDate: r.date < today,
       reason: r.reason,
       note: r.note,
       actorName: r.actorName,
@@ -171,12 +187,15 @@ export async function getRequestLog(opts: {
       slotNumber: r.slotNumber,
       slotLabel: label(r.slotNumber),
       weekdayLabel: weekdayOf(r.date).label,
+      isEnded: ended(r.date, r.slotNumber),
+      isPastDate: r.date < today,
       reason: r.reason,
       note: r.note,
       actorName: r.actorName,
       decidedAt: r.decidedAt ? r.decidedAt.toISOString() : null,
       updatedAt: r.updatedAt.toISOString(),
       requesterName: r.requesterName,
+      swapKind: r.kind as "named" | "open" | "recorded",
       isProxy: r.createdBy !== null && r.createdBy !== r.requesterId,
       approvedApplicantName: r.approvedApplicantName,
       isRecorded: r.kind === "recorded",

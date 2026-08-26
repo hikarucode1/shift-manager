@@ -79,7 +79,7 @@ export function OpenSwapOnBehalfForm({ today }: { today: string }) {
       }
       setNotice({
         type: "ok",
-        text: "募集しました。応募があれば交代・代講タブに出ます。",
+        text: "募集しました。応募があれば「未対応」タブに出ます。",
       });
       setReason("");
       setPicked("");
@@ -102,7 +102,7 @@ export function OpenSwapOnBehalfForm({ today }: { today: string }) {
         <p className="flex items-start gap-1.5 text-xs text-muted-foreground">
           <Info className="mt-0.5 size-3.5 shrink-0" aria-hidden />
           欠勤が決まったコマの代講を、教室長から募集します。応募資格のある講師全員に
-          通知が飛び、応募があれば交代・代講タブで承認します。休む講師本人にも
+          通知が飛び、応募があれば「未対応」タブで承認します。休む講師本人にも
           「代講を募集した」ことが通知されます。
         </p>
 

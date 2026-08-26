@@ -111,12 +111,12 @@ export function RecordSubstitutionForm({ today }: { today: string }) {
       const parts = ["記録しました。週次シフト表の担当を差し替えました。"];
       if (res.expiredAbsences > 0) {
         parts.push(
-          "このコマの欠勤の記録は失効させました（担当が変わったため）。取り消し済みタブから確認できます。",
+          "このコマの欠勤の記録は失効させました（担当が変わったため）。「記録」タブから確認できます。",
         );
       }
       if (res.pendingSwap) {
         parts.push(
-          "未処理の交代申請が残っています。担当が変わったため承認できないので、交代・代講タブで却下（教室長が出した代理募集なら取り下げ）してください。",
+          "未処理の交代申請が残っています。担当が変わったため承認できないので、「未対応」タブで却下（教室長が出した代理募集なら取り下げ）してください。",
         );
       }
       setNotice({ type: "ok", text: parts.join(" ") });
@@ -144,7 +144,7 @@ export function RecordSubstitutionForm({ today }: { today: string }) {
           <Info className="mt-0.5 size-3.5 shrink-0" aria-hidden />
           「このコマは実際に誰が入ったか」を記録します。週次シフト表の担当が
           その場で差し替わります。実施済みのコマも、これから入ることが決まっている
-          コマも記録できます。間違えた場合は承認済みタブから取り消せます。
+          コマも記録できます。間違えた場合は「記録」タブから取り消せます。
         </p>
 
         {notice && (

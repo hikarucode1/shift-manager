@@ -65,6 +65,13 @@ export default async function AdminRequestsPage({
 
   const pendingCount = pendingAbsences.length + pendingSwaps.length;
   const today = jstToday();
+  // 未対応 ⇄ 記録 を行き来してもフィルタを捨てない
+  const logHref = `/admin/requests?${new URLSearchParams({
+    tab: "log",
+    period,
+    type,
+    state,
+  }).toString()}`;
 
   return (
     <div className="space-y-6">
@@ -82,10 +89,18 @@ export default async function AdminRequestsPage({
         <RecordSubstitutionForm today={today} />
       </div>
 
-      <div role="tablist" aria-label="表示の切り替え" className="flex gap-1 border-b">
-        <TabLink tab="pending" active={tab === "pending"} label="未対応" count={pendingCount} />
-        <TabLink tab="log" active={tab === "log"} label="記録" />
-      </div>
+      {/* ⚠️ role="tablist"/"tab" は付けない。実体は <a href> のページ遷移で、
+          APG の tab パターン (roving tabindex + 矢印キー) を満たさないため。
+          リンクとして正しく公開する (nav + aria-current) */}
+      <nav aria-label="表示の切り替え" className="flex gap-1 border-b">
+        <TabLink
+          href="/admin/requests"
+          active={tab === "pending"}
+          label="未対応"
+          count={pendingCount}
+        />
+        <TabLink href={logHref} active={tab === "log"} label="記録" />
+      </nav>
 
       {tab === "pending" ? (
         <div className="space-y-6">
@@ -111,21 +126,20 @@ export default async function AdminRequestsPage({
 }
 
 function TabLink({
-  tab,
+  href,
   active,
   label,
   count,
 }: {
-  tab: Tab;
+  href: string;
   active: boolean;
   label: string;
   count?: number;
 }) {
   return (
     <Link
-      href={tab === "pending" ? "/admin/requests" : "/admin/requests?tab=log"}
-      role="tab"
-      aria-selected={active}
+      href={href}
+      aria-current={active ? "page" : undefined}
       className={cn(
         "-mb-px flex items-center gap-1.5 border-b-2 px-3 py-2 text-sm font-medium transition-colors",
         active

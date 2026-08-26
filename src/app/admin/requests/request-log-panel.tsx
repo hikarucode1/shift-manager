@@ -60,6 +60,7 @@ export function RequestLogPanel({
     }
     setNotice(null);
     startTransition(async () => {
+      // ⚠️ kind による分岐はここだけ。server action の宛先なので構造上不可避
       const res = await (entry.kind === "absence"
         ? cancelApprovedAbsence({ id: entry.id, reason: trimmed })
         : cancelApprovedSwap({ id: entry.id, reason: trimmed })
@@ -69,7 +70,17 @@ export function RequestLogPanel({
         if (isIndeterminate(res)) router.refresh();
         return;
       }
-      setNotice({ type: "ok", text: "取り消しました。" });
+      // ⚠️ 交代の取り消しで同一コマの欠勤が自動失効していたら必ず伝える。
+      // 黙って消すと、#217 で登録した欠勤が消えたことに気づけない (#225)
+      const expired =
+        "expiredAbsences" in res ? (res.expiredAbsences as number) : 0;
+      setNotice({
+        type: "ok",
+        text:
+          expired > 0
+            ? "取り消しました。このコマの欠勤申請が交代成立時に自動失効しています。必要なら「代理で欠勤を登録する」から登録し直してください。"
+            : "取り消しました。",
+      });
       setOpenId(null);
       setReason("");
       router.refresh();
@@ -132,7 +143,7 @@ export function RequestLogPanel({
         <p className="flex items-start gap-1.5 text-xs text-muted-foreground">
           <Info className="mt-0.5 size-3.5 shrink-0" aria-hidden />
           直近 {log.rows.length} 件のみ表示しています（これより前に決定したものは
-          出ていません）。期間を絞ると古いものも探せます。
+          出ていません）。種別や状態で絞ると、隠れているものも探せます。
         </p>
       )}
 
@@ -152,7 +163,7 @@ export function RequestLogPanel({
                     {fmtDateTimeJst(r.occurredAt)}
                   </span>
                   <Badge variant="outline" className="text-[10px]">
-                    {r.kind === "absence" ? "欠勤" : "代講"}
+                    {r.kindLabel}
                   </Badge>
                   <Badge variant="secondary" className="text-[10px]">
                     {r.eventLabel}
@@ -160,6 +171,13 @@ export function RequestLogPanel({
                   {r.adminInitiated && (
                     <Badge variant="outline" className="text-[10px]">
                       教室長が起点
+                    </Badge>
+                  )}
+                  {/* #213: 実施済みかどうかは判断の前提。出していないと
+                      「来週の予定の取り消し」と見た目で区別が付かない */}
+                  {r.isEnded && (
+                    <Badge variant="outline" className="text-[10px]">
+                      実施済み
                     </Badge>
                   )}
                 </div>
@@ -202,6 +220,15 @@ export function RequestLogPanel({
                         placeholder="取り消しの理由を入力（講師に表示されます）"
                         className="w-full rounded-md border bg-background px-2 py-1 text-sm"
                       />
+                      {/* 何が起きるかは種別で違う。文言はモデル側で固定してある */}
+                      <p className="text-xs text-muted-foreground">
+                        {r.cancelWarning}
+                      </p>
+                      {r.cancelHint && (
+                        <p className="text-xs text-muted-foreground">
+                          {r.cancelHint}
+                        </p>
+                      )}
                       <div className="flex gap-2">
                         <Button
                           size="sm"
@@ -235,7 +262,7 @@ export function RequestLogPanel({
                         setNotice(null);
                       }}
                     >
-                      取り消す
+                      {r.cancelLabel}
                     </Button>
                   ))}
               </CardContent>

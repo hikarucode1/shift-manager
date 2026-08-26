@@ -523,14 +523,3 @@ export async function getPendingSwapRequests(): Promise<AdminSwapRequest[]> {
     createdAt: r.createdAt.toISOString(),
   }));
 }
-
-/**
- * 承認済みの交代・代講 (#213)。取り消しの対象を教室長が見るための一覧。
- *
- * ⚠️ これが無いと**承認済みを取り消す画面が存在しない**。`approved` は終端状態で、
- * 唯一の是正手段が「CSV を上げ直して巻き戻す」という副作用の大きいバグ頼み
- * だった (#210)。
- *
- * 直近のものから見せる。過去のコマこそ「実際は代講が流れた」の是正対象なので
- * 日付では絞らない。
- */

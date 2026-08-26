@@ -757,7 +757,7 @@ export async function recordSubstitution(
         .limit(1);
       if (approvedDup.length > 0) {
         throw new SwapBizError(
-          "このコマには既に承認済みの代講があります。先に承認済みタブでそれを取り消してから記録してください。",
+          "このコマには既に承認済みの代講があります。先に「記録」タブでそれを取り消してから記録してください。",
         );
       }
 
