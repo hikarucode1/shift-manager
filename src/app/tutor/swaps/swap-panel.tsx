@@ -341,7 +341,10 @@ export function SwapPanel({
                           <Badge variant="secondary">教室長が募集</Badge>
                         )
                       )}
-                      {r.status === "pending" && (
+                      {/* ⚠️ 代理募集には出さない (#231)。サーバー側で塞いだので
+                          押すと必ず失敗する dead button になる。#165/#178 で
+                          admin 側の過去日承認について同じ判断をしている */}
+                      {r.status === "pending" && !r.isProxy && (
                         <Button
                           variant="ghost"
                           size="sm"
@@ -360,6 +363,15 @@ export function SwapPanel({
                     <p className="mt-1 text-sm text-muted-foreground">
                       理由: {r.reason}
                     </p>
+                    {/* 取り消しボタンを出さない代わりに、依頼先を示す (#231)。
+                        これが無いと講師は「取り下げたいがどうすればいいか」を
+                        アプリ内で知る手段が無くなる */}
+                    {r.status === "pending" && r.isProxy && (
+                      <p className="mt-1 text-xs text-muted-foreground">
+                        この募集は教室長が作成したものです。取り下げが必要な場合は
+                        教室長にご相談ください。
+                      </p>
+                    )}
                     {r.applicants.length > 0 && (
                       <p className="mt-0.5 text-sm text-muted-foreground">
                         応募: {r.applicants.map((a) => a.applicantName).join(", ")}

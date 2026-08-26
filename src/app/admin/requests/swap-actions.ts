@@ -934,17 +934,6 @@ export async function cancelOpenSwapOnBehalf(
     };
   }
 
-  // 応募者を先に取っておく (更新後だと「誰が待っていたか」を引き直せない)
-  const applicants = await db
-    .select({ applicantId: swapApplications.applicantId })
-    .from(swapApplications)
-    .where(
-      and(
-        eq(swapApplications.swapRequestId, id),
-        isNull(swapApplications.withdrawnAt),
-      ),
-    );
-
   const updated = await db
     .update(swapRequests)
     .set({
@@ -962,6 +951,25 @@ export async function cancelOpenSwapOnBehalf(
       error: "取り下げできませんでした（既に対応済みの可能性があります）。",
     };
   }
+
+  // ⚠️ **応募者は UPDATE の「後」に取る**。先に取ると、SELECT と UPDATE の間に
+  // 入った応募を取りこぼして通知が届かない (募集は消えるのに本人は待ち続ける)。
+  // 後で取れば `applyToSwap` の行ロックで両方向とも安全:
+  //   - 応募が先にコミット → こちらの UPDATE がロック待ちになり、解放後の
+  //     SELECT にその応募が見える
+  //   - こちらが先にコミット → `applyToSwap` は `FOR UPDATE` 後の status 再検証
+  //     (`pending` でない) で弾かれ、応募自体が生まれない
+  // なお取り消しで `swap_applications` の行は変化しない (withdrawnAt を立てる
+  // のは講師の自己取り下げだけ) ので、後から引いても同じ結果になる。
+  const applicants = await db
+    .select({ applicantId: swapApplications.applicantId })
+    .from(swapApplications)
+    .where(
+      and(
+        eq(swapApplications.swapRequestId, id),
+        isNull(swapApplications.withdrawnAt),
+      ),
+    );
 
   const meta = await getSlotMeta();
   const slotLabel = meta.get(req.slotNumber)?.label ?? `${req.slotNumber}限`;

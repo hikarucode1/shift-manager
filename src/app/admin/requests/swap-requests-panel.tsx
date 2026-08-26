@@ -182,7 +182,9 @@ export function SwapRequestsPanel({
                     <div className="space-y-1">
                       <p className="text-xs font-medium">
                         {r.isPastDate
-                          ? "過去のコマのため承認できません (却下は可能です):"
+                          ? r.isProxy
+                            ? "過去のコマのため承認できません (取り下げは可能です):"
+                            : "過去のコマのため承認できません (却下は可能です):"
                           : r.isEnded
                             ? "終了したコマです。実際に代講が入った場合のみ承認してください:"
                             : "応募者から代講者を選んで承認:"}
