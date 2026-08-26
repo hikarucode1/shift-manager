@@ -10,6 +10,7 @@ import {
   isNull,
   ne,
   or,
+  sql,
 } from "drizzle-orm";
 import { alias } from "drizzle-orm/pg-core";
 import { db } from "@/db/client";
@@ -92,6 +93,11 @@ export type OpenSwap = {
 
 export type AdminSwapRequest = MySwapRequest & {
   requesterId: string;
+  /**
+   * 決定 (承認 / 却下 / 取り消し / 記録) の時刻 (#233)。履歴タブはこれで並べる
+   * ので、根拠を画面にも出す。決定前は null
+   */
+  decidedAt: string | null;
   /** コマが既に終了しているか (#178)。注意表示のみ。承認は同日中なら通る */
   isEnded: boolean;
   /** 過去日で、承認がサーバー側で弾かれるか (#165)。承認ボタンを落とす印 */
@@ -485,6 +491,7 @@ export async function getPendingSwapRequests(): Promise<AdminSwapRequest[]> {
       status: swapRequests.status,
       decisionNote: swapRequests.decisionNote,
       createdBy: swapRequests.createdBy,
+      decidedAt: swapRequests.decidedAt,
       createdAt: swapRequests.createdAt,
     })
     .from(swapRequests)
@@ -513,6 +520,7 @@ export async function getPendingSwapRequests(): Promise<AdminSwapRequest[]> {
     decisionNote: r.decisionNote,
     applicants: applicants.get(r.id) ?? [],
     isProxy: r.createdBy !== null && r.createdBy !== r.requesterId,
+    decidedAt: r.decidedAt ? r.decidedAt.toISOString() : null,
     createdAt: r.createdAt.toISOString(),
   }));
 }
@@ -529,7 +537,7 @@ export async function getPendingSwapRequests(): Promise<AdminSwapRequest[]> {
  */
 export type SwapHistory = {
   rows: AdminSwapRequest[];
-  /** limit で切り捨てた件数 (0 なら全部出ている) */
+  /** limit を超える行がまだ残っているか (1 = 残っている)。**件数ではない** */
   truncated: number;
 };
 
@@ -541,8 +549,8 @@ export type SwapHistory = {
  * 給与でモメたときに「一度代講が入って取り消された」を確認する唯一の手段。
  *
  * ⚠️ 日付では絞らない。過去のコマこそ「実際は代講が流れた」の是正対象。
- * 代わりに件数で切り、**切り捨てた件数を返す** (黙って落とすと、取り消したい
- * 古い代講が一覧から消えたことに気づけない)。
+ * 代わりに件数で切り、**まだ残りがあることを `truncated` で伝える** (黙って
+ * 落とすと、取り消したい古い代講が一覧から消えたことに気づけない)。
  */
 export async function getSwapHistory(
   status: "approved" | "cancelled",
@@ -568,6 +576,7 @@ export async function getSwapHistory(
       status: swapRequests.status,
       decisionNote: swapRequests.decisionNote,
       createdBy: swapRequests.createdBy,
+      decidedAt: swapRequests.decidedAt,
       createdAt: swapRequests.createdAt,
     })
     .from(swapRequests)
@@ -575,7 +584,17 @@ export async function getSwapHistory(
     .leftJoin(nominee, eq(nominee.id, swapRequests.nominatedTutorId))
     .leftJoin(approved, eq(approved.id, swapRequests.approvedApplicantId))
     .where(eq(swapRequests.status, status))
-    .orderBy(desc(swapRequests.date), asc(swapRequests.slotNumber))
+    // ⚠️ **決定順に並べる (対象コマの日付順ではない)** (#233)。#215 で過去の
+    // コマを記録できるようになったため、date 順だと今日記録した 6 月のコマが
+    // 一覧の最下部に沈み、limit を超えていると**作った直後の記録が最初から
+    // 出ない**。取り消しはこの一覧経由でしかできないので、#215 が消しに来た
+    // 一方通行が並び順のせいで戻る。
+    // `decided_at` は講師の自己取り下げでは null なので `updated_at` で補う
+    // (終端に落ちた行では updated_at が実質その遷移時刻)。
+    .orderBy(
+      desc(sql`coalesce(${swapRequests.decidedAt}, ${swapRequests.updatedAt})`),
+      asc(swapRequests.slotNumber),
+    )
     .limit(limit + 1);
 
   const truncated = rows.length > limit ? 1 : 0;
@@ -601,6 +620,7 @@ export async function getSwapHistory(
       decisionNote: r.decisionNote,
       applicants: [],
       isProxy: r.createdBy !== null && r.createdBy !== r.requesterId,
+      decidedAt: r.decidedAt ? r.decidedAt.toISOString() : null,
       createdAt: r.createdAt.toISOString(),
     })),
   };

@@ -49,9 +49,13 @@ const CancelApprovedAbsenceInput = z.object({
  *      対象なので、`pending` に戻すと講師の出し直しを塞いだままになる
  *   `cancelled` にすれば両方とも解ける。
  *
- * ⚠️ **`cancelled` 行を見ても「承認を経由したか」は判別できない**。`cancelled`
- * には講師の自己取り下げ (`cancelAbsenceRequest`) と交代成立の自動失効
- * (`swap-actions.ts`) からも到達し、どちらも `decided_by` を触らないため。
+ * ⚠️ `cancelled` には 3 経路から到達する。#225 以降は**どの経路かは判別できる**:
+ *   - この関数:            `decided_by` あり / `decided_at` あり
+ *   - 交代成立の自動失効:   `decided_by` **null** / `decided_at` あり
+ *                          (+ `decision_note = ABSENCE_AUTO_EXPIRED_NOTE`)
+ *   - 講師の自己取り下げ:   どちらも null
+ * ただし**「承認を経由したか」は依然として判別できない**。`decided_by` /
+ * `decided_at` は最後の決定で上書きされ、承認時の値は残らないため。
  * 承認履歴が要るなら別テーブルが要る (現状そこまでの要求は無い)。
  */
 export async function cancelApprovedAbsence(
