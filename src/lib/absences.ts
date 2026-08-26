@@ -1,6 +1,5 @@
 import "server-only";
-import { and, asc, between, desc, eq, gte, inArray, sql } from "drizzle-orm";
-import { alias } from "drizzle-orm/pg-core";
+import { and, asc, between, desc, eq, gte, inArray } from "drizzle-orm";
 import { db } from "@/db/client";
 import { absenceRequests, profiles, weeklyShifts } from "@/db/schema";
 import { getSlotMeta } from "@/lib/slot-meta";
@@ -47,24 +46,6 @@ export type PendingAbsence = AbsenceRequestRow & {
    * 「過去のコマの欠勤を承認しようとしている」と気づけるようにするための印。
    */
   isEnded: boolean;
-};
-
-/** 決定済み (承認済み / 取り消し済み) の欠勤申請 (#219) */
-export type DecidedAbsence = PendingAbsence & {
-  /** 決定した教室長。`decided_by` は onDelete: set null なので欠けうる */
-  decidedByName: string | null;
-  /**
-   * 過去日か (#219)。取り消しの可逆性がここで変わる。`createAbsenceRequest` は
-   * `date < jstToday()` を弾くため、**過去日の取り消しは一方通行** (講師も教室長も
-   * 登録し直せない = #217)。画面で警告するための印で、取り消し自体は塞がない。
-   */
-  isPastDate: boolean;
-};
-
-export type AbsenceHistory = {
-  rows: DecidedAbsence[];
-  /** limit を超える行がまだ残っているか (1 = 残っている)。**件数ではない** */
-  truncated: number;
 };
 
 function slotLabelOf(
@@ -206,78 +187,6 @@ export async function getPendingAbsenceRequests(): Promise<PendingAbsence[]> {
     isProxy: r.createdBy !== null && r.createdBy !== r.tutorId,
     isEnded: isSlotPast(r.date, slotLabelOf(meta, r.slotNumber).end),
   }));
-}
-
-/**
- * 決定済み (承認済み / 取り消し済み) の欠勤申請 (#219)。
- *
- * ⚠️ **`cancelled` も返す**。取り消し理由を必須にしておきながら読む画面が無いと
- * write-only になる。`getSwapHistory` と同じ理由・同じ形。
- *
- * ⚠️ 日付では絞らない。**過去のコマこそ是正対象**で、「先週の欠勤を誤承認した」
- * を直せないと週次シフト表の取り消し線が恒久的に残る (#219 の起点)。
- * 代わりに件数で切り、まだ残りがあることを `truncated` で伝える。
- */
-export async function getAbsenceHistory(
-  status: "approved" | "cancelled",
-  limit = 50,
-): Promise<AbsenceHistory> {
-  const meta = await getSlotMeta();
-  const today = jstToday();
-  const decider = alias(profiles, "decider");
-
-  const rows = await db
-    .select({
-      id: absenceRequests.id,
-      tutorId: absenceRequests.tutorId,
-      tutorName: profiles.displayName,
-      decidedByName: decider.displayName,
-      date: absenceRequests.date,
-      slotNumber: absenceRequests.slotNumber,
-      reason: absenceRequests.reason,
-      status: absenceRequests.status,
-      decisionNote: absenceRequests.decisionNote,
-      decidedAt: absenceRequests.decidedAt,
-      createdBy: absenceRequests.createdBy,
-      createdAt: absenceRequests.createdAt,
-    })
-    .from(absenceRequests)
-    .innerJoin(profiles, eq(profiles.id, absenceRequests.tutorId))
-    .leftJoin(decider, eq(decider.id, absenceRequests.decidedBy))
-    .where(eq(absenceRequests.status, status))
-    // ⚠️ 決定順に並べる (#225 / #233)。理由は getSwapHistory と同じ —
-    // #217 の代理登録が過去日を扱うので、date 順だと直近の操作が沈む
-    .orderBy(
-      desc(
-        sql`coalesce(${absenceRequests.decidedAt}, ${absenceRequests.updatedAt})`,
-      ),
-      asc(absenceRequests.slotNumber),
-    )
-    .limit(limit + 1);
-
-  const truncated = rows.length > limit ? 1 : 0;
-
-  return {
-    truncated,
-    rows: rows.slice(0, limit).map((r) => ({
-      id: r.id,
-      tutorId: r.tutorId,
-      tutorName: r.tutorName,
-      decidedByName: r.decidedByName,
-      date: r.date,
-      slotNumber: r.slotNumber,
-      slotLabel: slotLabelOf(meta, r.slotNumber).label,
-      weekdayLabel: weekdayOf(r.date).label,
-      reason: r.reason,
-      status: r.status as AbsenceStatus,
-      decisionNote: r.decisionNote,
-      decidedAt: r.decidedAt ? r.decidedAt.toISOString() : null,
-      createdAt: r.createdAt.toISOString(),
-      isEnded: isSlotPast(r.date, slotLabelOf(meta, r.slotNumber).end),
-      isPastDate: r.date < today,
-      isProxy: r.createdBy !== null && r.createdBy !== r.tutorId,
-    })),
-  };
 }
 
 /**

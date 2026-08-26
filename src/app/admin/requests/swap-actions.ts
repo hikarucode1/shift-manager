@@ -6,6 +6,7 @@ import { z } from "zod";
 import { and, arrayContains, eq, inArray, isNull, ne } from "drizzle-orm";
 import { requireRole } from "@/lib/auth";
 import { notify } from "@/lib/notifications";
+import { ABSENCE_AUTO_EXPIRED_NOTE } from "@/lib/absence-expiry";
 import { getEligibleApplicantIds, hasSlotEnded, isTutorBusyAt } from "@/lib/swaps";
 import { substitutionNote } from "@/lib/substitution-note";
 import { isValidIsoDate, jstToday } from "@/lib/week";
@@ -296,10 +297,6 @@ export async function decideSwapRequest(
   revalidateAll();
   return { ok: true };
 }
-
-/** 交代成立時に同一コマの欠勤申請を失効させるときの decision_note。
- *  書く側 (承認) と読む側 (取り消し) で共有する。片方だけ変えると数えられなくなる */
-const ABSENCE_AUTO_EXPIRED_NOTE = "交代成立により自動失効";
 
 const CancelApprovedInput = z.object({
   // zod 既定の英語メッセージ ("Invalid UUID") がそのまま画面に出るのを防ぐ。
