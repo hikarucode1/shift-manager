@@ -108,12 +108,18 @@ export function RecordSubstitutionForm({ today }: { today: string }) {
         if (isIndeterminate(res)) router.refresh();
         return;
       }
-      setNotice({
-        type: "ok",
-        text: res.pendingSwap
-          ? "記録しました。このコマには未処理の交代申請が残っています。担当が変わったため承認できないので、交代・代講タブで却下してください。"
-          : "記録しました。週次シフト表の担当を差し替えました。",
-      });
+      const parts = ["記録しました。週次シフト表の担当を差し替えました。"];
+      if (res.expiredAbsences > 0) {
+        parts.push(
+          "このコマの欠勤の記録は失効させました（担当が変わったため）。取り消し済みタブから確認できます。",
+        );
+      }
+      if (res.pendingSwap) {
+        parts.push(
+          "未処理の交代申請が残っています。担当が変わったため承認できないので、交代・代講タブで却下してください。",
+        );
+      }
+      setNotice({ type: "ok", text: parts.join(" ") });
       setReason("");
       setPicked("");
       setSubs(null);

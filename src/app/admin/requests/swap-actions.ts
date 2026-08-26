@@ -131,8 +131,11 @@ export async function decideSwapRequest(
       // 代講者へ付け替えるため、日を跨いだ書き換えを防ぐ。
       //
       // ⚠️ **コマ単位まで厳しくしないこと** (#178 のレビュー結論)。承認は
-      // 「誰が実際にそのコマに入ったか」を記録できる唯一の業務経路で、
-      // is_override と `代講(承認済): A → B` の note で監査痕跡も残る。同日の
+      // 「誰が実際にそのコマに入ったか」を記録する経路で、is_override と
+      // `代講(承認済): A → B` の note で監査痕跡も残る (#215 で
+      // `recordSubstitution` が加わり「唯一の経路」ではなくなったが、
+      // **承認をコマ単位で塞ぐ理由にはならない** — 応募まで進んだ案件を
+      // 記録側へ移し替えさせるのは遠回り)。同日の
       // 終了済みコマを塞ぐと、実際は代講が入ったのに記録は元の講師のまま
       // 確定する (weekly_shifts を直す admin 画面は無く、CSV 再取り込みは
       // その日の代講記録を全消しする)。8 限は 21:25 終了で、教室長の事務作業は
@@ -675,7 +678,8 @@ const RecordSubstitutionInput = z.object({
 export async function recordSubstitution(
   input: unknown,
 ): Promise<
-  { ok: true; pendingSwap: boolean } | { ok: false; error: string }
+  | { ok: true; pendingSwap: boolean; expiredAbsences: number }
+  | { ok: false; error: string }
 > {
   const { profile } = await requireRole("admin");
 
@@ -707,6 +711,7 @@ export async function recordSubstitution(
     )
     .limit(1);
 
+  let expiredAbsences = 0;
   try {
     await db.transaction(async (tx) => {
       const sub = await tx
@@ -727,6 +732,30 @@ export async function recordSubstitution(
       // 代講者が同じコマに既に出勤予定なら不可 (weekly_shifts_unique)
       if (await isTutorBusyAt(date, slotNumber, substituteId, tx)) {
         throw new SwapBizError("その代講者は既にそのコマに出勤予定です。");
+      }
+
+      // ⚠️ 同一コマに承認済みの代講が既にあると**両方とも取り消せなくなる**。
+      // `cancelApprovedSwap` は同一 date/slot に自分以外の approved 行が 1 本でも
+      // あれば無条件に弾く (元に戻すと CSV 初期値まで戻り、生きている方の痕跡が
+      // 消えるため)。2 本ある状態ではどちらを選んでもその分岐に落ちるので、
+      // 「新しい方から順に」という案内も実行できない。
+      // 記録は「既に代講が入っているコマ」を主対象にするので、ここを開けると
+      // この PR が消しに来た一方通行のドアが別の形で戻る。先に取り消させる。
+      const approvedDup = await tx
+        .select({ id: swapRequests.id })
+        .from(swapRequests)
+        .where(
+          and(
+            eq(swapRequests.status, "approved"),
+            eq(swapRequests.date, date),
+            eq(swapRequests.slotNumber, slotNumber),
+          ),
+        )
+        .limit(1);
+      if (approvedDup.length > 0) {
+        throw new SwapBizError(
+          "このコマには既に承認済みの代講があります。先に承認済みタブでそれを取り消してから記録してください。",
+        );
       }
 
       const owner = await tx
@@ -776,7 +805,7 @@ export async function recordSubstitution(
 
       // decideSwapRequest と同じ扱い。A は担当ではなくなるので、欠勤を
       // 残すと週次シフト表と食い違う
-      await tx
+      const expired = await tx
         .update(absenceRequests)
         .set({
           status: "cancelled",
@@ -790,7 +819,12 @@ export async function recordSubstitution(
             eq(absenceRequests.slotNumber, slotNumber),
             inArray(absenceRequests.status, ["pending", "approved"]),
           ),
-        );
+        )
+        .returning({ id: absenceRequests.id });
+      // ⚠️ 黙って失効させない。`cancelApprovedSwap` が expiredAbsences を返して
+      // 画面に出しているのと揃える。#217 で登録した欠勤が消えたことに
+      // 教室長が気づけないと、記録を取り消しても戻し忘れる
+      expiredAbsences = expired.length;
     });
   } catch (e) {
     if (e instanceof SwapBizError) return { ok: false, error: e.message };
@@ -822,5 +856,5 @@ export async function recordSubstitution(
 
   revalidateAll();
   revalidatePath("/admin/weekly");
-  return { ok: true, pendingSwap: pending.length > 0 };
+  return { ok: true, pendingSwap: pending.length > 0, expiredAbsences };
 }

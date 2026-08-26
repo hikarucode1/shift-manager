@@ -74,17 +74,24 @@ export function AbsenceOnBehalfForm({ today }: { today: string }) {
         if (isIndeterminate(res)) router.refresh();
         return;
       }
-      // #227 で「教室長が代講を募集する」導線ができたので、当日以降の登録では
-      // そちらへ誘導する (#217 時点ではここが詰みだった)
-      const needsSubstitute = date >= today;
-      setNotice({
-        type: "ok",
-        text: res.pendingSwap
-          ? "登録しました。このコマには未処理の交代申請が残っています。交代・代講タブで処理してください。"
-          : needsSubstitute
-            ? "登録しました。講師に通知が届きます。代講を立てる場合は、交代・代講タブの「代理で代講を募集する」から募集できます。"
-            : "登録しました。講師に通知が届きます。",
-      });
+      // 代講の導線は #227 (募集) と #215 (記録) の 2 つあり、**コマが終了して
+      // いるかで使える方が変わる**。募集はコマ単位で終了済みを弾くので、
+      // 日付だけで「募集できます」と案内すると当日の終了済みコマで死ぬ
+      const ended =
+        assignments?.find((a) => `${a.tutorId}|${a.slotNumber}` === picked)
+          ?.isEnded ?? true;
+      const parts = ["登録しました。講師に通知が届きます。"];
+      parts.push(
+        ended
+          ? "実際に代講が入った場合は、交代・代講タブの「代講を記録する」から記録してください。"
+          : "代講を立てる場合は、交代・代講タブの「代理で代講を募集する」から募集できます（相手が決まっているなら「代講を記録する」でも登録できます）。",
+      );
+      if (res.pendingSwap) {
+        parts.push(
+          "このコマには未処理の交代申請が残っています。交代・代講タブで処理してください。",
+        );
+      }
+      setNotice({ type: "ok", text: parts.join(" ") });
       setReason("");
       setPicked("");
       load(date);
