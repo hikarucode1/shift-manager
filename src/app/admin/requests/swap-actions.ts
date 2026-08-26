@@ -33,6 +33,28 @@ function revalidateAll() {
   revalidatePath("/tutor");
 }
 
+/**
+ * その募集に応募していて、まだ取り下げていない講師の id (#238)。
+ *
+ * ⚠️ **募集の status を更新した「後」に呼ぶこと。** 先に取ると、SELECT と
+ * UPDATE の間に入った応募を取りこぼして通知が届かない。後なら `applyToSwap` の
+ * `FOR UPDATE` で両方向とも安全 (応募が先 → こちらの UPDATE がロック待ち /
+ * こちらが先 → applyToSwap が status 再検証で弾かれ応募が生まれない)。
+ * 決定で `swap_applications` の行は変化しないので、後から引いても同じ結果。
+ */
+async function activeApplicantIds(swapRequestId: string): Promise<string[]> {
+  const rows = await db
+    .select({ applicantId: swapApplications.applicantId })
+    .from(swapApplications)
+    .where(
+      and(
+        eq(swapApplications.swapRequestId, swapRequestId),
+        isNull(swapApplications.withdrawnAt),
+      ),
+    );
+  return rows.map((r) => r.applicantId);
+}
+
 const DecideInput = z.discriminatedUnion("decision", [
   z.object({
     decision: z.literal("approved"),
@@ -91,12 +113,29 @@ export async function decideSwapRequest(
     if (updated.length === 0) {
       return { ok: false, error: "処理できませんでした（対応済みの可能性）。" };
     }
-    await notify([updated[0].requesterId], {
-      type: "swap_result",
-      title: "交代・代講申請が却下されました",
-      body: `対象: ${updated[0].date} ${updated[0].slotNumber}限 ／ ${data.decisionNote}`,
-      href: "/tutor/swaps",
-    });
+    // ⚠️ 応募者にも通知する (#238)。承認・取り消しは両側に通知しているのに
+    // 却下だけ片側だった。応募者は引き受けるつもりで予定を空けて待っており、
+    // 募集は一覧から消えるので、通知が無いと当日まで待たせる
+    const applicants = await activeApplicantIds(data.id);
+    const meta = await getSlotMeta();
+    const slotLabel =
+      meta.get(updated[0].slotNumber)?.label ?? `${updated[0].slotNumber}限`;
+    await Promise.all([
+      notify([updated[0].requesterId], {
+        type: "swap_result",
+        title: "交代・代講申請が却下されました",
+        body: `対象: ${updated[0].date} ${slotLabel} ／ ${data.decisionNote}`,
+        href: "/tutor/swaps",
+      }),
+      applicants.length > 0
+        ? notify(applicants, {
+            type: "swap_result",
+            title: "応募していた代講の募集が却下されました",
+            body: `対象: ${updated[0].date} ${slotLabel} ／ ${data.decisionNote}`,
+            href: "/tutor/open-swaps",
+          })
+        : Promise.resolve(),
+    ]);
     revalidateAll();
     return { ok: true };
   }
@@ -104,6 +143,7 @@ export async function decideSwapRequest(
   // ---- 承認 ----
   // 通知はトランザクション確定後に送るため、tx の戻り値で情報を持ち出す
   let approvedInfo: {
+    id: string;
     requesterId: string;
     applicantId: string;
     requesterName: string;
@@ -256,6 +296,7 @@ export async function decideSwapRequest(
         );
 
       return {
+        id: data.id,
         requesterId: req.requesterId,
         applicantId,
         requesterName: nameOf(req.requesterId),
@@ -278,19 +319,36 @@ export async function decideSwapRequest(
 
   if (approvedInfo) {
     const a = approvedInfo;
+    // ⚠️ **選ばれなかった応募者にも通知する (#238)**。従来は申請者と代講者
+    // だけで、落選した講師には何も届かなかった。募集は status が pending で
+    // なくなって /tutor/open-swaps から消えるので、本人は結果を知る手段が無い。
+    // 却下より頻度が高い経路 (応募が 2 人以上あれば必ず起きる)
+    const others = (await activeApplicantIds(a.id)).filter(
+      (id) => id !== a.applicantId,
+    );
+    const meta = await getSlotMeta();
+    const slotLabel = meta.get(a.slotNumber)?.label ?? `${a.slotNumber}限`;
     await Promise.all([
       notify([a.requesterId], {
         type: "swap_result",
         title: "交代・代講申請が承認されました",
-        body: `対象: ${a.date} ${a.slotNumber}限 ／ 代講: ${a.applicantName}さん`,
+        body: `対象: ${a.date} ${slotLabel} ／ 代講: ${a.applicantName}さん`,
         href: "/tutor/swaps",
       }),
       notify([a.applicantId], {
         type: "swap_result",
         title: "代講が確定しました",
-        body: `対象: ${a.date} ${a.slotNumber}限 (${a.requesterName}さんの代講)`,
+        body: `対象: ${a.date} ${slotLabel} (${a.requesterName}さんの代講)`,
         href: "/tutor",
       }),
+      others.length > 0
+        ? notify(others, {
+            type: "swap_result",
+            title: "応募していた代講は他の講師に決まりました",
+            body: `対象: ${a.date} ${slotLabel}`,
+            href: "/tutor/open-swaps",
+          })
+        : Promise.resolve(),
     ]);
   }
 
