@@ -67,18 +67,26 @@ export type RequestLogEntry = {
   note: string | null;
   /** 画面に出す種類のラベル */
   eventLabel: string;
-  /** 取り消し操作を出してよいか (= 現在 approved) */
+  /**
+   * 教室長が起点の行か (#217 の代理登録 / #227 の代理募集 / #215 の記録)。
+   * 「講師が頼んだのか、教室長が手配したのか」は event と直交する軸
+   */
+  adminInitiated: boolean;
+  /**
+   * 承認済みの取り消し (#213 / #219) を出してよいか。
+   * ⚠️ #231 の「取り下げ」(pending が対象) はこれでは表せない
+   */
   cancellable: boolean;
 };
 
-const EVENT_LABEL: Record<RequestLogEvent, string> = {
+export const EVENT_LABEL: Record<RequestLogEvent, string> = {
   pending: "未対応",
   approved: "承認",
   registered: "代理登録",
   recorded: "記録",
   rejected: "却下",
   "cancelled-by-admin": "取り消し",
-  "withdrawn-by-admin": "取り下げ",
+  "withdrawn-by-admin": "教室長が取り下げ",
   "cancelled-by-tutor": "講師が取り下げ",
   "auto-expired": "失効（交代成立による）",
 };
@@ -102,7 +110,12 @@ type CommonInput = {
 
 export type AbsenceLogInput = CommonInput & {
   tutorName: string;
-  /** `created_by !== tutor_id` (#217) */
+  /**
+   * 教室長が作った行か (#217)。**必ず `created_by !== null && created_by !==
+   * tutor_id` で判定すること**。0034 は backfill 無しの列追加なので、それ以前の
+   * 行は `created_by = null` (＝講師本人が作った行)。null を無視すると
+   * **過去の承認済み欠勤が全部「代理登録」になる**。
+   */
   isProxy: boolean;
   /** `decision_note` が交代成立の自動失効マーカーと一致するか */
   autoExpired: boolean;
@@ -110,6 +123,16 @@ export type AbsenceLogInput = CommonInput & {
 
 export type SwapLogInput = CommonInput & {
   requesterName: string;
+  /**
+   * 教室長が作った行か (#227 の代理募集)。判定は欠勤側と同じ
+   * (`created_by !== null && created_by !== requester_id`)。
+   *
+   * ⚠️ **event には畳み込まない。** 代理募集は pending を経て普通に承認される
+   * ので、起きた出来事は「承認」で正しい。一方「山田が頼んだのか教室長が
+   * 出したのか」は承認・却下・取り下げのどれとも直交するため、別の軸で持つ。
+   * (欠勤の `registered` は承認ステップ自体が無いので event 側で表す)
+   */
+  isProxy: boolean;
   /** 承認された代講者。承認前に閉じた行では null */
   approvedApplicantName: string | null;
   /** `kind === "recorded"` (#215) */
@@ -122,6 +145,7 @@ function base(
   event: RequestLogEvent,
   subjectName: string,
   substituteName: string | null,
+  adminInitiated: boolean,
 ): RequestLogEntry {
   return {
     id: i.id,
@@ -140,6 +164,7 @@ function base(
     reason: i.reason,
     note: i.note,
     eventLabel: EVENT_LABEL[event],
+    adminInitiated,
     cancellable: i.status === "approved",
   };
 }
@@ -158,15 +183,21 @@ export function toAbsenceLogEntry(i: AbsenceLogInput): RequestLogEntry {
             ? "registered"
             : "approved"
           : // ---- cancelled ----
-            // 自動失効の判定を actorName より先に見る。#225 以降 自動失効も
-            // decided_at を書くので、時刻の有無では区別できない
-            i.autoExpired
+            // ⚠️ 自動失効の判定を actorName より先に見る。理由は「時刻」では
+            // ない — #225 以降、自動失効は `decided_by` を**明示的に null に
+            // する**ので、順序を入れ替えると「講師が取り下げ」に落ちる。
+            //
+            // ⚠️ note の文字列一致だけに頼らない。`cancelApprovedAbsence` の
+            // 理由欄は自由文なので、教室長が偶然 同じ文言を書くと
+            // (アプリ外で代講を手配した場合に十分あり得る) 本人の判断が
+            // 「失効」に化ける。自動失効は必ず actorName が無いので AND で縛る
+            i.autoExpired && i.actorName === null
             ? "auto-expired"
             : i.actorName !== null
               ? "cancelled-by-admin"
               : "cancelled-by-tutor";
   // 欠勤に代講者の概念は無い
-  return base(i, "absence", event, i.tutorName, null);
+  return base(i, "absence", event, i.tutorName, null, i.isProxy);
 }
 
 /** 交代・代講申請 1 行 → 台帳の行 */
@@ -188,25 +219,44 @@ export function toSwapLogEntry(i: SwapLogInput): RequestLogEntry {
               i.approvedApplicantName !== null
               ? "cancelled-by-admin"
               : "withdrawn-by-admin";
-  return base(i, "swap", event, i.requesterName, i.approvedApplicantName);
+  return base(
+    i,
+    "swap",
+    event,
+    i.requesterName,
+    i.approvedApplicantName,
+    i.isProxy || i.isRecorded,
+  );
 }
 
 /**
  * 2 テーブル分を 1 本の時系列にまとめる。
  *
- * ⚠️ 各テーブルから `limit + 1` 件ずつ取ったものを渡すこと。マージ後の上位
- * `limit` 件が、どちらかの `limit + 1` 件目より後に来ることはないので、
- * これで取りこぼさない。`truncated` は「まだ先がある」の意 (件数ではない)。
+ * ⚠️ **各グループは `limit + 1` 件ずつ取ったものを渡すこと。** マージ後の上位
+ * `limit` 件は 1 グループから最大 `limit` 件しか来ないので、`limit + 1` 件目より
+ * 後の行が上位に入ることはない。`truncated` は「まだ先がある」の意 (件数ではない)。
+ *
+ * ⚠️ **SQL 側の第 2 ソートキーを `id` に揃えること。** 現在の
+ * `getSwapHistory` / `getAbsenceHistory` は `slot_number ASC` で切っているため、
+ * 同一グループ内に `occurredAt` が完全一致する行が `limit + 1` 件以上あると、
+ * SQL とここで別の行が選ばれて取りこぼす。全経路が JS の `new Date()` なので
+ * 同一ミリ秒の衝突は現実的ではないが、不変条件としては噛み合っていない。
+ *
+ * 引数が配列の配列なのは、承認済み/取り消し済みのように**取得が 2 本を超える**
+ * ため。入れ子で呼ぶと `truncated` の意味が壊れるので、必ず一度に渡す。
  */
 export function mergeLogEntries(
-  a: RequestLogEntry[],
-  b: RequestLogEntry[],
+  groups: RequestLogEntry[][],
   limit: number,
 ): { rows: RequestLogEntry[]; truncated: boolean } {
-  const all = [...a, ...b].sort(
-    (x, y) =>
-      // 決定が新しい順。同時刻は id で安定させる (ページングの前提)
-      y.occurredAt.localeCompare(x.occurredAt) || x.id.localeCompare(y.id),
-  );
+  const all = groups.flat().sort((x, y) => {
+    // 決定が新しい順。`occurredAt` は必ず `Date#toISOString()` の出力
+    // (常に UTC の `Z` + ミリ秒 3 桁) なので、単純な文字列比較で時系列順になる。
+    // localeCompare は使わない — ロケール依存で遅く、`+09:00` 表記が混ざった
+    // 場合に同一時刻を -1 と答えるなど、前提が崩れたときに黙って間違える
+    if (x.occurredAt !== y.occurredAt) return x.occurredAt < y.occurredAt ? 1 : -1;
+    // 同時刻は id で安定させる (ページングの前提)
+    return x.id < y.id ? -1 : x.id > y.id ? 1 : 0;
+  });
   return { rows: all.slice(0, limit), truncated: all.length > limit };
 }
