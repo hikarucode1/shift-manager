@@ -1,7 +1,7 @@
 "use server";
 
 import { z } from "zod";
-import { and, asc, eq, inArray } from "drizzle-orm";
+import { and, arrayContains, asc, eq, inArray, ne } from "drizzle-orm";
 import { requireRole } from "@/lib/auth";
 import { db } from "@/db/client";
 import {
@@ -47,7 +47,7 @@ export async function listAssignmentsForDate(
   const parsed = z
     .object({
       date: z.string().refine(isValidIsoDate, "日付が不正です。"),
-      purpose: z.enum(["absence", "swap"]),
+      purpose: z.enum(["absence", "swap", "record"]),
     })
     .safeParse(input);
   if (!parsed.success) {
@@ -116,8 +116,20 @@ export async function listAssignmentsForDate(
       // 代講の募集: 同一コマの pending 交代が衝突する。加えて**終了済みは不可** —
       //   今から代わってもらう相手が居ないため (#178 と同じ規則、#227)。
       //   欠勤があっても塞がない — 「欠勤が確定していて代講を探す」が本命
+      // 欠勤: 同一コマの pending/approved 欠勤が部分 unique で衝突する。
+      //   終了済みでも選べる — 事後に実態を記録するのが目的 (#217)
+      // 代講の募集: 同一コマの pending 交代が衝突する。加えて**終了済みは不可** —
+      //   今から代わってもらう相手が居ないため (#178 と同じ規則、#227)。
+      //   欠勤があっても塞がない — 「欠勤が確定していて代講を探す」が本命
+      // 代講の記録: **何も塞がない** (#215)。過去・未来どちらも記録の対象で、
+      //   未処理の交代申請があっても記録はできる (記録後は承認できなくなるので
+      //   アクション側が戻り値で知らせる)
       const blocked =
-        purpose === "absence" ? absent.has(k) : swapping.has(k) || isEnded;
+        purpose === "absence"
+          ? absent.has(k)
+          : purpose === "swap"
+            ? swapping.has(k) || isEnded
+            : false;
       const note = blocked
         ? purpose === "absence"
           ? "既に欠勤の申請あり"
@@ -126,9 +138,13 @@ export async function listAssignmentsForDate(
             : "終了済み"
         : purpose === "swap" && absent.has(k)
           ? "欠勤あり（代講が必要）"
-          : purpose === "absence" && isEnded
-            ? "実施済み"
-            : null;
+          : purpose === "record"
+            ? [isEnded ? "実施済み" : null, swapping.has(k) ? "交代申請あり" : null]
+                .filter(Boolean)
+                .join(" / ") || null
+            : purpose === "absence" && isEnded
+              ? "実施済み"
+              : null;
       return {
         tutorId: s.tutorId,
         tutorName: s.tutorName,
@@ -140,4 +156,59 @@ export async function listAssignmentsForDate(
       };
     }),
   };
+}
+
+
+/**
+ * 指定コマの代講者候補 (#215)。現役の tutor から、担当本人と**そのコマに
+ * 既に出勤予定の講師**を除く (`weekly_shifts_unique` に当たるため)。
+ * `getEligibleApplicantIds` の氏名つき版で、判定条件は同じ。
+ */
+export async function listEligibleSubstitutes(
+  input: unknown,
+): Promise<
+  | { ok: true; tutors: { id: string; name: string }[] }
+  | { ok: false; error: string }
+> {
+  await requireRole("admin");
+
+  const parsed = z
+    .object({
+      date: z.string().refine(isValidIsoDate, "日付が不正です。"),
+      slotNumber: z.number().int().min(1).max(20),
+      excludeTutorId: z.string().uuid(),
+    })
+    .safeParse(input);
+  if (!parsed.success) {
+    return {
+      ok: false,
+      error: parsed.error.issues[0]?.message ?? "入力が不正です。",
+    };
+  }
+  const { date, slotNumber, excludeTutorId } = parsed.data;
+
+  const [candidates, assigned] = await Promise.all([
+    db
+      .select({ id: profiles.id, name: profiles.displayName })
+      .from(profiles)
+      .where(
+        and(
+          arrayContains(profiles.roles, ["tutor"]),
+          eq(profiles.isActive, true),
+          ne(profiles.id, excludeTutorId),
+        ),
+      )
+      .orderBy(asc(profiles.displayName)),
+    db
+      .select({ tutorId: weeklyShifts.tutorId })
+      .from(weeklyShifts)
+      .where(
+        and(
+          eq(weeklyShifts.date, date),
+          eq(weeklyShifts.slotNumber, slotNumber),
+        ),
+      ),
+  ]);
+  const busy = new Set(assigned.map((r) => r.tutorId));
+  return { ok: true, tutors: candidates.filter((c) => !busy.has(c.id)) };
 }

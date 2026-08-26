@@ -330,8 +330,12 @@ export function SwapPanel({
                       <Badge variant={st.variant}>{st.text}</Badge>
                       {/* #227: 自分で出していない募集が一覧に出るので、
                           本人の申請と区別が付くようにする */}
-                      {r.isProxy && (
-                        <Badge variant="secondary">教室長が募集</Badge>
+                      {r.kind === "recorded" ? (
+                        <Badge variant="secondary">教室長が記録</Badge>
+                      ) : (
+                        r.isProxy && (
+                          <Badge variant="secondary">教室長が募集</Badge>
+                        )
                       )}
                       {r.status === "pending" && (
                         <Button

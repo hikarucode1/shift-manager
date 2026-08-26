@@ -11,6 +11,7 @@ import { ApprovedSwapsPanel } from "./approved-swaps-panel";
 import { DecidedAbsencesPanel } from "./decided-absences-panel";
 import { AbsenceOnBehalfForm } from "./absence-on-behalf-form";
 import { OpenSwapOnBehalfForm } from "./swap-on-behalf-form";
+import { RecordSubstitutionForm } from "./record-substitution-form";
 
 type Tab = "absence" | "swap" | "approved" | "cancelled";
 
@@ -91,7 +92,10 @@ export function RequestsTabs({
           </div>
         ) : tab === "swap" ? (
           <div className="space-y-4">
-            <OpenSwapOnBehalfForm today={today} />
+            <div className="flex flex-wrap gap-2">
+              <OpenSwapOnBehalfForm today={today} />
+              <RecordSubstitutionForm today={today} />
+            </div>
             <SwapRequestsPanel pending={pendingSwaps} />
           </div>
         ) : tab === "approved" ? (
