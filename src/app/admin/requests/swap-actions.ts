@@ -236,6 +236,12 @@ export async function decideSwapRequest(
         .update(absenceRequests)
         .set({
           status: "cancelled",
+          // ⚠️ **`decided_by` を null にする** (#225)。触らないと、承認済み
+          // だった欠勤が失効したとき「承認した教室長」がそのまま残り、画面に
+          // 「取り消し: (その人の名前)」と出る。実際に取り消したのはその人では
+          // ない。失効は誰の判断でもないので、名前は消して時刻だけ残す
+          decidedBy: null,
+          decidedAt: new Date(),
           decisionNote: ABSENCE_AUTO_EXPIRED_NOTE,
           updatedAt: new Date(),
         })
@@ -809,6 +815,12 @@ export async function recordSubstitution(
         .update(absenceRequests)
         .set({
           status: "cancelled",
+          // ⚠️ **`decided_by` を null にする** (#225)。触らないと、承認済み
+          // だった欠勤が失効したとき「承認した教室長」がそのまま残り、画面に
+          // 「取り消し: (その人の名前)」と出る。実際に取り消したのはその人では
+          // ない。失効は誰の判断でもないので、名前は消して時刻だけ残す
+          decidedBy: null,
+          decidedAt: new Date(),
           decisionNote: ABSENCE_AUTO_EXPIRED_NOTE,
           updatedAt: new Date(),
         })

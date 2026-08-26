@@ -8,6 +8,7 @@ import { Badge } from "@/components/ui/badge";
 import { toFailedResult, isIndeterminate } from "@/lib/action-failure";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
+import { fmtDateTimeJst } from "@/lib/datetime";
 import { cn } from "@/lib/utils";
 import { cancelApprovedAbsence } from "./absence-actions";
 
@@ -125,9 +126,13 @@ export function DecidedAbsencesPanel({
             </div>
             <p className="text-muted-foreground">{r.tutorName}</p>
             <p className="text-xs text-muted-foreground">理由: {r.reason}</p>
-            {r.decidedByName && (
+            {/* #225: 自動失効 (交代成立) は decided_by を null にするので、
+                名前が無い = 「誰でもない決定」。理由は decisionNote に出る */}
+            {(r.decidedByName || r.decidedAt) && (
               <p className="text-xs text-muted-foreground">
-                {readOnly ? "取り消し" : "承認"}: {r.decidedByName}
+                {readOnly ? "取り消し" : "承認"}
+                {r.decidedByName ? `: ${r.decidedByName}` : ""}
+                {r.decidedAt ? `（${fmtDateTimeJst(r.decidedAt)}）` : ""}
               </p>
             )}
             {readOnly && r.decisionNote && (

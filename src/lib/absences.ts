@@ -1,5 +1,5 @@
 import "server-only";
-import { and, asc, between, desc, eq, gte, inArray } from "drizzle-orm";
+import { and, asc, between, desc, eq, gte, inArray, sql } from "drizzle-orm";
 import { alias } from "drizzle-orm/pg-core";
 import { db } from "@/db/client";
 import { absenceRequests, profiles, weeklyShifts } from "@/db/schema";
@@ -245,7 +245,14 @@ export async function getAbsenceHistory(
     .innerJoin(profiles, eq(profiles.id, absenceRequests.tutorId))
     .leftJoin(decider, eq(decider.id, absenceRequests.decidedBy))
     .where(eq(absenceRequests.status, status))
-    .orderBy(desc(absenceRequests.date), asc(absenceRequests.slotNumber))
+    // ⚠️ 決定順に並べる (#225 / #233)。理由は getSwapHistory と同じ —
+    // #217 の代理登録が過去日を扱うので、date 順だと直近の操作が沈む
+    .orderBy(
+      desc(
+        sql`coalesce(${absenceRequests.decidedAt}, ${absenceRequests.updatedAt})`,
+      ),
+      asc(absenceRequests.slotNumber),
+    )
     .limit(limit + 1);
 
   const truncated = rows.length > limit ? 1 : 0;

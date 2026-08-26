@@ -8,6 +8,7 @@ import { Badge } from "@/components/ui/badge";
 import { toFailedResult, isIndeterminate } from "@/lib/action-failure";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
+import { fmtDateTimeJst } from "@/lib/datetime";
 import { cn } from "@/lib/utils";
 import { cancelApprovedSwap } from "./swap-actions";
 
@@ -139,6 +140,13 @@ export function ApprovedSwapsPanel({
               {r.requesterName} → {r.approvedApplicantName ?? "不明"}
             </p>
             <p className="text-xs text-muted-foreground">理由: {r.reason}</p>
+            {/* #233: 一覧を決定順に並べたので、その根拠を出す */}
+            {r.decidedAt && (
+              <p className="text-xs text-muted-foreground">
+                {readOnly ? "取り消し日時" : "承認日時"}:{" "}
+                {fmtDateTimeJst(r.decidedAt)}
+              </p>
+            )}
             {readOnly && r.decisionNote && (
               <p className="text-xs text-muted-foreground">
                 取り消し理由: {r.decisionNote}
