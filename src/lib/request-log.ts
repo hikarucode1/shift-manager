@@ -65,8 +65,19 @@ export type RequestLogEntry = {
   reason: string;
   /** 決定時のコメント (却下理由・取り消し理由など) */
   note: string | null;
+  /**
+   * 種別のラベル。**`kind` から直に「欠勤/代講」と出さないこと** — swap には
+   * 指名交代 / 代講募集 / 記録 が含まれ、指名交代に「代講」と出すのは #237 と
+   * 同じ嘘になる
+   */
+  kindLabel: string;
   /** 画面に出す種類のラベル */
   eventLabel: string;
+  /**
+   * コマが既に終了しているか (#213)。取得済みなのに出さないと
+   * 「来週の予定の取り消し」と見た目で区別が付かない
+   */
+  isEnded: boolean;
   /**
    * 教室長が起点の行か (#217 の代理登録 / #227 の代理募集 / #215 の記録)。
    * 「講師が頼んだのか、教室長が手配したのか」は event と直交する軸
@@ -77,6 +88,16 @@ export type RequestLogEntry = {
    * ⚠️ #231 の「取り下げ」(pending が対象) はこれでは表せない
    */
   cancellable: boolean;
+  /** 取り消しボタンの文言。種別が混ざる一覧では「取り消す」だけだと危険 */
+  cancelLabel: string;
+  /**
+   * 取り消すと何が起きるか。**押す前に見せる** — 欠勤と代講で副作用が違い
+   * (週次シフト表の欠勤表示が消える / 担当が元の講師に戻る)、一覧で混ざる
+   * 以上ボタンの近くに出さないと誤爆する (#213 / #219 の警告を引き継ぐ)
+   */
+  cancelWarning: string;
+  /** 取り消した後に元へ戻せない/戻しにくい事情。無ければ null */
+  cancelHint: string | null;
 };
 
 export const EVENT_LABEL: Record<RequestLogEvent, string> = {
@@ -96,6 +117,10 @@ export type LogStatus = "pending" | "approved" | "rejected" | "cancelled";
 type CommonInput = {
   id: string;
   status: LogStatus;
+  /** コマが既に終了しているか (#178) */
+  isEnded: boolean;
+  /** 対象日が過去か (講師が自分で出し直せるかが変わる) */
+  isPastDate: boolean;
   date: string;
   slotNumber: number;
   slotLabel: string;
@@ -123,6 +148,8 @@ export type AbsenceLogInput = CommonInput & {
 
 export type SwapLogInput = CommonInput & {
   requesterName: string;
+  /** `swap_kind`。表示ラベルの出し分けに使う */
+  swapKind: "named" | "open" | "recorded";
   /**
    * 教室長が作った行か (#227 の代理募集)。判定は欠勤側と同じ
    * (`created_by !== null && created_by !== requester_id`)。
@@ -146,6 +173,10 @@ function base(
   subjectName: string,
   substituteName: string | null,
   adminInitiated: boolean,
+  kindLabel: string,
+  cancelLabel: string,
+  cancelWarning: string,
+  cancelHint: string | null,
 ): RequestLogEntry {
   return {
     id: i.id,
@@ -163,9 +194,14 @@ function base(
     actorName: i.actorName,
     reason: i.reason,
     note: i.note,
+    kindLabel,
     eventLabel: EVENT_LABEL[event],
+    isEnded: i.isEnded,
     adminInitiated,
     cancellable: i.status === "approved",
+    cancelLabel,
+    cancelWarning,
+    cancelHint,
   };
 }
 
@@ -197,7 +233,21 @@ export function toAbsenceLogEntry(i: AbsenceLogInput): RequestLogEntry {
               ? "cancelled-by-admin"
               : "cancelled-by-tutor";
   // 欠勤に代講者の概念は無い
-  return base(i, "absence", event, i.tutorName, null, i.isProxy);
+  return base(
+    i,
+    "absence",
+    event,
+    i.tutorName,
+    null,
+    i.isProxy,
+    "欠勤",
+    "この欠勤を取り消す",
+    "取り消すと、週次シフト表からこのコマの欠勤表示が消えます。実際に休んだ場合は取り消さないでください。",
+    // 講師の createAbsenceRequest は過去日を弾くので、戻すには代理登録が要る
+    i.isPastDate
+      ? "このコマは過去日のため、講師は自分で登録し直せません。必要なら「代理で欠勤を登録する」から登録してください。"
+      : null,
+  );
 }
 
 /** 交代・代講申請 1 行 → 台帳の行 */
@@ -226,6 +276,15 @@ export function toSwapLogEntry(i: SwapLogInput): RequestLogEntry {
     i.requesterName,
     i.approvedApplicantName,
     i.isProxy || i.isRecorded,
+    i.swapKind === "named" ? "指名交代" : "代講",
+    "この代講を取り消す",
+    `取り消すと、担当を ${i.requesterName} さんに戻し、${
+      i.approvedApplicantName ?? "代講者"
+    } さんの代講記録を消します。実際に代講が入った場合は取り消さないでください。`,
+    // 講師の再申請は hasSlotEnded で塞がるので、戻すには #215 の記録が要る
+    i.isEnded
+      ? "このコマは既に終了しているため、講師の再申請では戻せません。戻す場合は「代講を記録する」から記録し直してください。"
+      : null,
   );
 }
 
@@ -236,11 +295,10 @@ export function toSwapLogEntry(i: SwapLogInput): RequestLogEntry {
  * `limit` 件は 1 グループから最大 `limit` 件しか来ないので、`limit + 1` 件目より
  * 後の行が上位に入ることはない。`truncated` は「まだ先がある」の意 (件数ではない)。
  *
- * ⚠️ **SQL 側の第 2 ソートキーを `id` に揃えること。** 現在の
- * `getSwapHistory` / `getAbsenceHistory` は `slot_number ASC` で切っているため、
- * 同一グループ内に `occurredAt` が完全一致する行が `limit + 1` 件以上あると、
- * SQL とここで別の行が選ばれて取りこぼす。全経路が JS の `new Date()` なので
- * 同一ミリ秒の衝突は現実的ではないが、不変条件としては噛み合っていない。
+ * ⚠️ **SQL 側の第 2 ソートキーを `id` に揃えること。** ここが `occurredAt` の
+ * 同値を id で並べるので、SQL が別のキー (以前は `slot_number`) だと
+ * `limit + 1` の境界で別の行が選ばれ取りこぼす。`getRequestLog` は
+ * `id ASC` に揃えてある (#224)。
  *
  * 引数が配列の配列なのは、承認済み/取り消し済みのように**取得が 2 本を超える**
  * ため。入れ子で呼ぶと `truncated` の意味が壊れるので、必ず一度に渡す。

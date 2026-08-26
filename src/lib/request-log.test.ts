@@ -11,6 +11,8 @@ import {
 
 const common = {
   id: "id-1",
+  isEnded: false,
+  isPastDate: false,
   date: "2026-08-20",
   slotNumber: 3,
   slotLabel: "3限",
@@ -36,6 +38,7 @@ const swap = (o: Partial<SwapLogInput> = {}): SwapLogInput => ({
   status: "approved",
   requesterName: "山田",
   isProxy: false,
+  swapKind: "open" as const,
   approvedApplicantName: "佐藤",
   isRecorded: false,
   ...o,
@@ -208,10 +211,56 @@ describe("フィールドの受け渡し", () => {
       actorName: "教室長A",
       reason: "発熱のため",
       note: "実際には代講が入らなかったため",
+      kindLabel: "代講",
       eventLabel: "取り消し",
+      isEnded: false,
       adminInitiated: false,
       cancellable: false,
+      cancelLabel: "この代講を取り消す",
+      cancelWarning:
+        "取り消すと、担当を 山田 さんに戻し、佐藤 さんの代講記録を消します。実際に代講が入った場合は取り消さないでください。",
+      cancelHint: null,
     });
+  });
+});
+
+describe("種別ラベル", () => {
+  it("指名交代に「代講」と出さない (#237 と同型の嘘)", () => {
+    expect(toSwapLogEntry(swap({ swapKind: "named" })).kindLabel).toBe("指名交代");
+    expect(toSwapLogEntry(swap({ swapKind: "open" })).kindLabel).toBe("代講");
+    expect(toSwapLogEntry(swap({ swapKind: "recorded" })).kindLabel).toBe("代講");
+    expect(toAbsenceLogEntry(absence()).kindLabel).toBe("欠勤");
+  });
+});
+
+describe("取り消しの安全網 (#213 / #219 の引き継ぎ)", () => {
+  it("欠勤と代講で副作用の説明が違う", () => {
+    // 種別が混ざる一覧では「取り消す」だけだと何が起きるか分からない
+    expect(toAbsenceLogEntry(absence()).cancelWarning).toContain(
+      "週次シフト表からこのコマの欠勤表示が消えます",
+    );
+    expect(toSwapLogEntry(swap()).cancelWarning).toContain(
+      "担当を 山田 さんに戻し、佐藤 さんの代講記録を消します",
+    );
+  });
+
+  it("ボタン文言も種別で分ける", () => {
+    expect(toAbsenceLogEntry(absence()).cancelLabel).toBe("この欠勤を取り消す");
+    expect(toSwapLogEntry(swap()).cancelLabel).toBe("この代講を取り消す");
+  });
+
+  it("代講: 終了済みのコマは講師の再申請で戻せないことを出す (#215)", () => {
+    expect(toSwapLogEntry(swap({ isEnded: true })).cancelHint).toContain(
+      "「代講を記録する」から記録し直してください",
+    );
+    expect(toSwapLogEntry(swap({ isEnded: false })).cancelHint).toBeNull();
+  });
+
+  it("欠勤: 過去日は講師が登録し直せないことを出す (#217)", () => {
+    expect(toAbsenceLogEntry(absence({ isPastDate: true })).cancelHint).toContain(
+      "「代理で欠勤を登録する」から登録してください",
+    );
+    expect(toAbsenceLogEntry(absence({ isPastDate: false })).cancelHint).toBeNull();
   });
 });
 
