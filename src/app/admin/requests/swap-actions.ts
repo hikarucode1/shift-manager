@@ -925,7 +925,10 @@ export async function recordSubstitution(
       type: "swap_result",
       title: "代講の担当として記録されました",
       body: `対象: ${date} ${slotLabel} ／ ${reason}`,
-      href: "/tutor",
+      // ⚠️ /tutor は今週・来週の週次シフトしか出さないので、**過去日の記録は
+      // 着地しない** (#215 は「過去こそ本命」なのでそれが主用途)。#247 で
+      // 「代講の記録」一覧を作ったのでそちらへ
+      href: "/tutor/open-swaps",
     }),
   ]);
 

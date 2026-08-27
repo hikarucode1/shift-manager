@@ -8,6 +8,7 @@ import {
   gte,
   inArray,
   isNull,
+  isNotNull,
   ne,
   or,
   sql,
@@ -556,6 +557,7 @@ export async function getActiveApplicantIds(swapRequestId: string): Promise<stri
 }
 
 export type MyApplication = {
+  /** `swap_requests.id` (応募していない記録もあるので application の id ではない) */
   id: string;
   date: string;
   slotNumber: number;
@@ -571,18 +573,24 @@ export type MyApplication = {
 };
 
 /**
- * 自分が応募した募集の**結果**一覧 (#245)。
+ * 自分が関わった代講の**結果**一覧 (#245 / #247)。
  *
- * ⚠️ これが無いと、応募者向け通知の着地先が空になる。決定済みの募集は
- * `getOpenSwapsForTutor` の `status='pending'` から外れて一覧から消え、
- * `getTutorSwapRequests` は `requester_id` 基準なので自分の申請一覧にも出ない。
- * つまり**応募がどうなったかを見る手段がアプリ内に無い**状態だった。
+ * ⚠️ **`swap_requests` 起点**。自分の応募 (`swap_applications`) を left join し、
+ * 「応募した」か「代講者として記録された」のどちらかで拾う。応募起点にすると
+ * **教室長が記録した代講 (#215) が構造的に入らない** — 記録は募集も応募も
+ * 経由しないので子行が 1 件も無く、`requester_id` は休む講師なので
+ * `getTutorSwapRequests` にも出ない。#247 以前はどのクエリにも出なかった。
+ *
+ * ⚠️ 別の一覧に分けない。分けると「応募して選ばれた」行が
+ * `swap_applications` と `approved_applicant_id` の両方に該当して重複する。
+ * 応募か記録かは outcome の違いであって、一覧を分ける理由にはならない。
  *
  * ⚠️ `pending` は除く (応募中は募集一覧に「応募済み」として出ている)。
- * 自分で取り下げた応募も除く (結果を知る必要が無い)。
+ * 自分で取り下げた応募も除く (結果を知る必要が無い)。ただし**代講者として
+ * 記録されていれば、取り下げ済みでも出す** — 実際に入ったコマなので。
  *
  * ⚠️ **件数で切らない。** 兄弟の講師向け一覧 (`getTutorSwapRequests` /
- * `getTutorAbsenceRequests`) はどちらも無制限で、件数は本人の応募回数で
+ * `getTutorAbsenceRequests`) はどちらも無制限で、件数は本人の関与回数で
  * 自然に抑えられる。無警告の打ち切りは「黙って切り捨てない」(#224) に反する。
  */
 export async function getTutorApplications(
@@ -590,10 +598,12 @@ export async function getTutorApplications(
 ): Promise<MyApplication[]> {
   const meta = await getSlotMeta();
   const requester = alias(profiles, "applicationRequester");
+  const myApplication = alias(swapApplications, "myApplication");
 
   const rows = await db
     .select({
-      id: swapApplications.id,
+      id: swapRequests.id,
+      applicationId: myApplication.id,
       date: swapRequests.date,
       slotNumber: swapRequests.slotNumber,
       requesterName: requester.displayName,
@@ -603,19 +613,28 @@ export async function getTutorApplications(
       decidedAt: swapRequests.decidedAt,
       updatedAt: swapRequests.updatedAt,
     })
-    .from(swapApplications)
-    .innerJoin(swapRequests, eq(swapRequests.id, swapApplications.swapRequestId))
+    .from(swapRequests)
     .innerJoin(requester, eq(requester.id, swapRequests.requesterId))
+    .leftJoin(
+      myApplication,
+      and(
+        eq(myApplication.swapRequestId, swapRequests.id),
+        eq(myApplication.applicantId, tutorId),
+        isNull(myApplication.withdrawnAt),
+      ),
+    )
     .where(
       and(
-        eq(swapApplications.applicantId, tutorId),
-        isNull(swapApplications.withdrawnAt),
         inArray(swapRequests.status, ["approved", "rejected", "cancelled"]),
+        or(
+          isNotNull(myApplication.id),
+          eq(swapRequests.approvedApplicantId, tutorId),
+        ),
       ),
     )
     .orderBy(
       desc(sql`coalesce(${swapRequests.decidedAt}, ${swapRequests.updatedAt})`),
-      asc(swapApplications.id),
+      asc(swapRequests.id),
     );
 
   return rows.flatMap((r) => {
@@ -629,6 +648,7 @@ export async function getTutorApplications(
       r.status,
       chosen,
       r.approvedApplicantId !== null,
+      r.applicationId !== null,
     );
     return [
       {
