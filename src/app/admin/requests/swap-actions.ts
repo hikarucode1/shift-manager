@@ -34,13 +34,33 @@ function revalidateAll() {
 }
 
 /**
+ * コマの表示名。`slot_definitions.label` は自由文で admin が変更できるので
+ * `${n}限` を直書きしない (通知だけ他の画面とズレる)。
+ *
+ * ⚠️ **投げない。** 決定をコミットした後にこれが失敗して action ごと reject
+ * すると、通知が 1 通も出ないまま「失敗」と表示される (行はもう pending では
+ * ないので再実行もできない)。ラベルが取れないくらいなら既定表記で送る。
+ */
+async function slotLabelSafe(n: number): Promise<string> {
+  try {
+    return (await getSlotMeta()).get(n)?.label ?? `${n}限`;
+  } catch (e) {
+    console.error("slotLabelSafe failed", e);
+    return `${n}限`;
+  }
+}
+
+/**
  * その募集に応募していて、まだ取り下げていない講師の id (#238)。
  *
  * ⚠️ **募集の status を更新した「後」に呼ぶこと。** 先に取ると、SELECT と
  * UPDATE の間に入った応募を取りこぼして通知が届かない。後なら `applyToSwap` の
  * `FOR UPDATE` で両方向とも安全 (応募が先 → こちらの UPDATE がロック待ち /
  * こちらが先 → applyToSwap が status 再検証で弾かれ応募が生まれない)。
- * 決定で `swap_applications` の行は変化しないので、後から引いても同じ結果。
+ * 決定は `swap_applications` を書き換えない (`withdrawnAt` を立てるのは講師の
+ * 自己取り下げだけ) ので、後から引いても実質同じ結果になる。厳密には、
+ * コミット後に落選者が自分で取り下げるとその人は対象から外れるが、本人が
+ * 降りたということなので無害。
  */
 async function activeApplicantIds(swapRequestId: string): Promise<string[]> {
   const rows = await db
@@ -113,29 +133,32 @@ export async function decideSwapRequest(
     if (updated.length === 0) {
       return { ok: false, error: "処理できませんでした（対応済みの可能性）。" };
     }
+    const slotLabel = await slotLabelSafe(updated[0].slotNumber);
+    // ⚠️ **申請者への通知を先に出す。** 応募者の取得は新規に足した DB 呼び出し
+    // なので、ここで投げると従来からある申請者への通知まで巻き添えで落ちる
+    // (コミット済みなので再実行もできない)。順序で守る
+    await notify([updated[0].requesterId], {
+      type: "swap_result",
+      title: "交代・代講申請が却下されました",
+      body: `対象: ${updated[0].date} ${slotLabel} ／ ${data.decisionNote}`,
+      href: "/tutor/swaps",
+    });
     // ⚠️ 応募者にも通知する (#238)。承認・取り消しは両側に通知しているのに
     // 却下だけ片側だった。応募者は引き受けるつもりで予定を空けて待っており、
     // 募集は一覧から消えるので、通知が無いと当日まで待たせる
-    const applicants = await activeApplicantIds(data.id);
-    const meta = await getSlotMeta();
-    const slotLabel =
-      meta.get(updated[0].slotNumber)?.label ?? `${updated[0].slotNumber}限`;
-    await Promise.all([
-      notify([updated[0].requesterId], {
-        type: "swap_result",
-        title: "交代・代講申請が却下されました",
-        body: `対象: ${updated[0].date} ${slotLabel} ／ ${data.decisionNote}`,
-        href: "/tutor/swaps",
-      }),
-      applicants.length > 0
-        ? notify(applicants, {
-            type: "swap_result",
-            title: "応募していた代講の募集が却下されました",
-            body: `対象: ${updated[0].date} ${slotLabel} ／ ${data.decisionNote}`,
-            href: "/tutor/open-swaps",
-          })
-        : Promise.resolve(),
-    ]);
+    try {
+      const applicants = await activeApplicantIds(data.id);
+      if (applicants.length > 0) {
+        await notify(applicants, {
+          type: "swap_result",
+          title: "応募していた代講の募集が却下されました",
+          body: `対象: ${updated[0].date} ${slotLabel} ／ ${data.decisionNote}`,
+          href: "/tutor/open-swaps",
+        });
+      }
+    } catch (e) {
+      console.error("decideSwapRequest notify applicants failed", e);
+    }
     revalidateAll();
     return { ok: true };
   }
@@ -143,7 +166,6 @@ export async function decideSwapRequest(
   // ---- 承認 ----
   // 通知はトランザクション確定後に送るため、tx の戻り値で情報を持ち出す
   let approvedInfo: {
-    id: string;
     requesterId: string;
     applicantId: string;
     requesterName: string;
@@ -296,7 +318,6 @@ export async function decideSwapRequest(
         );
 
       return {
-        id: data.id,
         requesterId: req.requesterId,
         applicantId,
         requesterName: nameOf(req.requesterId),
@@ -319,15 +340,8 @@ export async function decideSwapRequest(
 
   if (approvedInfo) {
     const a = approvedInfo;
-    // ⚠️ **選ばれなかった応募者にも通知する (#238)**。従来は申請者と代講者
-    // だけで、落選した講師には何も届かなかった。募集は status が pending で
-    // なくなって /tutor/open-swaps から消えるので、本人は結果を知る手段が無い。
-    // 却下より頻度が高い経路 (応募が 2 人以上あれば必ず起きる)
-    const others = (await activeApplicantIds(a.id)).filter(
-      (id) => id !== a.applicantId,
-    );
-    const meta = await getSlotMeta();
-    const slotLabel = meta.get(a.slotNumber)?.label ?? `${a.slotNumber}限`;
+    const slotLabel = await slotLabelSafe(a.slotNumber);
+    // 当事者 2 人への通知が先。理由は却下側と同じ
     await Promise.all([
       notify([a.requesterId], {
         type: "swap_result",
@@ -341,15 +355,26 @@ export async function decideSwapRequest(
         body: `対象: ${a.date} ${slotLabel} (${a.requesterName}さんの代講)`,
         href: "/tutor",
       }),
-      others.length > 0
-        ? notify(others, {
-            type: "swap_result",
-            title: "応募していた代講は他の講師に決まりました",
-            body: `対象: ${a.date} ${slotLabel}`,
-            href: "/tutor/open-swaps",
-          })
-        : Promise.resolve(),
     ]);
+    // ⚠️ **選ばれなかった応募者にも通知する (#238)**。従来は申請者と代講者
+    // だけで、落選した講師には何も届かなかった。募集は status が pending で
+    // なくなって /tutor/open-swaps から消えるので、本人は結果を知る手段が無い。
+    // 却下より頻度が高い経路 (応募が 2 人以上あれば必ず起きる)
+    try {
+      const others = (await activeApplicantIds(data.id)).filter(
+        (id) => id !== a.applicantId,
+      );
+      if (others.length > 0) {
+        await notify(others, {
+          type: "swap_result",
+          title: "応募していた代講は他の講師に決まりました",
+          body: `対象: ${a.date} ${slotLabel}`,
+          href: "/tutor/open-swaps",
+        });
+      }
+    } catch (e) {
+      console.error("decideSwapRequest notify others failed", e);
+    }
   }
 
   revalidateAll();
@@ -526,17 +551,18 @@ export async function cancelApprovedSwap(
     // もらった」と思ったまま来ない = コマに誰も居ない**が起きる。B 側には
     // 「引き受けた代講」の一覧が無い (getTutorSwapRequests は requesterId 基準)
     // ので、B にとっては通知が唯一の手がかり。承認と同じく tx の外で送る。
+    const cancelSlotLabel = await slotLabelSafe(info.slotNumber);
     await Promise.all([
       notify([info.requesterId], {
         type: "swap_result",
         title: "代講の取り消し（あなたが担当に戻りました）",
-        body: `対象: ${info.date} ${info.slotNumber}限 ／ 理由: ${reason}`,
+        body: `対象: ${info.date} ${cancelSlotLabel} ／ 理由: ${reason}`,
         href: "/tutor",
       }),
       notify([info.applicantId], {
         type: "swap_result",
         title: "引き受けた代講が取り消されました",
-        body: `対象: ${info.date} ${info.slotNumber}限 (${info.requesterName}さんの代講) ／ 理由: ${reason}`,
+        body: `対象: ${info.date} ${cancelSlotLabel} (${info.requesterName}さんの代講) ／ 理由: ${reason}`,
         href: "/tutor",
       }),
     ]);
@@ -947,8 +973,7 @@ const CancelProxySwapInput = z.object({
  *
  * ⚠️ **応募者にも通知する。** 引き受けるつもりで予定を空けている可能性があり、
  * 募集が消えたことを知らせないと当日まで待たせる。
- * (`decideSwapRequest` の却下は応募者に通知していない = 既存の穴。同じ穴を
- * 知りながら開けたくないので、こちらは通知する)
+ * (#238 で `decideSwapRequest` の承認・却下も同じ扱いに揃えた)
  */
 export async function cancelOpenSwapOnBehalf(
   input: unknown,
@@ -1007,46 +1032,26 @@ export async function cancelOpenSwapOnBehalf(
     };
   }
 
-  // ⚠️ **応募者は UPDATE の「後」に取る**。先に取ると、SELECT と UPDATE の間に
-  // 入った応募を取りこぼして通知が届かない (募集は消えるのに本人は待ち続ける)。
-  // 後で取れば `applyToSwap` の行ロックで両方向とも安全:
-  //   - 応募が先にコミット → こちらの UPDATE がロック待ちになり、解放後の
-  //     SELECT にその応募が見える
-  //   - こちらが先にコミット → `applyToSwap` は `FOR UPDATE` 後の status 再検証
-  //     (`pending` でない) で弾かれ、応募自体が生まれない
-  // なお取り消しで `swap_applications` の行は変化しない (withdrawnAt を立てる
-  // のは講師の自己取り下げだけ) ので、後から引いても同じ結果になる。
-  const applicants = await db
-    .select({ applicantId: swapApplications.applicantId })
-    .from(swapApplications)
-    .where(
-      and(
-        eq(swapApplications.swapRequestId, id),
-        isNull(swapApplications.withdrawnAt),
-      ),
-    );
-
-  const meta = await getSlotMeta();
-  const slotLabel = meta.get(req.slotNumber)?.label ?? `${req.slotNumber}限`;
-  await Promise.all([
-    notify([req.requesterId], {
-      type: "swap_result",
-      title: "代講の募集が取り下げられました",
-      body: `対象: ${req.date} ${slotLabel} ／ ${reason}`,
-      href: "/tutor/swaps",
-    }),
-    applicants.length > 0
-      ? notify(
-          applicants.map((a) => a.applicantId),
-          {
-            type: "swap_result",
-            title: "応募していた代講の募集が取り下げられました",
-            body: `対象: ${req.date} ${slotLabel} ／ ${reason}`,
-            href: "/tutor/open-swaps",
-          },
-        )
-      : Promise.resolve(),
-  ]);
+  const slotLabel = await slotLabelSafe(req.slotNumber);
+  await notify([req.requesterId], {
+    type: "swap_result",
+    title: "代講の募集が取り下げられました",
+    body: `対象: ${req.date} ${slotLabel} ／ ${reason}`,
+    href: "/tutor/swaps",
+  });
+  try {
+    const applicants = await activeApplicantIds(id);
+    if (applicants.length > 0) {
+      await notify(applicants, {
+        type: "swap_result",
+        title: "応募していた代講の募集が取り下げられました",
+        body: `対象: ${req.date} ${slotLabel} ／ ${reason}`,
+        href: "/tutor/open-swaps",
+      });
+    }
+  } catch (e) {
+    console.error("cancelOpenSwapOnBehalf notify applicants failed", e);
+  }
 
   revalidateAll();
   return { ok: true };
