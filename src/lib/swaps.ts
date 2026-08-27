@@ -23,9 +23,8 @@ import {
   weeklyShifts,
 } from "@/db/schema";
 import {
-  applicationOutcome,
-  canSeeDecisionNote,
-  type ApplicationOutcome,
+  toApplicationRow,
+  type MyApplication,
 } from "@/lib/application-outcome";
 import { busySlotKey } from "@/lib/slot-key";
 import { getSlotMeta } from "@/lib/slot-meta";
@@ -556,21 +555,7 @@ export async function getActiveApplicantIds(swapRequestId: string): Promise<stri
   return rows.map((r) => r.applicantId);
 }
 
-export type MyApplication = {
-  /** `swap_requests.id` (応募していない記録もあるので application の id ではない) */
-  id: string;
-  date: string;
-  slotNumber: number;
-  slotLabel: string;
-  weekdayLabel: string;
-  /** 募集を出した講師 */
-  requesterName: string;
-  outcome: ApplicationOutcome;
-  /** 却下理由・取り消し理由。無ければ null */
-  note: string | null;
-  /** 結果が確定した日時 (並び順のキー) */
-  decidedAt: string;
-};
+export type { MyApplication };
 
 /**
  * 自分が関わった代講の**結果**一覧 (#245 / #247)。
@@ -638,30 +623,23 @@ export async function getTutorApplications(
     );
 
   return rows.flatMap((r) => {
-    // ⚠️ キャストしない。`inArray` で pending は除いているが、status enum が
-    // 増えたり where を触ったときに、pending 行が三項演算子へ落ちて
-    // 「まだ募集中なのに『他の講師に決まりました』」になる。型ではなく
-    // 実行時に閉じる (このモジュールが防ごうとしている嘘そのものなので)
-    if (r.status === "pending") return [];
-    const chosen = r.approvedApplicantId === tutorId;
-    const outcome = applicationOutcome(
-      r.status,
-      chosen,
-      r.approvedApplicantId !== null,
-      r.applicationId !== null,
-    );
-    return [
+    const row = toApplicationRow(
       {
         id: r.id,
+        status: r.status,
         date: r.date,
         slotNumber: r.slotNumber,
         slotLabel: labelOf(meta, r.slotNumber).label,
         weekdayLabel: weekdayOf(r.date).label,
         requesterName: r.requesterName,
-        outcome,
-        note: canSeeDecisionNote(outcome, chosen) ? r.note : null,
-        decidedAt: (r.decidedAt ?? r.updatedAt).toISOString(),
+        applicationId: r.applicationId,
+        approvedApplicantId: r.approvedApplicantId,
+        note: r.note,
+        decidedAt: r.decidedAt ? r.decidedAt.toISOString() : null,
+        updatedAt: r.updatedAt.toISOString(),
       },
-    ];
+      tutorId,
+    );
+    return row ? [row] : [];
   });
 }

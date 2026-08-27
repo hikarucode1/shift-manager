@@ -49,7 +49,16 @@ export function applicationOutcome(
   chosen: boolean,
   /** `approved_applicant_id` が入っているか (= 一度は承認された) */
   wasApproved: boolean,
-  /** 自分が応募したか。応募していないのに代講者なら教室長の記録 (#215) */
+  /**
+   * 自分が応募したか (取り下げ済みは false)。応募していないのに代講者なら
+   * 教室長の記録 (#215)。
+   *
+   * ⚠️ **この判定は `withdrawApplication` のガードに依存している。** あちらが
+   * 「承認済みで自分が採用された応募は取り下げ不可」を守っているから、
+   * `chosen` な講師の応募行が消えない。将来「決まったが行けなくなった」を
+   * 取り下げで表せるように緩めると、**選ばれた講師が黙って「教室長が記録」に
+   * 変わる**。
+   */
   applied: boolean,
 ): ApplicationOutcome {
   if (status === "rejected") return "rejected";
@@ -74,4 +83,76 @@ export function canSeeDecisionNote(
 ): boolean {
   if (outcome === "cancelled-after-approval") return chosen;
   return true;
+}
+
+export type MyApplication = {
+  /** `swap_requests.id` (応募していない記録もあるので application の id ではない) */
+  id: string;
+  date: string;
+  slotNumber: number;
+  slotLabel: string;
+  weekdayLabel: string;
+  /** 募集を出した (= 休む) 講師 */
+  requesterName: string;
+  outcome: ApplicationOutcome;
+  /** 却下理由・取り消し理由。見せてよい場合のみ入る */
+  note: string | null;
+  /** 結果が確定した日時 (並び順のキー) */
+  decidedAt: string;
+};
+
+/** `getTutorApplications` の 1 行ぶんの入力 (DB 型に依存させない) */
+export type ApplicationRowInput = {
+  id: string;
+  /** 生の status。`pending` が混ざりうる前提で受ける */
+  status: string;
+  date: string;
+  slotNumber: number;
+  slotLabel: string;
+  weekdayLabel: string;
+  requesterName: string;
+  /** 自分の応募行の id。取り下げ済み / 未応募なら null */
+  applicationId: string | null;
+  approvedApplicantId: string | null;
+  note: string | null;
+  decidedAt: string | null;
+  updatedAt: string;
+};
+
+/**
+ * DB の 1 行 → 画面に出す 1 行 (#247)。
+ *
+ * ⚠️ **ここを純関数にしてある理由**: `chosen` / `wasApproved` / `applied` の
+ * 組み立てが `applicationOutcome` の正しさを決めるのに、DB 関数の中に置くと
+ * テストできない。実際 #248 のレビューで `applicationId !== null` を `true` に
+ * 変異させても全テストが通る状態だった (= 記録と当選を分ける 1 行が無検証)。
+ *
+ * ⚠️ `pending` は `null` を返す。応募中は募集一覧に「応募済み」として出て
+ * おり、結果一覧の対象ではない。キャストで型任せにしない。
+ */
+export function toApplicationRow(
+  r: ApplicationRowInput,
+  tutorId: string,
+): MyApplication | null {
+  if (r.status !== "approved" && r.status !== "rejected" && r.status !== "cancelled") {
+    return null;
+  }
+  const chosen = r.approvedApplicantId === tutorId;
+  const outcome = applicationOutcome(
+    r.status,
+    chosen,
+    r.approvedApplicantId !== null,
+    r.applicationId !== null,
+  );
+  return {
+    id: r.id,
+    date: r.date,
+    slotNumber: r.slotNumber,
+    slotLabel: r.slotLabel,
+    weekdayLabel: r.weekdayLabel,
+    requesterName: r.requesterName,
+    outcome,
+    note: canSeeDecisionNote(outcome, chosen) ? r.note : null,
+    decidedAt: r.decidedAt ?? r.updatedAt,
+  };
 }

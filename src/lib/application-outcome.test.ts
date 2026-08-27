@@ -3,6 +3,8 @@ import {
   applicationOutcome,
   canSeeDecisionNote,
   OUTCOME_LABEL,
+  toApplicationRow,
+  type ApplicationRowInput,
 } from "@/lib/application-outcome";
 
 describe("applicationOutcome", () => {
@@ -72,5 +74,90 @@ describe("canSeeDecisionNote", () => {
       expect(canSeeDecisionNote("recorded", chosen)).toBe(true);
       expect(canSeeDecisionNote("not-chosen", chosen)).toBe(true);
     }
+  });
+});
+
+describe("toApplicationRow", () => {
+  const row = (o: Partial<ApplicationRowInput> = {}): ApplicationRowInput => ({
+    id: "req-1",
+    status: "approved",
+    date: "2026-08-20",
+    slotNumber: 3,
+    slotLabel: "3限",
+    weekdayLabel: "木",
+    requesterName: "山田",
+    applicationId: "app-1",
+    approvedApplicantId: "me",
+    note: null,
+    decidedAt: "2026-08-27T05:00:00.000Z",
+    updatedAt: "2026-08-21T00:00:00.000Z",
+    ...o,
+  });
+
+  it("応募して選ばれた行は chosen", () => {
+    expect(toApplicationRow(row(), "me")?.outcome).toBe("chosen");
+  });
+
+  it("応募行が無いのに代講者なら recorded (#247 の核心)", () => {
+    // ここが #248 のレビューまで無検証だった。applicationId を見ずに
+    // 常に applied=true にすると、教室長の記録が「決まりました」になる
+    expect(toApplicationRow(row({ applicationId: null }), "me")?.outcome).toBe(
+      "recorded",
+    );
+  });
+
+  it("代講者が自分でなければ not-chosen", () => {
+    expect(
+      toApplicationRow(row({ approvedApplicantId: "other" }), "me")?.outcome,
+    ).toBe("not-chosen");
+  });
+
+  it("pending は null を返す (キャストで型任せにしない)", () => {
+    expect(toApplicationRow(row({ status: "pending" }), "me")).toBeNull();
+    expect(toApplicationRow(row({ status: "unknown-future" }), "me")).toBeNull();
+  });
+
+  it("承認後の取り消しは、選ばれた本人にだけ理由を見せる", () => {
+    const base = { status: "cancelled", note: "B が来られなくなったため" };
+    expect(
+      toApplicationRow(row({ ...base, approvedApplicantId: "me" }), "me")?.note,
+    ).toBe("B が来られなくなったため");
+    expect(
+      toApplicationRow(row({ ...base, approvedApplicantId: "other" }), "me")
+        ?.note,
+    ).toBeNull();
+  });
+
+  it("却下理由は落選者にも見せる (募集全体についての説明なので)", () => {
+    expect(
+      toApplicationRow(
+        row({
+          status: "rejected",
+          approvedApplicantId: null,
+          note: "別途調整済みのため",
+        }),
+        "me",
+      )?.note,
+    ).toBe("別途調整済みのため");
+  });
+
+  it("decidedAt が無ければ updatedAt を使う (#233 と同じ規則)", () => {
+    expect(toApplicationRow(row({ decidedAt: null }), "me")?.decidedAt).toBe(
+      "2026-08-21T00:00:00.000Z",
+    );
+  });
+
+  it("素通しの列が入れ替わっていないこと", () => {
+    expect(toApplicationRow(row({ applicationId: null }), "me")).toEqual({
+      id: "req-1",
+      date: "2026-08-20",
+      slotNumber: 3,
+      slotLabel: "3限",
+      weekdayLabel: "木",
+      requesterName: "山田",
+      outcome: "recorded",
+      note: null,
+      decidedAt: "2026-08-27T05:00:00.000Z",
+    });
   });
 });
