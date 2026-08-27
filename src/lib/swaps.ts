@@ -23,6 +23,7 @@ import {
 } from "@/db/schema";
 import {
   applicationOutcome,
+  canSeeDecisionNote,
   type ApplicationOutcome,
 } from "@/lib/application-outcome";
 import { busySlotKey } from "@/lib/slot-key";
@@ -579,10 +580,13 @@ export type MyApplication = {
  *
  * ⚠️ `pending` は除く (応募中は募集一覧に「応募済み」として出ている)。
  * 自分で取り下げた応募も除く (結果を知る必要が無い)。
+ *
+ * ⚠️ **件数で切らない。** 兄弟の講師向け一覧 (`getTutorSwapRequests` /
+ * `getTutorAbsenceRequests`) はどちらも無制限で、件数は本人の応募回数で
+ * 自然に抑えられる。無警告の打ち切りは「黙って切り捨てない」(#224) に反する。
  */
 export async function getTutorApplications(
   tutorId: string,
-  limit = 30,
 ): Promise<MyApplication[]> {
   const meta = await getSlotMeta();
   const requester = alias(profiles, "applicationRequester");
@@ -612,21 +616,32 @@ export async function getTutorApplications(
     .orderBy(
       desc(sql`coalesce(${swapRequests.decidedAt}, ${swapRequests.updatedAt})`),
       asc(swapApplications.id),
-    )
-    .limit(limit);
+    );
 
-  return rows.map((r) => ({
-    id: r.id,
-    date: r.date,
-    slotNumber: r.slotNumber,
-    slotLabel: labelOf(meta, r.slotNumber).label,
-    weekdayLabel: weekdayOf(r.date).label,
-    requesterName: r.requesterName,
-    outcome: applicationOutcome(
-      r.status as "approved" | "rejected" | "cancelled",
-      r.approvedApplicantId === tutorId,
-    ),
-    note: r.note,
-    decidedAt: (r.decidedAt ?? r.updatedAt).toISOString(),
-  }));
+  return rows.flatMap((r) => {
+    // ⚠️ キャストしない。`inArray` で pending は除いているが、status enum が
+    // 増えたり where を触ったときに、pending 行が三項演算子へ落ちて
+    // 「まだ募集中なのに『他の講師に決まりました』」になる。型ではなく
+    // 実行時に閉じる (このモジュールが防ごうとしている嘘そのものなので)
+    if (r.status === "pending") return [];
+    const chosen = r.approvedApplicantId === tutorId;
+    const outcome = applicationOutcome(
+      r.status,
+      chosen,
+      r.approvedApplicantId !== null,
+    );
+    return [
+      {
+        id: r.id,
+        date: r.date,
+        slotNumber: r.slotNumber,
+        slotLabel: labelOf(meta, r.slotNumber).label,
+        weekdayLabel: weekdayOf(r.date).label,
+        requesterName: r.requesterName,
+        outcome,
+        note: canSeeDecisionNote(outcome, chosen) ? r.note : null,
+        decidedAt: (r.decidedAt ?? r.updatedAt).toISOString(),
+      },
+    ];
+  });
 }

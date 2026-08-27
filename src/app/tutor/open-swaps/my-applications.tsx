@@ -3,6 +3,7 @@ import { OUTCOME_LABEL } from "@/lib/application-outcome";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent } from "@/components/ui/card";
 import { fmtDateTimeJst } from "@/lib/datetime";
+import { shortDate } from "@/lib/week";
 
 /**
  * 自分が応募した募集の結果 (#245)。
@@ -35,7 +36,7 @@ export function MyApplications({ applications }: { applications: MyApplication[]
                 </Badge>
               </div>
               <p className="font-medium">
-                {a.date}（{a.weekdayLabel}）{a.slotLabel}
+                {shortDate(a.date)}（{a.weekdayLabel}）{a.slotLabel}
                 <span className="ml-2 font-normal text-muted-foreground">
                   {a.requesterName} さんの募集
                 </span>

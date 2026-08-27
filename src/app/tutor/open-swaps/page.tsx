@@ -32,9 +32,12 @@ export default async function TutorOpenSwapsPage() {
         </p>
       </section>
 
-      <OpenSwapList swaps={swaps} />
-
+      {/* ⚠️ 募集一覧より**上**に置く。応募者向け通知の着地先がこのページで、
+          下に置くと「現在、応募できる募集はありません。」を読まされてから
+          スクロールしないと結果に届かない。結果が無い講師には何も出ない */}
       <MyApplications applications={applications} />
+
+      <OpenSwapList swaps={swaps} />
     </div>
   );
 }

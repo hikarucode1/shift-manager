@@ -543,7 +543,9 @@ export async function cancelApprovedSwap(
         type: "swap_result",
         title: "引き受けた代講が取り消されました",
         body: `対象: ${info.date} ${cancelSlotLabel} (${info.requesterName}さんの代講) ／ 理由: ${reason}`,
-        href: "/tutor",
+        // ⚠️ /tutor には出ない (weekly_shift は元講師に戻った直後)。#245 で
+        // 「応募した募集の結果」ができたので、そちらへ着地させる
+        href: "/tutor/open-swaps",
       }),
     ]);
 
