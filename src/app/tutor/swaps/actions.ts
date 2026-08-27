@@ -6,6 +6,7 @@ import { z } from "zod";
 import { and, arrayContains, eq, inArray, isNull } from "drizzle-orm";
 import { requireRole } from "@/lib/auth";
 import { notify } from "@/lib/notifications";
+import { getSlotMeta } from "@/lib/slot-meta";
 import { db } from "@/db/client";
 import {
   absenceRequests,
@@ -160,6 +161,8 @@ export async function createSwapRequest(
       // open は「応募資格のある講師 (現役 tutor・自分以外・同コマ未出勤)」全員へ。
       // named は指名先 1 名へ (作成時に role/active + 同コマ clash を検証済みなので
       // ここでの資格再判定は不要)。
+      const slotLabel =
+        (await getSlotMeta()).get(slotNumber)?.label ?? `${slotNumber}限`;
       const recipientIds =
         kind === "open"
           ? await getEligibleApplicantIds(date, slotNumber, profile.id)
@@ -172,7 +175,7 @@ export async function createSwapRequest(
           kind === "open"
             ? "代講募集が追加されました"
             : "交代の指名がありました",
-        body: `対象: ${date} ${slotNumber}限${kind === "named" ? "（あなた宛の指名）" : ""}`,
+        body: `対象: ${date} ${slotLabel}${kind === "named" ? "（あなた宛の指名）" : ""}`,
         href: "/tutor/open-swaps",
       });
     } catch (e) {

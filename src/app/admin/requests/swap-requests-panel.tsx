@@ -126,7 +126,7 @@ export function SwapRequestsPanel({
                     placeholder={
                       mode === "withdraw"
                         ? "取り下げの理由を入力（講師と応募者に表示されます）"
-                        : "却下の理由を入力（講師に表示されます）"
+                        : "却下の理由を入力（講師と応募者に表示されます）"
                     }
                     className="w-full rounded-md border bg-background px-3 py-2 text-sm focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
                   />
@@ -150,7 +150,7 @@ export function SwapRequestsPanel({
                                 }),
                           mode === "withdraw"
                             ? "募集を取り下げました。講師と応募者に通知が届きます。"
-                            : "却下しました。",
+                            : "却下しました。講師と応募者に通知が届きます。",
                           () => {
                             setRejectId(null);
                             setRejectNote("");
