@@ -16,7 +16,12 @@ import {
   weeklyShifts,
 } from "@/db/schema";
 import { isUniqueViolation } from "@/lib/db-errors";
-import { getEligibleApplicantIds, hasSlotEnded, isTutorBusyAt } from "@/lib/swaps";
+import {
+  getActiveApplicantIds,
+  getEligibleApplicantIds,
+  hasSlotEnded,
+  isTutorBusyAt,
+} from "@/lib/swaps";
 import { isValidIsoDate, jstToday } from "@/lib/week";
 
 type ActionResult = { ok: true } | { ok: false; error: string };
@@ -238,10 +243,44 @@ export async function cancelSwapRequest(
         eq(swapRequests.status, "pending"),
       ),
     )
-    .returning({ id: swapRequests.id });
+    .returning({
+      id: swapRequests.id,
+      date: swapRequests.date,
+      slotNumber: swapRequests.slotNumber,
+    });
   if (updated.length === 0) {
     return { ok: false, error: "取り消せませんでした。" };
   }
+
+  // ⚠️ **応募者に通知する (#245)**。#238 で承認・却下・教室長の取り下げは
+  // 揃えたが、申請者本人の取り消しだけ無音だった。募集は status が pending で
+  // なくなって /tutor/open-swaps から消えるので、引き受けるつもりで予定を
+  // 空けた応募者は結果を知る手段が無い。「募集したが自分で都合をつけた」は
+  // 日常的なので、頻度はむしろ却下より高い。
+  //
+  // ⚠️ 取り消しに理由は求めない。教室長の操作 (#219 / #231) で理由を必須に
+  // したのは**他人の記録を動かす**からで、自分の申請を引っ込めるのとは違う。
+  //
+  // ⚠️ 取得は UPDATE の「後」。理由は getActiveApplicantIds の docstring 参照。
+  // ここは新規に足した DB 呼び出しなので try/catch で囲む — 投げると取り消し
+  // 自体は済んでいるのに画面はエラーになり、再実行もできない (#244 で踏んだ)。
+  try {
+    const applicants = await getActiveApplicantIds(parsed.data.id);
+    if (applicants.length > 0) {
+      const meta = await getSlotMeta();
+      const slotLabel =
+        meta.get(updated[0].slotNumber)?.label ?? `${updated[0].slotNumber}限`;
+      await notify(applicants, {
+        type: "swap_result",
+        title: "応募していた代講の募集が取り下げられました",
+        body: `対象: ${updated[0].date} ${slotLabel} ／ 申請者が取り下げました`,
+        href: "/tutor/open-swaps",
+      });
+    }
+  } catch (e) {
+    console.error("cancelSwapRequest notify applicants failed", e);
+  }
+
   revalidateAll();
   return { ok: true };
 }

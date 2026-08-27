@@ -10,6 +10,7 @@ import {
   isNull,
   ne,
   or,
+  sql,
 } from "drizzle-orm";
 import { alias } from "drizzle-orm/pg-core";
 import { db } from "@/db/client";
@@ -20,6 +21,11 @@ import {
   swapRequests,
   weeklyShifts,
 } from "@/db/schema";
+import {
+  applicationOutcome,
+  canSeeDecisionNote,
+  type ApplicationOutcome,
+} from "@/lib/application-outcome";
 import { busySlotKey } from "@/lib/slot-key";
 import { getSlotMeta } from "@/lib/slot-meta";
 import { isSlotPast } from "@/lib/slot-time";
@@ -522,4 +528,120 @@ export async function getPendingSwapRequests(): Promise<AdminSwapRequest[]> {
     decidedAt: r.decidedAt ? r.decidedAt.toISOString() : null,
     createdAt: r.createdAt.toISOString(),
   }));
+}
+
+/**
+ * その募集に応募していて、まだ取り下げていない講師の id (#238 / #245)。
+ *
+ * ⚠️ **募集の status を更新した「後」に呼ぶこと。** 先に取ると、SELECT と
+ * UPDATE の間に入った応募を取りこぼして通知が届かない。後なら `applyToSwap` の
+ * `FOR UPDATE` で両方向とも安全 (応募が先 → こちらの UPDATE がロック待ち /
+ * こちらが先 → applyToSwap が status 再検証で弾かれ応募が生まれない)。
+ * 決定は `swap_applications` を書き換えない (`withdrawnAt` を立てるのは講師の
+ * 自己取り下げだけ) ので、後から引いても実質同じ結果になる。厳密には、
+ * コミット後に落選者が自分で取り下げるとその人は対象から外れるが、本人が
+ * 降りたということなので無害。
+ */
+export async function getActiveApplicantIds(swapRequestId: string): Promise<string[]> {
+  const rows = await db
+    .select({ applicantId: swapApplications.applicantId })
+    .from(swapApplications)
+    .where(
+      and(
+        eq(swapApplications.swapRequestId, swapRequestId),
+        isNull(swapApplications.withdrawnAt),
+      ),
+    );
+  return rows.map((r) => r.applicantId);
+}
+
+export type MyApplication = {
+  id: string;
+  date: string;
+  slotNumber: number;
+  slotLabel: string;
+  weekdayLabel: string;
+  /** 募集を出した講師 */
+  requesterName: string;
+  outcome: ApplicationOutcome;
+  /** 却下理由・取り消し理由。無ければ null */
+  note: string | null;
+  /** 結果が確定した日時 (並び順のキー) */
+  decidedAt: string;
+};
+
+/**
+ * 自分が応募した募集の**結果**一覧 (#245)。
+ *
+ * ⚠️ これが無いと、応募者向け通知の着地先が空になる。決定済みの募集は
+ * `getOpenSwapsForTutor` の `status='pending'` から外れて一覧から消え、
+ * `getTutorSwapRequests` は `requester_id` 基準なので自分の申請一覧にも出ない。
+ * つまり**応募がどうなったかを見る手段がアプリ内に無い**状態だった。
+ *
+ * ⚠️ `pending` は除く (応募中は募集一覧に「応募済み」として出ている)。
+ * 自分で取り下げた応募も除く (結果を知る必要が無い)。
+ *
+ * ⚠️ **件数で切らない。** 兄弟の講師向け一覧 (`getTutorSwapRequests` /
+ * `getTutorAbsenceRequests`) はどちらも無制限で、件数は本人の応募回数で
+ * 自然に抑えられる。無警告の打ち切りは「黙って切り捨てない」(#224) に反する。
+ */
+export async function getTutorApplications(
+  tutorId: string,
+): Promise<MyApplication[]> {
+  const meta = await getSlotMeta();
+  const requester = alias(profiles, "applicationRequester");
+
+  const rows = await db
+    .select({
+      id: swapApplications.id,
+      date: swapRequests.date,
+      slotNumber: swapRequests.slotNumber,
+      requesterName: requester.displayName,
+      status: swapRequests.status,
+      approvedApplicantId: swapRequests.approvedApplicantId,
+      note: swapRequests.decisionNote,
+      decidedAt: swapRequests.decidedAt,
+      updatedAt: swapRequests.updatedAt,
+    })
+    .from(swapApplications)
+    .innerJoin(swapRequests, eq(swapRequests.id, swapApplications.swapRequestId))
+    .innerJoin(requester, eq(requester.id, swapRequests.requesterId))
+    .where(
+      and(
+        eq(swapApplications.applicantId, tutorId),
+        isNull(swapApplications.withdrawnAt),
+        inArray(swapRequests.status, ["approved", "rejected", "cancelled"]),
+      ),
+    )
+    .orderBy(
+      desc(sql`coalesce(${swapRequests.decidedAt}, ${swapRequests.updatedAt})`),
+      asc(swapApplications.id),
+    );
+
+  return rows.flatMap((r) => {
+    // ⚠️ キャストしない。`inArray` で pending は除いているが、status enum が
+    // 増えたり where を触ったときに、pending 行が三項演算子へ落ちて
+    // 「まだ募集中なのに『他の講師に決まりました』」になる。型ではなく
+    // 実行時に閉じる (このモジュールが防ごうとしている嘘そのものなので)
+    if (r.status === "pending") return [];
+    const chosen = r.approvedApplicantId === tutorId;
+    const outcome = applicationOutcome(
+      r.status,
+      chosen,
+      r.approvedApplicantId !== null,
+    );
+    return [
+      {
+        id: r.id,
+        date: r.date,
+        slotNumber: r.slotNumber,
+        slotLabel: labelOf(meta, r.slotNumber).label,
+        weekdayLabel: weekdayOf(r.date).label,
+        requesterName: r.requesterName,
+        outcome,
+        note: canSeeDecisionNote(outcome, chosen) ? r.note : null,
+        decidedAt: (r.decidedAt ?? r.updatedAt).toISOString(),
+      },
+    ];
+  });
 }

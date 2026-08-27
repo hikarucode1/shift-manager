@@ -7,7 +7,12 @@ import { and, arrayContains, eq, inArray, isNull, ne } from "drizzle-orm";
 import { requireRole } from "@/lib/auth";
 import { notify } from "@/lib/notifications";
 import { ABSENCE_AUTO_EXPIRED_NOTE } from "@/lib/absence-expiry";
-import { getEligibleApplicantIds, hasSlotEnded, isTutorBusyAt } from "@/lib/swaps";
+import {
+  getActiveApplicantIds,
+  getEligibleApplicantIds,
+  hasSlotEnded,
+  isTutorBusyAt,
+} from "@/lib/swaps";
 import { substitutionNote } from "@/lib/substitution-note";
 import { isValidIsoDate, jstToday } from "@/lib/week";
 import { isUniqueViolation } from "@/lib/db-errors";
@@ -48,31 +53,6 @@ async function slotLabelSafe(n: number): Promise<string> {
     console.error("slotLabelSafe failed", e);
     return `${n}限`;
   }
-}
-
-/**
- * その募集に応募していて、まだ取り下げていない講師の id (#238)。
- *
- * ⚠️ **募集の status を更新した「後」に呼ぶこと。** 先に取ると、SELECT と
- * UPDATE の間に入った応募を取りこぼして通知が届かない。後なら `applyToSwap` の
- * `FOR UPDATE` で両方向とも安全 (応募が先 → こちらの UPDATE がロック待ち /
- * こちらが先 → applyToSwap が status 再検証で弾かれ応募が生まれない)。
- * 決定は `swap_applications` を書き換えない (`withdrawnAt` を立てるのは講師の
- * 自己取り下げだけ) ので、後から引いても実質同じ結果になる。厳密には、
- * コミット後に落選者が自分で取り下げるとその人は対象から外れるが、本人が
- * 降りたということなので無害。
- */
-async function activeApplicantIds(swapRequestId: string): Promise<string[]> {
-  const rows = await db
-    .select({ applicantId: swapApplications.applicantId })
-    .from(swapApplications)
-    .where(
-      and(
-        eq(swapApplications.swapRequestId, swapRequestId),
-        isNull(swapApplications.withdrawnAt),
-      ),
-    );
-  return rows.map((r) => r.applicantId);
 }
 
 const DecideInput = z.discriminatedUnion("decision", [
@@ -147,7 +127,7 @@ export async function decideSwapRequest(
     // 却下だけ片側だった。応募者は引き受けるつもりで予定を空けて待っており、
     // 募集は一覧から消えるので、通知が無いと当日まで待たせる
     try {
-      const applicants = await activeApplicantIds(data.id);
+      const applicants = await getActiveApplicantIds(data.id);
       if (applicants.length > 0) {
         await notify(applicants, {
           type: "swap_result",
@@ -361,7 +341,7 @@ export async function decideSwapRequest(
     // なくなって /tutor/open-swaps から消えるので、本人は結果を知る手段が無い。
     // 却下より頻度が高い経路 (応募が 2 人以上あれば必ず起きる)
     try {
-      const others = (await activeApplicantIds(data.id)).filter(
+      const others = (await getActiveApplicantIds(data.id)).filter(
         (id) => id !== a.applicantId,
       );
       if (others.length > 0) {
@@ -563,7 +543,9 @@ export async function cancelApprovedSwap(
         type: "swap_result",
         title: "引き受けた代講が取り消されました",
         body: `対象: ${info.date} ${cancelSlotLabel} (${info.requesterName}さんの代講) ／ 理由: ${reason}`,
-        href: "/tutor",
+        // ⚠️ /tutor には出ない (weekly_shift は元講師に戻った直後)。#245 で
+        // 「応募した募集の結果」ができたので、そちらへ着地させる
+        href: "/tutor/open-swaps",
       }),
     ]);
 
@@ -1040,7 +1022,7 @@ export async function cancelOpenSwapOnBehalf(
     href: "/tutor/swaps",
   });
   try {
-    const applicants = await activeApplicantIds(id);
+    const applicants = await getActiveApplicantIds(id);
     if (applicants.length > 0) {
       await notify(applicants, {
         type: "swap_result",
