@@ -9,6 +9,10 @@ import { shortDate } from "@/lib/week";
  * 自分が関わった代講の結果 (#245 / #247)。応募したものと、教室長が代講者
  * として記録したもの (#215) の両方が入る。
  *
+ * ⚠️ 見出しは「代講の**履歴**」。「記録」だと `rejected` / `withdrawn` の行まで
+ * 覆ってしまい、**却下された募集が「代講の記録」の下に並ぶ**と、記録された
+ * 代講が却下されたように読める (#251)。
+ *
  * ⚠️ **行の種類で分岐しない。** 結果の判定は `application-outcome.ts` に
  * 集約してテストで固定してある。ここで `status === "approved" ? …` と書くと、
  * 「承認されたが自分は選ばれていない」を「決まりました」と出す事故になる。
@@ -19,7 +23,7 @@ export function MyApplications({ applications }: { applications: MyApplication[]
   return (
     <section className="space-y-3">
       <h2 className="text-sm font-semibold text-muted-foreground">
-        代講の記録
+        代講の履歴
       </h2>
       <div className="space-y-2">
         {applications.map((a) => (

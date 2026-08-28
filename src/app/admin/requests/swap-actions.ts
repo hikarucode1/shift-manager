@@ -339,6 +339,11 @@ export async function decideSwapRequest(
         type: "swap_result",
         title: "代講が確定しました",
         body: `対象: ${a.date} ${slotLabel} (${a.requesterName}さんの代講)`,
+        // ⚠️ ここは /tutor のままにする (#251 で検討)。承認は未来日限定で、
+        // 週次シフトの公開は週単位なので実際にはほぼ今週・来週に収まる。
+        // この通知で本人がすべきことは「そのコマに出勤する」なので、
+        // 履歴一覧よりシフトを見せる方が行動に直結する。再来週以降のコマだと
+        // /tutor に出ないが、その場合も /tutor/open-swaps の履歴には残る
         href: "/tutor",
       }),
       // ⚠️ **失効させた欠勤を本人に伝える (#250)**。教室長には
@@ -563,7 +568,10 @@ export async function cancelApprovedSwap(
         type: "swap_result",
         title: "代講の取り消し（あなたが担当に戻りました）",
         body: `対象: ${info.date} ${cancelSlotLabel} ／ 理由: ${reason}`,
-        href: "/tutor",
+        // ⚠️ `cancelApprovedSwap` に日付ガードは無いので、**過去日の記録を
+        // 取り消すと /tutor には出ない** (今週・来週しか読まない)。行自体は
+        // /tutor/swaps に status=cancelled で必ずある (#251)
+        href: "/tutor/swaps",
       }),
       notify([info.applicantId], {
         type: "swap_result",
