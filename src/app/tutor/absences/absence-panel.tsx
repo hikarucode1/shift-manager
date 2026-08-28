@@ -310,11 +310,21 @@ export function AbsencePanel({
                     <p className="mt-1 text-sm text-muted-foreground">
                       理由: {h.reason}
                     </p>
-                    {h.decisionNote && (
-                      <p className="mt-0.5 text-sm text-destructive">
-                        教室長より: {h.decisionNote}
-                      </p>
-                    )}
+                    {h.decisionNote &&
+                      (h.autoExpired ? (
+                        // ⚠️ 自動失効は誰の判断でもない (#225 で admin 側は
+                        // decided_by を null にして誤帰属を消した)。ここで
+                        // 「教室長より」と出すと、教室長が言っていないことを
+                        // 言ったことになる。赤字にもしない — 本人への指摘や
+                        // 却下理由ではなく、状態の説明なので
+                        <p className="mt-0.5 text-sm text-muted-foreground">
+                          {h.decisionNote}（このコマは代講が入ったため、欠勤の記録は不要になりました）
+                        </p>
+                      ) : (
+                        <p className="mt-0.5 text-sm text-destructive">
+                          教室長より: {h.decisionNote}
+                        </p>
+                      ))}
                   </div>
                 );
               })}

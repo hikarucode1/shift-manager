@@ -14,7 +14,7 @@ import {
   isTutorBusyAt,
 } from "@/lib/swaps";
 import { substitutionNote } from "@/lib/substitution-note";
-import { isValidIsoDate, jstToday } from "@/lib/week";
+import { isValidIsoDate, jstToday, weekdayOf } from "@/lib/week";
 import { isUniqueViolation } from "@/lib/db-errors";
 import { getSlotMeta } from "@/lib/slot-meta";
 import { db } from "@/db/client";
@@ -36,6 +36,9 @@ function revalidateAll() {
   revalidatePath("/tutor/swaps");
   revalidatePath("/tutor/open-swaps");
   revalidatePath("/tutor");
+  // #250: 承認・記録は同一コマの欠勤を自動失効させ、その行は /tutor/absences に
+  // 出る。欠勤を書き換える他 4 アクションはすべてここを revalidate している
+  revalidatePath("/tutor/absences");
 }
 
 /**
@@ -343,14 +346,21 @@ export async function decideSwapRequest(
       // 「欠勤が承認されました」の通知だけが残り、取り消された通知が無いので、
       // 本人は休めるつもりのまま記録だけが消える。型は absence_result で、
       // href は /tutor/absences (status で絞らず件数制限も無いので必ず着地する)
-      a.expiredAbsences > 0
-        ? notify([a.requesterId], {
-            type: "absence_result",
-            title: "欠勤の記録が失効しました（交代成立のため）",
-            body: `対象: ${a.date} ${slotLabel} ／ このコマは ${a.applicantName}さんの代講になりました`,
-            href: "/tutor/absences",
-          })
-        : Promise.resolve(),
+      // ⚠️ 件数が 0 のときは配列に入れない。三項で Promise.resolve() を混ぜると
+      // 「この枝は reject しないか」を読み手に考えさせる
+      ...(a.expiredAbsences > 0
+        ? [
+            notify([a.requesterId], {
+              type: "absence_result" as const,
+              // ⚠️ 「記録」と言わない。pending の申請も失効の対象なので、
+              // 本人にあるのが未決の申請でしかないことがある
+              title: "欠勤が失効しました（交代成立のため）",
+              // 書式は既存の absence_result に揃える (対象日: 日付（曜日）コマ)
+              body: `対象日: ${a.date}（${weekdayOf(a.date).label}）${slotLabel} ／ このコマは ${a.applicantName}さんの代講になりました`,
+              href: "/tutor/absences",
+            }),
+          ]
+        : []),
     ]);
     // ⚠️ **選ばれなかった応募者にも通知する (#238)**。従来は申請者と代講者
     // だけで、落選した講師には何も届かなかった。募集は status が pending で
@@ -941,14 +951,16 @@ export async function recordSubstitution(
       href: "/tutor/swaps",
     }),
     // #250: 記録でも同一コマの欠勤を失効させるので、承認と同じく本人に伝える
-    expiredAbsences > 0
-      ? notify([tutorId], {
-          type: "absence_result",
-          title: "欠勤の記録が失効しました（代講が記録されたため）",
-          body: `対象: ${date} ${slotLabel} ／ このコマは代講として記録されました`,
-          href: "/tutor/absences",
-        })
-      : Promise.resolve(),
+    ...(expiredAbsences > 0
+      ? [
+          notify([tutorId], {
+            type: "absence_result" as const,
+            title: "欠勤が失効しました（代講が記録されたため）",
+            body: `対象日: ${date}（${weekdayOf(date).label}）${slotLabel} ／ このコマは代講として記録されました`,
+            href: "/tutor/absences",
+          }),
+        ]
+      : []),
     notify([substituteId], {
       type: "swap_result",
       title: "代講の担当として記録されました",
