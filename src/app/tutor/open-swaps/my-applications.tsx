@@ -6,7 +6,8 @@ import { fmtDateTimeJst } from "@/lib/datetime";
 import { shortDate } from "@/lib/week";
 
 /**
- * 自分が応募した募集の結果 (#245)。
+ * 自分が関わった代講の結果 (#245 / #247)。応募したものと、教室長が代講者
+ * として記録したもの (#215) の両方が入る。
  *
  * ⚠️ **行の種類で分岐しない。** 結果の判定は `application-outcome.ts` に
  * 集約してテストで固定してある。ここで `status === "approved" ? …` と書くと、
@@ -18,7 +19,7 @@ export function MyApplications({ applications }: { applications: MyApplication[]
   return (
     <section className="space-y-3">
       <h2 className="text-sm font-semibold text-muted-foreground">
-        応募した募集の結果
+        代講の記録
       </h2>
       <div className="space-y-2">
         {applications.map((a) => (
@@ -29,7 +30,11 @@ export function MyApplications({ applications }: { applications: MyApplication[]
                   {fmtDateTimeJst(a.decidedAt)}
                 </span>
                 <Badge
-                  variant={a.outcome === "chosen" ? "accent" : "secondary"}
+                  variant={
+                    a.outcome === "chosen" || a.outcome === "recorded"
+                      ? "accent"
+                      : "secondary"
+                  }
                   className="text-[10px]"
                 >
                   {OUTCOME_LABEL[a.outcome]}
@@ -38,7 +43,7 @@ export function MyApplications({ applications }: { applications: MyApplication[]
               <p className="font-medium">
                 {shortDate(a.date)}（{a.weekdayLabel}）{a.slotLabel}
                 <span className="ml-2 font-normal text-muted-foreground">
-                  {a.requesterName} さんの募集
+                  {a.requesterName} さんのコマ
                 </span>
               </p>
               {a.note && (

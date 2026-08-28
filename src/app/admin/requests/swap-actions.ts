@@ -919,13 +919,19 @@ export async function recordSubstitution(
       type: "swap_result",
       title: "代講が記録されました（教室長による記録）",
       body: `対象: ${date} ${slotLabel} ／ ${reason}`,
-      href: "/tutor",
+      // ⚠️ 代講者側と同じ理由で /tutor には着地しない (今週・来週しか出さず、
+      // #215 は過去こそ本命)。記録行は requester_id がこの講師なので
+      // getTutorSwapRequests に入り、/tutor/swaps に「代講の記録」として出る
+      href: "/tutor/swaps",
     }),
     notify([substituteId], {
       type: "swap_result",
       title: "代講の担当として記録されました",
       body: `対象: ${date} ${slotLabel} ／ ${reason}`,
-      href: "/tutor",
+      // ⚠️ /tutor は今週・来週の週次シフトしか出さないので、**過去日の記録は
+      // 着地しない** (#215 は「過去こそ本命」なのでそれが主用途)。#247 で
+      // 「代講の記録」一覧を作ったのでそちらへ
+      href: "/tutor/open-swaps",
     }),
   ]);
 
