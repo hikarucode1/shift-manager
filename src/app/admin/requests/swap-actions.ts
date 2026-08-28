@@ -14,7 +14,7 @@ import {
   isTutorBusyAt,
 } from "@/lib/swaps";
 import { substitutionNote } from "@/lib/substitution-note";
-import { isValidIsoDate, jstToday } from "@/lib/week";
+import { isValidIsoDate, jstToday, weekdayOf } from "@/lib/week";
 import { isUniqueViolation } from "@/lib/db-errors";
 import { getSlotMeta } from "@/lib/slot-meta";
 import { db } from "@/db/client";
@@ -36,6 +36,9 @@ function revalidateAll() {
   revalidatePath("/tutor/swaps");
   revalidatePath("/tutor/open-swaps");
   revalidatePath("/tutor");
+  // #250: 承認・記録は同一コマの欠勤を自動失効させ、その行は /tutor/absences に
+  // 出る。欠勤を書き換える他 4 アクションはすべてここを revalidate している
+  revalidatePath("/tutor/absences");
 }
 
 /**
@@ -147,6 +150,7 @@ export async function decideSwapRequest(
   // 通知はトランザクション確定後に送るため、tx の戻り値で情報を持ち出す
   let approvedInfo: {
     requesterId: string;
+    expiredAbsences: number;
     applicantId: string;
     requesterName: string;
     applicantName: string;
@@ -275,7 +279,7 @@ export async function decideSwapRequest(
       // 「approved 欠勤 + pending 交代」は正規の手順で作れる状態になった。
       // #217 以前は受容済み TOCTOU からしか到達しない状態だったが、
       // **今はここが主経路**。dead code と誤認して削らないこと。
-      await tx
+      const expired = await tx
         .update(absenceRequests)
         .set({
           status: "cancelled",
@@ -295,7 +299,8 @@ export async function decideSwapRequest(
             eq(absenceRequests.slotNumber, req.slotNumber),
             inArray(absenceRequests.status, ["pending", "approved"]),
           ),
-        );
+        )
+        .returning({ id: absenceRequests.id });
 
       return {
         requesterId: req.requesterId,
@@ -304,6 +309,7 @@ export async function decideSwapRequest(
         applicantName: nameOf(applicantId),
         date: req.date,
         slotNumber: req.slotNumber,
+        expiredAbsences: expired.length,
       };
     });
   } catch (e) {
@@ -335,6 +341,26 @@ export async function decideSwapRequest(
         body: `対象: ${a.date} ${slotLabel} (${a.requesterName}さんの代講)`,
         href: "/tutor",
       }),
+      // ⚠️ **失効させた欠勤を本人に伝える (#250)**。教室長には
+      // `expiredAbsences` を返して画面に出しているのに、本人には無音だった。
+      // 「欠勤が承認されました」の通知だけが残り、取り消された通知が無いので、
+      // 本人は休めるつもりのまま記録だけが消える。型は absence_result で、
+      // href は /tutor/absences (status で絞らず件数制限も無いので必ず着地する)
+      // ⚠️ 件数が 0 のときは配列に入れない。三項で Promise.resolve() を混ぜると
+      // 「この枝は reject しないか」を読み手に考えさせる
+      ...(a.expiredAbsences > 0
+        ? [
+            notify([a.requesterId], {
+              type: "absence_result" as const,
+              // ⚠️ 「記録」と言わない。pending の申請も失効の対象なので、
+              // 本人にあるのが未決の申請でしかないことがある
+              title: "欠勤が失効しました（交代成立のため）",
+              // 書式は既存の absence_result に揃える (対象日: 日付（曜日）コマ)
+              body: `対象日: ${a.date}（${weekdayOf(a.date).label}）${slotLabel} ／ このコマは ${a.applicantName}さんの代講になりました`,
+              href: "/tutor/absences",
+            }),
+          ]
+        : []),
     ]);
     // ⚠️ **選ばれなかった応募者にも通知する (#238)**。従来は申請者と代講者
     // だけで、落選した講師には何も届かなかった。募集は status が pending で
@@ -924,6 +950,17 @@ export async function recordSubstitution(
       // getTutorSwapRequests に入り、/tutor/swaps に「代講の記録」として出る
       href: "/tutor/swaps",
     }),
+    // #250: 記録でも同一コマの欠勤を失効させるので、承認と同じく本人に伝える
+    ...(expiredAbsences > 0
+      ? [
+          notify([tutorId], {
+            type: "absence_result" as const,
+            title: "欠勤が失効しました（代講が記録されたため）",
+            body: `対象日: ${date}（${weekdayOf(date).label}）${slotLabel} ／ このコマは代講として記録されました`,
+            href: "/tutor/absences",
+          }),
+        ]
+      : []),
     notify([substituteId], {
       type: "swap_result",
       title: "代講の担当として記録されました",

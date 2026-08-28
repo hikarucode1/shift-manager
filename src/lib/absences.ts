@@ -2,6 +2,7 @@ import "server-only";
 import { and, asc, between, desc, eq, gte, inArray } from "drizzle-orm";
 import { db } from "@/db/client";
 import { absenceRequests, profiles, weeklyShifts } from "@/db/schema";
+import { ABSENCE_AUTO_EXPIRED_NOTE } from "@/lib/absence-expiry";
 import { getSlotMeta } from "@/lib/slot-meta";
 import { isSlotPast } from "@/lib/slot-time";
 import { jstToday, weekdayOf } from "@/lib/week";
@@ -26,6 +27,13 @@ export type AbsenceRequestRow = {
   reason: string;
   status: AbsenceStatus;
   decisionNote: string | null;
+  /**
+   * 交代成立による自動失効か (#250)。**`decisionNote` を「教室長より」として
+   * 出さないため**に要る — 失効は誰の判断でもなく、#225 で admin 側は
+   * `decided_by` を null にして誤帰属を消したのに、講師側だけ残っていた。
+   * 判定は admin 側 (`request-log.ts`) と同じく `decided_by` との AND。
+   */
+  autoExpired: boolean;
   decidedAt: string | null;
   createdAt: string;
   /**
@@ -135,6 +143,8 @@ export async function getTutorAbsenceRequests(
   return rows.map((r) => ({
     id: r.id,
     isProxy: r.createdBy !== null && r.createdBy !== r.tutorId,
+    autoExpired:
+      r.decisionNote === ABSENCE_AUTO_EXPIRED_NOTE && r.decidedBy === null,
     date: r.date,
     slotNumber: r.slotNumber,
     slotLabel: slotLabelOf(meta, r.slotNumber).label,
@@ -160,6 +170,7 @@ export async function getPendingAbsenceRequests(): Promise<PendingAbsence[]> {
       reason: absenceRequests.reason,
       status: absenceRequests.status,
       decisionNote: absenceRequests.decisionNote,
+      decidedBy: absenceRequests.decidedBy,
       decidedAt: absenceRequests.decidedAt,
       createdBy: absenceRequests.createdBy,
       createdAt: absenceRequests.createdAt,
@@ -185,6 +196,9 @@ export async function getPendingAbsenceRequests(): Promise<PendingAbsence[]> {
     // 代理登録は approved で入るので pending には出ないが、判定は 1 箇所に
     // 寄せず各取得関数で素直に計算する (将来 pending 経由を足しても壊れない)
     isProxy: r.createdBy !== null && r.createdBy !== r.tutorId,
+    // pending が自動失効していることは無いが、判定は各取得関数で素直に計算する
+    autoExpired:
+      r.decisionNote === ABSENCE_AUTO_EXPIRED_NOTE && r.decidedBy === null,
     isEnded: isSlotPast(r.date, slotLabelOf(meta, r.slotNumber).end),
   }));
 }
