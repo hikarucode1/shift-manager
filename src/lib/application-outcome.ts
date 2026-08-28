@@ -111,6 +111,8 @@ export type ApplicationRowInput = {
   slotLabel: string;
   weekdayLabel: string;
   requesterName: string;
+  /** 申請時の理由。記録 (#215) では教室長が書いた経緯が入る */
+  reason: string;
   /** 自分の応募行の id。取り下げ済み / 未応募なら null */
   applicationId: string | null;
   approvedApplicantId: string | null;
@@ -152,7 +154,15 @@ export function toApplicationRow(
     weekdayLabel: r.weekdayLabel,
     requesterName: r.requesterName,
     outcome,
-    note: canSeeDecisionNote(outcome, chosen) ? r.note : null,
+    // ⚠️ 記録 (#215) の経緯は `reason` に入る (`decision_note` は空)。
+    // decision_note だけを見ると **「なぜ自分が代講に入ったことになっているか」
+    // が一覧から分からない** (#251)。記録以外は従来どおり決定時のコメント
+    note:
+      outcome === "recorded"
+        ? r.reason
+        : canSeeDecisionNote(outcome, chosen)
+          ? r.note
+          : null,
     decidedAt: r.decidedAt ?? r.updatedAt,
   };
 }
