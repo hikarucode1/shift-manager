@@ -828,22 +828,9 @@ export async function recordSubstitution(
     return { ok: false, error: "同じ講師を代講者にはできません。" };
   }
 
-  // 未処理の交代申請が残っていないか (塞がないが、記録後は付け替え対象が
-  // 変わって承認できなくなるので呼び出し側に伝える)
-  const pending = await db
-    .select({ id: swapRequests.id })
-    .from(swapRequests)
-    .where(
-      and(
-        eq(swapRequests.requesterId, tutorId),
-        eq(swapRequests.date, date),
-        eq(swapRequests.slotNumber, slotNumber),
-        eq(swapRequests.status, "pending"),
-      ),
-    )
-    .limit(1);
-
   let expiredAbsences = 0;
+  /** 未処理の交代申請 (記録後は承認できなくなる)。tx 内で読む — 下記参照 */
+  let pendingSwapId: string | null = null;
   try {
     await db.transaction(async (tx) => {
       const sub = await tx
@@ -963,6 +950,31 @@ export async function recordSubstitution(
       // 画面に出しているのと揃える。#217 で登録した欠勤が消えたことに
       // 教室長が気づけないと、記録を取り消しても戻し忘れる
       expiredAbsences = expired.length;
+
+      // 未処理の交代申請が残っていないか (塞がないが、記録後は付け替え対象が
+      // 変わって承認できなくなるので呼び出し側に伝える)。
+      //
+      // ⚠️ **tx の中で読む。** かつては tx の前で読んでいたが、この結果を元に
+      // **コミット後に講師へ通知を出す**ようになった (#253)。tx の外で読むと、
+      // 別の教室長がその間に却下した募集について「承認できなくなりました」を
+      // 却下通知の直後に送りつけることになる。tx 内なら窓は commit〜通知の
+      // 間だけに縮む (完全には消えない — 閉じるには募集自体を閉じるしかなく、
+      // それは #253 で採らなかった案 A)。
+      const pending = await tx
+        .select({ id: swapRequests.id })
+        .from(swapRequests)
+        .where(
+          and(
+            eq(swapRequests.requesterId, tutorId),
+            eq(swapRequests.date, date),
+            eq(swapRequests.slotNumber, slotNumber),
+            eq(swapRequests.status, "pending"),
+          ),
+        )
+        .limit(1);
+      // `swap_requests_active_uniq` (0006) が (requester_id, date, slot_number)
+      // の pending を 1 件に制限しているので、これがその 1 件
+      pendingSwapId = pending[0]?.id ?? null;
     });
   } catch (e) {
     if (e instanceof SwapBizError) return { ok: false, error: e.message };
@@ -1007,49 +1019,64 @@ export async function recordSubstitution(
       // 「代講の記録」一覧を作ったのでそちらへ
       href: "/tutor/open-swaps",
     }),
+    // ⚠️ **申請者への通知はここに置く** (#253)。記録は weekly_shifts の担当を
+    // 付け替えるので、同じコマの pending な交代募集は以後
+    // `decideSwapRequest` で「付け替え対象の確定シフトが見つかりません」に
+    // なり承認できない。教室長には画面で案内が出るが、申請者には何も届いて
+    // いなかった。
+    //
+    // ⚠️ **応募者の取得 (下の try) より前に出す。** `getActiveApplicantIds` は
+    // 失敗を握り潰さないので、あちらに巻き込むと**引き数の要らないこの通知
+    // まで一緒に落ちる**。却下側 (decideSwapRequest) が同じ理由で同じ順序に
+    // している
+    ...(pendingSwapId !== null
+      ? [
+          notify([tutorId], {
+            type: "swap_result" as const,
+            title: "交代・代講の募集は承認できなくなりました",
+            body: `対象: ${date} ${slotLabel} ／ このコマは代講として記録されたため、募集は承認できません。教室長にご確認ください。`,
+            href: "/tutor/swaps",
+          }),
+        ]
+      : []),
   ]);
 
-  // ⚠️ **既存の通知を先に出し切ってから、この try/catch に入る** (#253)。
+  // ⚠️ **既存の通知を出し切ってから、この try/catch に入る** (#253)。
   // `getActiveApplicantIds` はここで新しく足す DB 呼び出しで、`notify` と違い
-  // **失敗を握り潰さない**。コミット後なので投げると上の 3 本まで巻き添えで
+  // **失敗を握り潰さない**。コミット後なので投げると上の通知まで巻き添えで
   // 落ち、行はもう pending でないため再実行もできない (#238 で踏んだ型)。
-  //
-  // ⚠️ 記録は `weekly_shifts` の担当を代講者に付け替えるので、**同じコマの
-  // pending な交代募集は以後 `decideSwapRequest` で「付け替え対象の確定シフト
-  // が見つかりません」になり承認できない**。教室長には画面で案内が出るが、
-  // 申請者と応募者には何も届かず、応募者は承認を待ち続けていた。
   //
   // ⚠️ **募集は閉じない** (#253 の案 B)。ここで `cancelled` にすると応募者の
   // 一覧が `applicationOutcome` で「取り下げられました」になり、誰も取り下げて
-  // いないのに嘘になる。状態の整理は教室長の却下・取り下げに任せ、ここでは
-  // 「待っても承認されない」ことだけを伝える。
+  // いないのに嘘になる。状態の整理は教室長の却下・取り下げに任せる。
+  //
+  // ⚠️ **したがってこの通知は「今いる応募者」にしか届かない。** 募集は pending
+  // のまま `/tutor/open-swaps` に残り、教室長が閉じるまで**新しい応募が入り
+  // うる**。その講師は通知を受け取らないまま承認され得ない募集を待つ。窓を
+  // 塞ぐには応募側 (`applyToSwap`) で担当者が変わった募集を止める必要があり、
+  // それは #253 の範囲外なので #259 にした。
   //
   // ⚠️ **`reason` は応募者に渡さない。** 教室長が書いた経緯は休む講師の事情
   // なので、募集に応募しただけの講師に逐語で流す相手ではない (#245 と同じ判断)。
-  if (pending.length > 0) {
+  if (pendingSwapId !== null) {
     try {
-      // `swap_requests_active_uniq` (0006) が (requester_id, date, slot_number)
-      // の pending を 1 件に制限しているので、これがその 1 件
-      const pendingId = pending[0].id;
-      const applicants = await getActiveApplicantIds(pendingId);
-      await Promise.all([
-        notify([tutorId], {
+      // ⚠️ **記録した代講者を除く。** その募集に応募していた講師がそのまま
+      // 代講者として記録されることがある (過去日は `decideSwapRequest` が
+      // 承認を塞ぐので、記録が唯一の経路)。除かないと本人に
+      // 「代講の担当として記録されました」と「このコマは別の形で対応されま
+      // した」が同時に届く。承認側 (`decideSwapRequest`) も同じ理由で
+      // 採用者を除いている
+      const applicants = (await getActiveApplicantIds(pendingSwapId)).filter(
+        (id) => id !== substituteId,
+      );
+      if (applicants.length > 0) {
+        await notify(applicants, {
           type: "swap_result",
-          title: "交代・代講の募集は承認できなくなりました",
-          body: `対象: ${date} ${slotLabel} ／ このコマは代講として記録されたため、募集は承認できません。教室長にご確認ください。`,
-          href: "/tutor/swaps",
-        }),
-        ...(applicants.length > 0
-          ? [
-              notify(applicants, {
-                type: "swap_result" as const,
-                title: "応募していた代講の募集は承認できなくなりました",
-                body: `対象: ${date} ${slotLabel} ／ このコマは別の形で対応されました。`,
-                href: "/tutor/open-swaps",
-              }),
-            ]
-          : []),
-      ]);
+          title: "応募していた代講の募集は承認できなくなりました",
+          body: `対象: ${date} ${slotLabel} ／ このコマは別の形で対応されました。`,
+          href: "/tutor/open-swaps",
+        });
+      }
     } catch (e) {
       console.error("recordSubstitution notify pending swap failed", e);
     }
@@ -1057,7 +1084,7 @@ export async function recordSubstitution(
 
   revalidateAll();
   revalidatePath("/admin/weekly");
-  return { ok: true, pendingSwap: pending.length > 0, expiredAbsences };
+  return { ok: true, pendingSwap: pendingSwapId !== null, expiredAbsences };
 }
 
 const CancelProxySwapInput = z.object({
