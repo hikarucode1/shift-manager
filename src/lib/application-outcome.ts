@@ -95,7 +95,17 @@ export type MyApplication = {
   /** 募集を出した (= 休む) 講師 */
   requesterName: string;
   outcome: ApplicationOutcome;
-  /** 却下理由・取り消し理由。見せてよい場合のみ入る */
+  /**
+   * 行に添える自由記述。**3 種類が入りうる**。
+   *
+   * - 却下理由 / 取り下げ理由 (`decision_note`) — 募集全体についての説明
+   * - 承認後の取り消し理由 (`decision_note`) — 決まった代講者についての説明。
+   *   `canSeeDecisionNote` で本人以外には見せない
+   * - **記録の経緯 (`swap_requests.reason`, #251)** — 教室長が
+   *   `recordSubstitution` で書いたもの。上の 2 つと違い決定時のコメントでは
+   *   ないので、**`canSeeDecisionNote` を通らない**。読み手は記録された代講者
+   *   本人だけで、経緯は既に募集一覧と記録時の通知に出ている
+   */
   note: string | null;
   /** 結果が確定した日時 (並び順のキー) */
   decidedAt: string;

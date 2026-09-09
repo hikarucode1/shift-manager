@@ -99,6 +99,14 @@ describe("toApplicationRow", () => {
     expect(toApplicationRow(row(), "me")?.outcome).toBe("chosen");
   });
 
+  it("chosen は reason を出さない — 記録の経緯だけの分岐に閉じる (#251)", () => {
+    // ⚠️ これが無いと `outcome === "recorded"` を
+    // `outcome === "recorded" || outcome === "chosen"` に広げても全テストが
+    // 通る (base の row は note: null / reason 非空)。#248 で
+    // `applicationId !== null` に対して指摘されたのと同じ穴
+    expect(toApplicationRow(row(), "me")?.note).toBeNull();
+  });
+
   it("応募行が無いのに代講者なら recorded (#247 の核心)", () => {
     // ここが #248 のレビューまで無検証だった。applicationId を見ずに
     // 常に applied=true にすると、教室長の記録が「決まりました」になる
