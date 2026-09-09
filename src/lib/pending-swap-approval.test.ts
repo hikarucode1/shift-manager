@@ -21,6 +21,7 @@ describe("pendingSwapApproval (#262)", () => {
     expect(pendingSwapApproval(st({ requesterAssigned: false }))).toEqual({
       approvable: false,
       heading: "このコマは担当が変わったため承認できません (却下は可能です):",
+      notice: "このコマは担当が変わったため承認できません。却下してください。",
     });
   });
 
@@ -50,22 +51,41 @@ describe("pendingSwapApproval (#262)", () => {
     expect(pendingSwapApproval(st({ isEnded: true }))).toEqual({
       approvable: true,
       heading: "終了したコマです。実際に代講が入った場合のみ承認してください:",
+      notice: null,
     });
   });
 
   it("担当が変わっていれば、終了済みより先にそちらを言う", () => {
     expect(
       pendingSwapApproval(st({ isEnded: true, requesterAssigned: false })),
-    ).toEqual({
-      approvable: false,
-      heading: "このコマは担当が変わったため承認できません (却下は可能です):",
-    });
+    ).toMatchObject({ approvable: false });
+  });
+
+  it("応募者が 0 件でも理由が出るよう notice を持つ (#262 レビュー)", () => {
+    // ⚠️ heading は応募者リストの見出しなので 0 件だと出ない。担当が変わった
+    // 募集は #259 で講師の一覧から外れ新しい応募が来ないため 0 件で固定され、
+    // 代理募集は講師側から取り下げられない。閉じられるのは教室長だけ
+    for (const s of [
+      st({ requesterAssigned: false }),
+      st({ isPastDate: true }),
+      st({ requesterAssigned: false, isProxy: true }),
+    ]) {
+      expect(pendingSwapApproval(s).notice).toBeTruthy();
+    }
+  });
+
+  it("代理募集の notice は「取り下げてください」", () => {
+    expect(
+      pendingSwapApproval(st({ requesterAssigned: false, isProxy: true }))
+        .notice,
+    ).toContain("取り下げてください");
   });
 
   it("何も無ければ通常の見出しで承認できる", () => {
     expect(pendingSwapApproval(st())).toEqual({
       approvable: true,
       heading: "応募者から代講者を選んで承認:",
+      notice: null,
     });
   });
 });

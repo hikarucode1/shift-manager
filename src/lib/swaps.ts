@@ -133,6 +133,47 @@ function labelOf(meta: Awaited<ReturnType<typeof getSlotMeta>>, n: number) {
  * 担当を付け替えるので、実施済みコマが事後に書き換わると勤怠・給与の履歴が崩れる。
  * 申請 / 応募 / 承認の 3 経路すべてでこれを通すこと。
  */
+/**
+ * 「その講師が今もそのコマの担当か」を引く (#259 / #262)。
+ *
+ * ⚠️ **条件は `decideSwapRequest` が付け替えに使う WHERE と同じにすること**
+ * (`weekly_shifts` に (担当者, 日, コマ) の行があるか、`upload_id` では絞らない)。
+ * この条件から画面がずれることが #165 / #231 / #259 / #262 を生んだので、
+ * **コピーを増やさずここに集約する**。
+ *
+ * ⚠️ 3 つ組そのもので照合する。`inArray` を 3 本 AND にすると
+ * |日| × |コマ| × |その枠の講師| の直積を引く。呼び出し側は日付を絞らないため、
+ * 閉じられていない古い pending が溜まるほど効いてくる。
+ *
+ * 索引は `weekly_shifts_tutor_idx` (tutor_id, date) が効く。
+ */
+async function loadAssignedKeys(
+  rows: readonly { requesterId: string; date: string; slotNumber: number }[],
+): Promise<Set<string>> {
+  if (rows.length === 0) return new Set();
+  const assigned = await db
+    .select({
+      tutorId: weeklyShifts.tutorId,
+      date: weeklyShifts.date,
+      slotNumber: weeklyShifts.slotNumber,
+    })
+    .from(weeklyShifts)
+    .where(
+      or(
+        ...rows.map((r) =>
+          and(
+            eq(weeklyShifts.tutorId, r.requesterId),
+            eq(weeklyShifts.date, r.date),
+            eq(weeklyShifts.slotNumber, r.slotNumber),
+          ),
+        ),
+      ),
+    );
+  return new Set(
+    assigned.map((a) => assignmentKey(a.tutorId, a.date, a.slotNumber)),
+  );
+}
+
 export async function hasSlotEnded(
   date: string,
   slotNumber: number,
@@ -467,40 +508,9 @@ export async function getOpenSwapsForTutor(
       : [];
   const appliedSet = new Set(myApps.map((a) => a.swapRequestId));
 
-  // #259: 申請者が今もそのコマの担当かを引く。担当が変わった募集は
-  // `decideSwapRequest` が必ず落とすので、一覧に出すと**承認され得ない募集に
-  // 応募して待つ**講師が出る (記録 #215 の後に実際に起きる)。
-  //
-  // ⚠️ **3 つ組そのもので照合する。** `inArray` を 3 本 AND にすると
-  // |日| × |コマ| × |その枠に入っている講師| の**直積**を引くことになる。
-  // この関数は #165 の理由で日付を絞らないため、閉じられていない古い pending が
-  // 溜まるほど効いてくる — そしてそれは #253 / #259 が扱っている母集団そのもの。
-  // `or(and(...))` なら行数はちょうど募集の数になる。
-  // 索引は `weekly_shifts_tutor_idx` (tutor_id, date) が効く
-  const assigned =
-    rows.length > 0
-      ? await db
-          .select({
-            tutorId: weeklyShifts.tutorId,
-            date: weeklyShifts.date,
-            slotNumber: weeklyShifts.slotNumber,
-          })
-          .from(weeklyShifts)
-          .where(
-            or(
-              ...rows.map((r) =>
-                and(
-                  eq(weeklyShifts.tutorId, r.requesterId),
-                  eq(weeklyShifts.date, r.date),
-                  eq(weeklyShifts.slotNumber, r.slotNumber),
-                ),
-              ),
-            ),
-          )
-      : [];
-  const assignedKeys = new Set(
-    assigned.map((a) => assignmentKey(a.tutorId, a.date, a.slotNumber)),
-  );
+  // #259: 担当が変わった募集は `decideSwapRequest` が必ず落とすので、
+  // **一覧から外す** — 出したままだと承認され得ない募集に応募して待つ講師が出る
+  const assignedKeys = await loadAssignedKeys(rows);
 
   const visible = visibleOpenSwaps(rows, tutorId, appliedSet, assignedKeys);
 
@@ -550,37 +560,10 @@ export async function getPendingSwapRequests(): Promise<AdminSwapRequest[]> {
 
   const applicants = await loadApplicants(rows.map((r) => r.id));
 
-  // #262: 申請者が今もそのコマの担当かを引く。担当が変わった募集は
-  // `decideSwapRequest` が必ず落とすので、承認ボタンを落として却下 /
-  // 取り下げへ誘導する。**一覧からは外さない** — 閉じるのは教室長の仕事で、
-  // 外すと閉じる手段ごと消える (#259 の講師側とは逆)。
-  //
-  // ⚠️ 3 つ組そのもので照合する (`inArray` 3 本の AND は直積を引く)。
-  // 索引は `weekly_shifts_tutor_idx` (tutor_id, date) が効く
-  const assigned =
-    rows.length > 0
-      ? await db
-          .select({
-            tutorId: weeklyShifts.tutorId,
-            date: weeklyShifts.date,
-            slotNumber: weeklyShifts.slotNumber,
-          })
-          .from(weeklyShifts)
-          .where(
-            or(
-              ...rows.map((r) =>
-                and(
-                  eq(weeklyShifts.tutorId, r.requesterId),
-                  eq(weeklyShifts.date, r.date),
-                  eq(weeklyShifts.slotNumber, r.slotNumber),
-                ),
-              ),
-            ),
-          )
-      : [];
-  const assignedKeys = new Set(
-    assigned.map((a) => assignmentKey(a.tutorId, a.date, a.slotNumber)),
-  );
+  // #262: 担当が変わった募集は承認ボタンを落として却下 / 取り下げへ誘導する。
+  // ⚠️ **一覧からは外さない** — 閉じるのは教室長の仕事で、外すと閉じる手段ごと
+  // 消える (#259 の講師側とは逆)
+  const assignedKeys = await loadAssignedKeys(rows);
 
   return rows.map((r) => ({
     id: r.id,
