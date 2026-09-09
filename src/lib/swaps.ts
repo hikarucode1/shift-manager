@@ -26,6 +26,10 @@ import {
   toApplicationRow,
   type MyApplication,
 } from "@/lib/application-outcome";
+import {
+  assignmentKey,
+  visibleOpenSwaps,
+} from "@/lib/open-swap-visibility";
 import { busySlotKey } from "@/lib/slot-key";
 import { getSlotMeta } from "@/lib/slot-meta";
 import { isSlotPast } from "@/lib/slot-time";
@@ -422,6 +426,7 @@ export async function getOpenSwapsForTutor(
     .select({
       id: swapRequests.id,
       kind: swapRequests.kind,
+      requesterId: swapRequests.requesterId,
       requesterName: profiles.displayName,
       nominatedTutorId: swapRequests.nominatedTutorId,
       date: swapRequests.date,
@@ -438,13 +443,8 @@ export async function getOpenSwapsForTutor(
     )
     .orderBy(asc(swapRequests.date), asc(swapRequests.slotNumber));
 
-  // 指名(named)は「自分が指名先」のものだけ見える。open は全員。
-  const visible = rows.filter(
-    (r) => r.kind === "open" || r.nominatedTutorId === tutorId,
-  );
-
   const myApps =
-    visible.length > 0
+    rows.length > 0
       ? await db
           .select({ swapRequestId: swapApplications.swapRequestId })
           .from(swapApplications)
@@ -454,12 +454,49 @@ export async function getOpenSwapsForTutor(
               isNull(swapApplications.withdrawnAt),
               inArray(
                 swapApplications.swapRequestId,
-                visible.map((v) => v.id),
+                rows.map((v) => v.id),
               ),
             ),
           )
       : [];
   const appliedSet = new Set(myApps.map((a) => a.swapRequestId));
+
+  // #259: 申請者が今もそのコマの担当かを引く。担当が変わった募集は
+  // `decideSwapRequest` が必ず落とすので、一覧に出すと**承認され得ない募集に
+  // 応募して待つ**講師が出る (記録 #215 の後に実際に起きる)。
+  //
+  // ⚠️ **3 つ組そのもので照合する。** `inArray` を 3 本 AND にすると
+  // |日| × |コマ| × |その枠に入っている講師| の**直積**を引くことになる。
+  // この関数は #165 の理由で日付を絞らないため、閉じられていない古い pending が
+  // 溜まるほど効いてくる — そしてそれは #253 / #259 が扱っている母集団そのもの。
+  // `or(and(...))` なら行数はちょうど募集の数になる。
+  // 索引は `weekly_shifts_tutor_idx` (tutor_id, date) が効く
+  const assigned =
+    rows.length > 0
+      ? await db
+          .select({
+            tutorId: weeklyShifts.tutorId,
+            date: weeklyShifts.date,
+            slotNumber: weeklyShifts.slotNumber,
+          })
+          .from(weeklyShifts)
+          .where(
+            or(
+              ...rows.map((r) =>
+                and(
+                  eq(weeklyShifts.tutorId, r.requesterId),
+                  eq(weeklyShifts.date, r.date),
+                  eq(weeklyShifts.slotNumber, r.slotNumber),
+                ),
+              ),
+            ),
+          )
+      : [];
+  const assignedKeys = new Set(
+    assigned.map((a) => assignmentKey(a.tutorId, a.date, a.slotNumber)),
+  );
+
+  const visible = visibleOpenSwaps(rows, tutorId, appliedSet, assignedKeys);
 
   return visible.map((r) => ({
     id: r.id,
