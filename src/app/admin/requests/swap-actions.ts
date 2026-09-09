@@ -159,6 +159,34 @@ export async function decideSwapRequest(
   } | null = null;
   try {
     approvedInfo = await db.transaction(async (tx) => {
+      // ⚠️ **`FOR UPDATE` を応募行を読む前に取る** (#249)。講師側の
+      // `applyToSwap` / `withdrawApplication` は既に同じ行ロックを取って
+      // いるのに、承認だけが素の SELECT で輪から外れていた。READ COMMITTED
+      // では次の交差が通ってしまう:
+      //
+      //   1. 承認: 応募行を「取り下げられていない」状態で読む
+      //   2. 取り下げ: 募集をロック → status=pending・approved_applicant_id
+      //      は null なのでガードを通過 → withdrawn_at を立てて COMMIT
+      //   3. 承認: status='pending' 条件の UPDATE が成功してしまう
+      //
+      // 結果は `approved` + `approved_applicant_id=本人` + **応募行は
+      // 取り下げ済み**。`getTutorApplications` は「応募行があるか」で
+      // `chosen` と `recorded` を分けるので、**応募して選ばれた講師に
+      // 「教室長が代講として記録しました」と出る** (#247 で表に出た)。
+      //
+      // ロックを先に取ると 3 者が直列化される。取り下げが先なら承認は待って
+      // から応募行を読むので withdrawn_at が見えて落ちる。承認が先なら
+      // 取り下げは待たされ、`status=approved` かつ自分が採用済みという
+      // 既存ガードで弾かれる。
+      //
+      // ⚠️ **クエリは増えない** (既存の SELECT に付けるだけ)。tx を握った
+      // まま 2 本目の接続を要求しない、という `client.ts` の max:3 の前提は
+      // 守られる。
+      //
+      // ⚠️ ロック順は `cancelApprovedSwap` (weekly_shifts → swap_requests)
+      // と逆になるが、**待ちの輪は閉じない** — 承認が触るのは pending の
+      // 募集、取り消しが触るのは approved の募集で別行であり、取り消し側は
+      // こちらの行を要求しない。
       const reqRows = await tx
         .select({
           requesterId: swapRequests.requesterId,
@@ -168,6 +196,7 @@ export async function decideSwapRequest(
         })
         .from(swapRequests)
         .where(eq(swapRequests.id, data.id))
+        .for("update")
         .limit(1);
       if (reqRows.length === 0 || reqRows[0].status !== "pending") {
         throw new SwapBizError("対応済みの可能性があります。");
