@@ -61,21 +61,40 @@ export function pgErrorCode(e: unknown): string | null {
  * どちらも取れないときはメッセージ本文から拾う (`... constraint "名前"`)。
  */
 export function pgConstraintName(e: unknown): string | null {
+  type Node = {
+    code?: unknown;
+    constraint_name?: unknown;
+    constraint?: unknown;
+    message?: unknown;
+    cause?: unknown;
+  };
+  const chain: Node[] = [];
   let cur: unknown = e;
   for (let i = 0; i < 5 && cur; i++) {
-    const o = cur as {
-      constraint_name?: unknown;
-      constraint?: unknown;
-      message?: unknown;
-      cause?: unknown;
-    };
+    const o = cur as Node;
+    chain.push(o);
+    cur = o.cause;
+  }
+
+  // ① 構造化フィールドをチェーン全体で先に見る
+  for (const o of chain) {
     for (const v of [o.constraint_name, o.constraint]) {
       if (typeof v === "string" && v.length > 0) return v;
     }
+  }
+
+  // ② 無ければメッセージ本文から。
+  //
+  // ⚠️ **SQLSTATE を持つノードに限る。** DrizzleQueryError の message は
+  // `Failed query: <sql>\nparams: <params>` で、**利用者が自由入力した値
+  // (期のラベル等) がそのまま入る**。ここを無条件に見ると、ラベルを
+  // `constraint "..._chk"` にするだけで帰属を詐称でき、この関数が防ごうと
+  // している誤帰属そのものを起こせる。
+  for (const o of chain) {
+    if (typeof o.code !== "string" || o.code.length === 0) continue;
     const msg = typeof o.message === "string" ? o.message : "";
     const m = /constraint "([^"]+)"/.exec(msg);
     if (m?.[1]) return m[1];
-    cur = o.cause;
   }
   return null;
 }

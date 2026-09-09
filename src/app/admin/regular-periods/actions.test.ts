@@ -78,6 +78,20 @@ describe("updateRegularPeriod の締切バリデーション (#221)", () => {
     expect(transaction).not.toHaveBeenCalled();
   });
 
+  it("締切が空でも 500 にせず、形式の文言を返す", async () => {
+    // ⚠️ 回帰テスト。フィールド級の refine が落ちても zod はオブジェクト級の
+    // refine を実行するので、`new Date("")` を `jstDateOf` に渡すと
+    // toISOString() が RangeError を投げ、safeParse を素通りして server action
+    // ごと 500 になっていた。編集行の datetime-local に required が無いので、
+    // 締切を空にして保存すれば踏める
+    const r = await updateRegularPeriod({ ...base, submissionDueAt: "" });
+    expect(r).toEqual({
+      ok: false,
+      error: "日時の形式が正しくありません。",
+    });
+    expect(transaction).not.toHaveBeenCalled();
+  });
+
   it("締切が終了日ちょうど (JST) は通る", async () => {
     const r = await updateRegularPeriod({
       ...base,

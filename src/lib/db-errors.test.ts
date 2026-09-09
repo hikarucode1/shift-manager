@@ -80,6 +80,31 @@ describe("pgConstraintName (#221)", () => {
     ).toBeNull();
   });
 
+  it("SQLSTATE を持たないノードの message は見ない (詐称防止)", () => {
+    // DrizzleQueryError の message には実行した SQL と params が入るので、
+    // 期のラベル等の自由入力がそのまま混ざる。ここを見ると帰属を詐称できる
+    expect(
+      pgConstraintName({
+        name: "DrizzleQueryError",
+        message:
+          'Failed query: update ... params: constraint "regular_shift_periods_due_within_period_chk"',
+        cause: {
+          code: "23514",
+          message: "period range does not cover child rows",
+        },
+      }),
+    ).toBeNull();
+  });
+
+  it("構造化フィールドは cause の奥にあってもメッセージより優先する", () => {
+    expect(
+      pgConstraintName({
+        message: 'Failed query: ... constraint "spoofed_chk"',
+        cause: { code: "23514", constraint_name: "real_chk" },
+      }),
+    ).toBe("real_chk");
+  });
+
   it("制約名が無ければ null", () => {
     expect(pgConstraintName(new Error("boom"))).toBeNull();
     expect(pgConstraintName(null)).toBeNull();

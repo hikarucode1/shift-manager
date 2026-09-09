@@ -40,7 +40,17 @@ const labelInput = z
 const dueWithinPeriod = (v: {
   endDate: string;
   submissionDueAt: string;
-}): boolean => jstDateOf(new Date(v.submissionDueAt)) <= v.endDate;
+}): boolean => {
+  const t = Date.parse(v.submissionDueAt);
+  // ⚠️ **形式不正はここで判定しない。** `isoDateTime` の refine が既に
+  // 「日時の形式が正しくありません。」を出しており、フィールド級の refine が
+  // 落ちても zod は status を dirty にするだけで**オブジェクト級の refine を
+  // 実行する**。ここで `new Date("")` を渡すと `jstDateOf` の `toISOString()`
+  // が RangeError を投げ、safeParse を素通りして server action ごと 500 に
+  // なる (締切を空にして保存すると踏む)。true を返して形式の文言に譲る
+  if (Number.isNaN(t)) return true;
+  return jstDateOf(new Date(t)) <= v.endDate;
+};
 
 const DUE_WITHIN_PERIOD_MESSAGE =
   "提出締切は期の終了日までにしてください。";
