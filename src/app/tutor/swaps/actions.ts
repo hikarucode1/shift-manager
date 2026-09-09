@@ -363,6 +363,39 @@ export async function applyToSwap(input: unknown): Promise<ActionResult> {
       if (cur[0].status !== "pending") {
         return { ok: false, error: "この募集は既に締め切られています。" };
       }
+
+      // #259: 申請者が今もそのコマの担当かを見る。**`decideSwapRequest` が
+      // 付け替えに使う条件と同じ**なので、ここで無ければその募集は承認され得
+      // ない (「付け替え対象の確定シフトが見つかりません」で必ず落ちる)。
+      //
+      // 担当が変わるのは記録 (#215) / 承認 / 取り消し / CSV 再取り込みの 4 経路。
+      // 記録の後は募集が pending のまま残るため (#253 の案 B)、塞がないと
+      // **通知も届かないまま承認され得ない募集を待つ**講師が出る。
+      //
+      // ⚠️ 一覧 (`getOpenSwapsForTutor`) からも同時に落としてある。ここだけ
+      // 塞ぐと**押すと必ず失敗する dead button** になる (#165/#178・#231 で
+      // 2 度潰した型)。逆に一覧から落とすだけでは直リンクと競合が通る。
+      //
+      // ⚠️ tx 内の追加クエリだが**同一接続**なので、tx を握ったまま 2 本目の
+      // 接続を要求しないという client.ts の max:3 (#209) の前提は破らない。
+      const stillAssigned = await tx
+        .select({ id: weeklyShifts.id })
+        .from(weeklyShifts)
+        .where(
+          and(
+            eq(weeklyShifts.tutorId, r.requesterId),
+            eq(weeklyShifts.date, r.date),
+            eq(weeklyShifts.slotNumber, r.slotNumber),
+          ),
+        )
+        .limit(1);
+      if (stillAssigned.length === 0) {
+        return {
+          ok: false,
+          error:
+            "このコマは担当が変わったため、この募集には応募できません。教室長にご確認ください。",
+        };
+      }
       const existing = await tx
         .select({ id: swapApplications.id })
         .from(swapApplications)
