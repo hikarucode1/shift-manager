@@ -111,6 +111,12 @@ export type AdminSwapRequest = MySwapRequest & {
   isEnded: boolean;
   /** 過去日で、承認がサーバー側で弾かれるか (#165)。承認ボタンを落とす印 */
   isPastDate: boolean;
+  /**
+   * 申請者が今もそのコマの担当か (#262)。条件は `decideSwapRequest` が
+   * 付け替えに使う WHERE と同じ。false なら承認は必ず失敗するので、
+   * 承認ボタンを落として却下 / 取り下げへ誘導する
+   */
+  requesterAssigned: boolean;
   requesterName: string;
 };
 
@@ -544,6 +550,38 @@ export async function getPendingSwapRequests(): Promise<AdminSwapRequest[]> {
 
   const applicants = await loadApplicants(rows.map((r) => r.id));
 
+  // #262: 申請者が今もそのコマの担当かを引く。担当が変わった募集は
+  // `decideSwapRequest` が必ず落とすので、承認ボタンを落として却下 /
+  // 取り下げへ誘導する。**一覧からは外さない** — 閉じるのは教室長の仕事で、
+  // 外すと閉じる手段ごと消える (#259 の講師側とは逆)。
+  //
+  // ⚠️ 3 つ組そのもので照合する (`inArray` 3 本の AND は直積を引く)。
+  // 索引は `weekly_shifts_tutor_idx` (tutor_id, date) が効く
+  const assigned =
+    rows.length > 0
+      ? await db
+          .select({
+            tutorId: weeklyShifts.tutorId,
+            date: weeklyShifts.date,
+            slotNumber: weeklyShifts.slotNumber,
+          })
+          .from(weeklyShifts)
+          .where(
+            or(
+              ...rows.map((r) =>
+                and(
+                  eq(weeklyShifts.tutorId, r.requesterId),
+                  eq(weeklyShifts.date, r.date),
+                  eq(weeklyShifts.slotNumber, r.slotNumber),
+                ),
+              ),
+            ),
+          )
+      : [];
+  const assignedKeys = new Set(
+    assigned.map((a) => assignmentKey(a.tutorId, a.date, a.slotNumber)),
+  );
+
   return rows.map((r) => ({
     id: r.id,
     kind: r.kind as SwapKind,
@@ -558,6 +596,9 @@ export async function getPendingSwapRequests(): Promise<AdminSwapRequest[]> {
     nominatedName: r.nominatedName,
     isEnded: isSlotPast(r.date, labelOf(meta, r.slotNumber).end),
     isPastDate: r.date < today,
+    requesterAssigned: assignedKeys.has(
+      assignmentKey(r.requesterId, r.date, r.slotNumber),
+    ),
     approvedApplicantName: null,
     decisionNote: r.decisionNote,
     applicants: applicants.get(r.id) ?? [],

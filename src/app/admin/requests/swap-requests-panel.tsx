@@ -5,6 +5,16 @@ import { useRouter } from "next/navigation";
 import { AlertCircle, CheckCircle2 } from "lucide-react";
 import { isIndeterminate, toFailedResult } from "@/lib/action-failure";
 import type { AdminSwapRequest } from "@/lib/swaps";
+import { pendingSwapApproval } from "@/lib/pending-swap-approval";
+
+/** 承認可否と見出しは 1 箇所で決める (#262)。画面に分岐を戻さないこと */
+const approval = (r: AdminSwapRequest) =>
+  pendingSwapApproval({
+    isPastDate: r.isPastDate,
+    requesterAssigned: r.requesterAssigned,
+    isEnded: r.isEnded,
+    isProxy: r.isProxy,
+  });
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { shortDate } from "@/lib/week";
@@ -181,25 +191,25 @@ export function SwapRequestsPanel({
                   ) : (
                     <div className="space-y-1">
                       <p className="text-xs font-medium">
-                        {r.isPastDate
-                          ? r.isProxy
-                            ? "過去のコマのため承認できません (取り下げは可能です):"
-                            : "過去のコマのため承認できません (却下は可能です):"
-                          : r.isEnded
-                            ? "終了したコマです。実際に代講が入った場合のみ承認してください:"
-                            : "応募者から代講者を選んで承認:"}
+                        {approval(r).heading}
                       </p>
                       <div className="flex flex-wrap gap-2">
                         {r.applicants.map((a) => (
                           <Button
                             key={a.applicationId}
                             size="sm"
+                            // ⚠️ 判定は `pendingSwapApproval` に集約してある。
+                            // ここに `r.isPastDate ||` のような条件を書き足さ
+                            // ないこと — 塞ぐ理由が増えるたびに見出しと
+                            // ボタンがずれる。
+                            //
                             // #165/#178: 過去日はサーバー側が弾くので落とす
                             // (押せると必ずエラーになる dead button だった)。
+                            // #262: 担当が変わった募集も同じ理由で落とす。
                             // **終了しただけの同日コマは落とさない** — 応募が
                             // 付いた案件はここで承認するのが素直で、塞ぐと
                             // 記録側 (#215) へ移し替えさせる遠回りになる。
-                            disabled={isPending || r.isPastDate}
+                            disabled={isPending || !approval(r).approvable}
                             onClick={() =>
                               run(
                                 () =>
