@@ -1009,6 +1009,52 @@ export async function recordSubstitution(
     }),
   ]);
 
+  // ⚠️ **既存の通知を先に出し切ってから、この try/catch に入る** (#253)。
+  // `getActiveApplicantIds` はここで新しく足す DB 呼び出しで、`notify` と違い
+  // **失敗を握り潰さない**。コミット後なので投げると上の 3 本まで巻き添えで
+  // 落ち、行はもう pending でないため再実行もできない (#238 で踏んだ型)。
+  //
+  // ⚠️ 記録は `weekly_shifts` の担当を代講者に付け替えるので、**同じコマの
+  // pending な交代募集は以後 `decideSwapRequest` で「付け替え対象の確定シフト
+  // が見つかりません」になり承認できない**。教室長には画面で案内が出るが、
+  // 申請者と応募者には何も届かず、応募者は承認を待ち続けていた。
+  //
+  // ⚠️ **募集は閉じない** (#253 の案 B)。ここで `cancelled` にすると応募者の
+  // 一覧が `applicationOutcome` で「取り下げられました」になり、誰も取り下げて
+  // いないのに嘘になる。状態の整理は教室長の却下・取り下げに任せ、ここでは
+  // 「待っても承認されない」ことだけを伝える。
+  //
+  // ⚠️ **`reason` は応募者に渡さない。** 教室長が書いた経緯は休む講師の事情
+  // なので、募集に応募しただけの講師に逐語で流す相手ではない (#245 と同じ判断)。
+  if (pending.length > 0) {
+    try {
+      // `swap_requests_active_uniq` (0006) が (requester_id, date, slot_number)
+      // の pending を 1 件に制限しているので、これがその 1 件
+      const pendingId = pending[0].id;
+      const applicants = await getActiveApplicantIds(pendingId);
+      await Promise.all([
+        notify([tutorId], {
+          type: "swap_result",
+          title: "交代・代講の募集は承認できなくなりました",
+          body: `対象: ${date} ${slotLabel} ／ このコマは代講として記録されたため、募集は承認できません。教室長にご確認ください。`,
+          href: "/tutor/swaps",
+        }),
+        ...(applicants.length > 0
+          ? [
+              notify(applicants, {
+                type: "swap_result" as const,
+                title: "応募していた代講の募集は承認できなくなりました",
+                body: `対象: ${date} ${slotLabel} ／ このコマは別の形で対応されました。`,
+                href: "/tutor/open-swaps",
+              }),
+            ]
+          : []),
+      ]);
+    } catch (e) {
+      console.error("recordSubstitution notify pending swap failed", e);
+    }
+  }
+
   revalidateAll();
   revalidatePath("/admin/weekly");
   return { ok: true, pendingSwap: pending.length > 0, expiredAbsences };
