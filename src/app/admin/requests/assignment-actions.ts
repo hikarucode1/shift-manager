@@ -107,8 +107,17 @@ export async function listAssignmentsForDate(
   // ⚠️ 同一コマに pending と approved が同居することは
   // `absence_requests_active_uniq` (部分 unique) が防いでいるので、後勝ちで
   // 潰れる心配は無い
+  //
+  // ⚠️ **`as` で絞り込みを型任せにしない** (#245 の教訓)。実行時に値を見て
+  // 落とす。クエリ側の `inArray(status, ["pending","approved"])` が将来
+  // 広がっても、`rejected` が `candidateMark` に流れて「既に欠勤の申請あり」で
+  // 代理登録を塞ぐ、という壊れ方をしない
   const absentBy = new Map(
-    absences.map((a) => [key(a.tutorId, a.slotNumber), a.status] as const),
+    absences.flatMap((a) =>
+      a.status === "pending" || a.status === "approved"
+        ? ([[key(a.tutorId, a.slotNumber), a.status]] as const)
+        : [],
+    ),
   );
   const swapping = new Set(swaps.map((s) => key(s.requesterId, s.slotNumber)));
 
@@ -122,8 +131,7 @@ export async function listAssignmentsForDate(
       // `purpose === "swap" && …` を書き足さないこと — 用途が増えるたびに
       // 注記が嘘になる
       const { blocked, note } = candidateMark(purpose, {
-        absence:
-          (absentBy.get(k) as "pending" | "approved" | undefined) ?? "none",
+        absence: absentBy.get(k) ?? "none",
         hasPendingSwap: swapping.has(k),
         isEnded,
       });

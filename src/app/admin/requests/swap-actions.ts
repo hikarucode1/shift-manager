@@ -311,7 +311,7 @@ export async function decideSwapRequest(
       //
       // ⚠️ **`pending` 欠勤も対象なのは書き落としではない** (#230)。講師側の
       // `createSwapRequest` は #33 の欠勤ガードで「非終端の欠勤があれば交代
-      // 申請不可」を守るが、**教室長側の `createSwapRequestOnBehalf` (#227) には
+      // 申請不可」を守るが、**教室長側の `createOpenSwapOnBehalf` (#227) には
       // その確認が無い**。よって「pending 欠勤 + pending 交代」も代理募集から
       // 正規に作れる。承認したのに未処理の欠勤申請が残ると
       // `absence_requests_active_uniq` と #33 の前提が崩れるので、ここで

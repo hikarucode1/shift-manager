@@ -52,7 +52,7 @@ export function candidateMark(
     if (s.isEnded) return { blocked: true, note: "終了済み" };
     // ⚠️ 欠勤があっても塞がない —「欠勤が確定していて代講を探す」が本命。
     // ただし**未承認と承認済みを言い分ける** (#230)。教室長側の
-    // `createSwapRequestOnBehalf` には講師側 (#33) のような欠勤ガードが無いので、
+    // `createOpenSwapOnBehalf` には講師側 (#33) のような欠勤ガードが無いので、
     // 未承認のまま募集 → 承認で欠勤が自動失効、という順序に到達できる。
     // ここで「未承認」と出すのが「先に承認/却下してください」の促しになる
     if (s.absence === "approved") {
