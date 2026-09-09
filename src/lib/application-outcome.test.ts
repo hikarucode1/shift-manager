@@ -86,6 +86,7 @@ describe("toApplicationRow", () => {
     slotLabel: "3限",
     weekdayLabel: "木",
     requesterName: "山田",
+    reason: "体調不良のため",
     applicationId: "app-1",
     approvedApplicantId: "me",
     note: null,
@@ -96,6 +97,14 @@ describe("toApplicationRow", () => {
 
   it("応募して選ばれた行は chosen", () => {
     expect(toApplicationRow(row(), "me")?.outcome).toBe("chosen");
+  });
+
+  it("chosen は reason を出さない — 記録の経緯だけの分岐に閉じる (#251)", () => {
+    // ⚠️ これが無いと `outcome === "recorded"` を
+    // `outcome === "recorded" || outcome === "chosen"` に広げても全テストが
+    // 通る (base の row は note: null / reason 非空)。#248 で
+    // `applicationId !== null` に対して指摘されたのと同じ穴
+    expect(toApplicationRow(row(), "me")?.note).toBeNull();
   });
 
   it("応募行が無いのに代講者なら recorded (#247 の核心)", () => {
@@ -128,6 +137,33 @@ describe("toApplicationRow", () => {
     ).toBeNull();
   });
 
+  it("記録は reason を出す — decision_note は空なので (#251)", () => {
+    // これが無いと「なぜ自分が代講に入ったことになっているか」が一覧から
+    // 分からない。教室長が書いた経緯は reason に入る
+    expect(
+      toApplicationRow(
+        row({
+          applicationId: null,
+          reason: "体調不良の連絡を受け、電話で代講を依頼",
+          note: null,
+        }),
+        "me",
+      ),
+    ).toMatchObject({
+      outcome: "recorded",
+      note: "体調不良の連絡を受け、電話で代講を依頼",
+    });
+  });
+
+  it("記録以外は reason ではなく decision_note を出す", () => {
+    expect(
+      toApplicationRow(
+        row({ status: "rejected", note: "別途調整済み", reason: "私用のため" }),
+        "me",
+      )?.note,
+    ).toBe("別途調整済み");
+  });
+
   it("却下理由は落選者にも見せる (募集全体についての説明なので)", () => {
     expect(
       toApplicationRow(
@@ -156,7 +192,7 @@ describe("toApplicationRow", () => {
       weekdayLabel: "木",
       requesterName: "山田",
       outcome: "recorded",
-      note: null,
+      note: "体調不良のため",
       decidedAt: "2026-08-27T05:00:00.000Z",
     });
   });
