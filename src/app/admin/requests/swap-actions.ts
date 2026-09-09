@@ -308,6 +308,17 @@ export async function decideSwapRequest(
       // 「approved 欠勤 + pending 交代」は正規の手順で作れる状態になった。
       // #217 以前は受容済み TOCTOU からしか到達しない状態だったが、
       // **今はここが主経路**。dead code と誤認して削らないこと。
+      //
+      // ⚠️ **`pending` 欠勤も対象なのは書き落としではない** (#230)。講師側の
+      // `createSwapRequest` は #33 の欠勤ガードで「非終端の欠勤があれば交代
+      // 申請不可」を守るが、**教室長側の `createOpenSwapOnBehalf` (#227) には
+      // その確認が無い**。よって「pending 欠勤 + pending 交代」も代理募集から
+      // 正規に作れる。承認したのに未処理の欠勤申請が残ると
+      // `absence_requests_active_uniq` と #33 の前提が崩れるので、ここで
+      // 失効させるのが正しい。本人には #250 で通知が飛ぶ (「記録」と言わない
+      // 文言にしてあるのは、あるのが未決の申請でしかない場合があるため)。
+      // 教室長には代理募集の選択肢に「欠勤申請あり（未承認）」と出して、
+      // 先に承認/却下する機会を作ってある (#230)。
       const expired = await tx
         .update(absenceRequests)
         .set({
