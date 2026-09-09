@@ -28,10 +28,21 @@ function assertIso(d: string): void {
   }
 }
 
+/**
+ * 任意の瞬間 (UTC) を JST のカレンダー日付 (YYYY-MM-DD) にする。
+ *
+ * DB 側で `(<timestamptz> AT TIME ZONE 'Asia/Tokyo')::date` と比較している値を
+ * アプリ側で先に検証したいときに使う (#221)。「今日」ではない時刻を
+ * `jstToday` に渡すと名前が嘘になるので、そちらはこれの別名にしてある。
+ */
+export function jstDateOf(at: Date): string {
+  const jst = new Date(at.getTime() + JST_OFFSET_MS);
+  return jst.toISOString().slice(0, 10);
+}
+
 /** 現在時刻 (UTC) を JST のカレンダー日付 (YYYY-MM-DD) にする */
 export function jstToday(now: Date = new Date()): string {
-  const jst = new Date(now.getTime() + JST_OFFSET_MS);
-  return jst.toISOString().slice(0, 10);
+  return jstDateOf(now);
 }
 
 /** 現在の JST 月初 (YYYY-MM-01)。target_month 系の既定値に使う */

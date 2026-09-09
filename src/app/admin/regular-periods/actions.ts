@@ -4,10 +4,10 @@ import { revalidatePath } from "next/cache";
 import { z } from "zod";
 import { eq, sql } from "drizzle-orm";
 import { requireRole } from "@/lib/auth";
-import { pgErrorCode } from "@/lib/db-errors";
+import { pgConstraintName, pgErrorCode } from "@/lib/db-errors";
 import { db } from "@/db/client";
 import { regularShiftPeriods } from "@/db/schema";
-import { isValidIsoDate } from "@/lib/week";
+import { isValidIsoDate, jstDateOf } from "@/lib/week";
 
 type ActionResult = { ok: true } | { ok: false; error: string };
 
@@ -24,6 +24,36 @@ const labelInput = z
   .trim()
   .min(1, "ラベルを入力してください。")
   .max(100, "ラベルは 100 文字以内で入力してください。");
+
+/**
+ * 0021 の CHECK `regular_shift_periods_due_within_period_chk`
+ * (`(submission_due_at AT TIME ZONE 'Asia/Tokyo')::date <= end_date`) を
+ * アプリ側でも先に見る (#221)。
+ *
+ * ⚠️ **これが無いと 23514 で落ちる。** 期の終了日を締切より前に縮める操作は
+ * UI から普通に到達でき、そのとき DB は「範囲外のレギュラー確定枠」と
+ * 区別のつかない 23514 を返す。原因と無関係な削除を案内してしまう。
+ *
+ * ⚠️ 作成・更新の**両方**に掛ける。CHECK は INSERT にも効くので、片方だけだと
+ * 作成時に「作成に失敗しました。」しか出ない。
+ */
+const dueWithinPeriod = (v: {
+  endDate: string;
+  submissionDueAt: string;
+}): boolean => {
+  const t = Date.parse(v.submissionDueAt);
+  // ⚠️ **形式不正はここで判定しない。** `isoDateTime` の refine が既に
+  // 「日時の形式が正しくありません。」を出しており、フィールド級の refine が
+  // 落ちても zod は status を dirty にするだけで**オブジェクト級の refine を
+  // 実行する**。ここで `new Date("")` を渡すと `jstDateOf` の `toISOString()`
+  // が RangeError を投げ、safeParse を素通りして server action ごと 500 に
+  // なる (締切を空にして保存すると踏む)。true を返して形式の文言に譲る
+  if (Number.isNaN(t)) return true;
+  return jstDateOf(new Date(t)) <= v.endDate;
+};
+
+const DUE_WITHIN_PERIOD_MESSAGE =
+  "提出締切は期の終了日までにしてください。";
 
 const PeriodInput = z
   .object({
@@ -43,7 +73,11 @@ const PeriodInput = z
       message: "提出締切は提出開始より後にしてください。",
       path: ["submissionDueAt"],
     },
-  );
+  )
+  .refine(dueWithinPeriod, {
+    message: DUE_WITHIN_PERIOD_MESSAGE,
+    path: ["submissionDueAt"],
+  });
 
 export async function createRegularPeriod(
   input: unknown,
@@ -96,7 +130,11 @@ const UpdateInput = z
       message: "提出締切は提出開始より後にしてください。",
       path: ["submissionDueAt"],
     },
-  );
+  )
+  .refine(dueWithinPeriod, {
+    message: DUE_WITHIN_PERIOD_MESSAGE,
+    path: ["submissionDueAt"],
+  });
 
 /** 期は作成後も全項目編集可。後追い Issue #74 (期中変更 UX) で参照先テーブルとの整合チェックを強化予定。 */
 export async function updateRegularPeriod(
@@ -139,12 +177,24 @@ export async function updateRegularPeriod(
   } catch (err) {
     console.error("updateRegularPeriod failed", err);
     const code = pgErrorCode(err);
-    // 0026 trigger: 範囲外 child (regular_assignments.effective_from/to) が残っているケース。
+    // ⚠️ **23514 はこのテーブルで 2 経路ある** (#221)。
+    // - 0021 CHECK `..._due_within_period_chk` = 締切が期の外に出た
+    // - 0026 trigger = 範囲外の regular_assignments が残っている
+    //
+    // 案内が正反対 (締切を直す / 枠を消す) なので制約名で分ける。**trigger が
+    // RAISE したエラーは制約名を持たない**ため、取れなかったときだけ #176 の
+    // `updatePeriod` と同じ併記に落とす (そちらは 2 経路とも trigger で
+    // 判別できず、併記以外に選択肢が無かった)。
     if (code === "23514") {
+      if (
+        pgConstraintName(err) === "regular_shift_periods_due_within_period_chk"
+      ) {
+        return { ok: false, error: DUE_WITHIN_PERIOD_MESSAGE };
+      }
       return {
         ok: false,
         error:
-          "期間内に範囲外のレギュラー確定枠が存在します。先に該当枠を削除してから期間を変更してください。",
+          "期間内に範囲外のレギュラー確定枠が残っているか、提出締切が期間の外に出ています。該当枠を削除するか、締切を期間内に収めてください。",
       };
     }
     return { ok: false, error: "更新に失敗しました。" };
