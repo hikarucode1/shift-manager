@@ -50,6 +50,25 @@ describe("visibleOpenSwaps (#259)", () => {
     ).toHaveLength(0);
   });
 
+  it("open / named 以外の kind は出さない (fail-open にしない)", () => {
+    // ⚠️ `swap_kind` には `recorded` (#215) がある。「named でなければ見せる」
+    // と書くと将来の値に対して fail-open になり、**誰も出していない募集が全
+    // 講師に応募可能として出る**。記録は status: "approved" で作られるので今は
+    // 一覧のクエリに載らないが、そこに寄りかからない
+    expect(
+      visibleOpenSwaps([row({ kind: "recorded" })], "me", noApps, assigned),
+    ).toHaveLength(0);
+    // 応募済みでも出さない
+    expect(
+      visibleOpenSwaps(
+        [row({ kind: "recorded" })],
+        "me",
+        new Set(["req-1"]),
+        assigned,
+      ),
+    ).toHaveLength(0);
+  });
+
   it("指名が自分宛なら出す", () => {
     expect(
       visibleOpenSwaps(

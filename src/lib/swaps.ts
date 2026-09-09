@@ -465,8 +465,11 @@ export async function getOpenSwapsForTutor(
   // `decideSwapRequest` が必ず落とすので、一覧に出すと**承認され得ない募集に
   // 応募して待つ**講師が出る (記録 #215 の後に実際に起きる)。
   //
-  // ⚠️ (担当者, 日, コマ) の 3 つ組で照合する。`inArray` を 3 本 AND で撃つと
-  // 直積を過剰に拾うが、pending の募集は多くないので実用上問題にならない。
+  // ⚠️ **3 つ組そのもので照合する。** `inArray` を 3 本 AND にすると
+  // |日| × |コマ| × |その枠に入っている講師| の**直積**を引くことになる。
+  // この関数は #165 の理由で日付を絞らないため、閉じられていない古い pending が
+  // 溜まるほど効いてくる — そしてそれは #253 / #259 が扱っている母集団そのもの。
+  // `or(and(...))` なら行数はちょうど募集の数になる。
   // 索引は `weekly_shifts_tutor_idx` (tutor_id, date) が効く
   const assigned =
     rows.length > 0
@@ -478,18 +481,13 @@ export async function getOpenSwapsForTutor(
           })
           .from(weeklyShifts)
           .where(
-            and(
-              inArray(
-                weeklyShifts.tutorId,
-                rows.map((r) => r.requesterId),
-              ),
-              inArray(
-                weeklyShifts.date,
-                rows.map((r) => r.date),
-              ),
-              inArray(
-                weeklyShifts.slotNumber,
-                rows.map((r) => r.slotNumber),
+            or(
+              ...rows.map((r) =>
+                and(
+                  eq(weeklyShifts.tutorId, r.requesterId),
+                  eq(weeklyShifts.date, r.date),
+                  eq(weeklyShifts.slotNumber, r.slotNumber),
+                ),
               ),
             ),
           )

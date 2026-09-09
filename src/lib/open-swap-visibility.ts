@@ -3,8 +3,12 @@
  *
  * ⚠️ **判定は `decideSwapRequest` が付け替えに使う条件と同じにしてある** —
  * 「申請者が今もそのコマの担当か」。承認が成立する条件そのものなので、
- * 一覧・応募・承認の 3 者が同じ基準で動く。ここを独自の条件にすると
- * 「一覧には出るが承認できない」がまた生まれる。
+ * ここを独自の条件にすると「一覧には出るが承認できない」がまた生まれる。
+ *
+ * ⚠️ **講師側の 2 面 (一覧と応募) にしか入っていない。** 教室長の「未対応」
+ * タブは承認できない募集を承認ボタン付きで出したままで、押すと必ず
+ * 「付け替え対象の確定シフトが見つかりません」になる。同じ dead button が
+ * admin 側に残っている — #262 に分離した。
  *
  * ⚠️ **担当は戻る方向にも動く。** `cancelApprovedSwap` は代講者から申請者へ
  * 戻し、CSV 再取り込み (`upload-commit`) は weekly_shifts を CSV の原状に
@@ -41,6 +45,12 @@ export function visibleOpenSwaps<T extends OpenSwapRow>(
   assignedKeys: ReadonlySet<string>,
 ): T[] {
   return rows.filter((r) => {
+    // ⚠️ **allowlist にする。** `swap_kind` には `recorded` (#215) もあり、
+    // 「named でなければ見せる」と書くと**将来の値に対して fail-open** になる。
+    // 記録は `status: "approved"` で作られるので今は一覧のクエリ
+    // (`status='pending'`) に載らないが、そこに寄りかかると
+    // 「誰も出していない募集が全講師に応募可能として出る」で気づくことになる
+    if (r.kind !== "open" && r.kind !== "named") return false;
     // 指名 (named) は自分が指名先のものだけ見える。open は全員
     if (r.kind === "named" && r.nominatedTutorId !== tutorId) return false;
 
