@@ -268,9 +268,19 @@ GitHub 連携で main を本番、PR を Preview Deploy にする。
 
 招待 / パスワード再設定リンクとリダイレクトのため:
 
-- **Site URL**: 本番 URL（例 `https://shift-manager.vercel.app`）
+- **Site URL**: 本番 URL（`https://eisai-manager-5x1o.vercel.app`）
+  — ⚠️ 初期値の `http://localhost:3000` のままだと、招待メールのリンクが localhost になる
 - **Redirect URLs**: 本番 URL と Preview ワイルドカード
-  （例 `https://shift-manager-*.vercel.app/**`）を追加
+  （例 `https://eisai-manager-*.vercel.app/**`）を追加
+
+**Authentication > Email Templates > Invite user** は
+[`docs/supabase/email-templates/invite.html`](docs/supabase/email-templates/invite.html)
+の本文に差し替える（件名はファイル冒頭のコメント）。初期テンプレートは英語で、
+しかもリンクの形式がこのアプリの `/auth/confirm` と合わないため、**差し替えないと
+招待された講師がパスワードを設定できない**。
+
+招待の流れ: メールのリンク → `/auth/confirm`（ボタンを押すと確認）→
+`/auth/set-password`（パスワードを決める）→ 講師画面。
 
 ### 4. デプロイ後の確認
 

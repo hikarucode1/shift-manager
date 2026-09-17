@@ -1,0 +1,27 @@
+<!--
+  Supabase > Authentication > Email Templates > Invite user に貼る本文 (#264)。
+  件名: 【Shift Manager】講師アカウントへの招待
+
+  ⚠️ リンクは {{ .ConfirmationURL }} ではなく、下の形のまま使うこと。
+  {{ .ConfirmationURL }} はログイン情報を URL の # 以降に載せて返すため、
+  サーバーで処理するこのアプリ (/auth/confirm) では受け取れない。
+  {{ .SiteURL }} は Authentication > URL Configuration の Site URL
+  (本番 URL にしておくこと。初期値の http://localhost:3000 のままだと
+  講師に localhost のリンクが届く)。
+-->
+<h2>Shift Manager への招待</h2>
+
+<p>教室長から、シフト管理アプリ「Shift Manager」の講師アカウントに招待されました。</p>
+
+<p>下のボタンを押して、ログインに使うパスワードを決めてください。</p>
+
+<p>
+  <a href="{{ .SiteURL }}/auth/confirm?token_hash={{ .TokenHash }}&type=invite"
+     style="display:inline-block;padding:10px 20px;background:#111827;color:#ffffff;border-radius:6px;text-decoration:none;">
+    パスワードを設定する
+  </a>
+</p>
+
+<p>このリンクは 1 回だけ使えます。有効期限が切れた場合や、心当たりがない場合は教室長にお問い合わせください。</p>
+
+<p style="color:#6b7280;font-size:12px;">このメールは送信専用です。返信いただいてもお答えできません。</p>
