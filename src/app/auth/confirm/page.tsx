@@ -1,8 +1,10 @@
 import Link from "next/link";
-import { Button } from "@/components/ui/button";
 import { parseInviteLink } from "@/lib/invite-link";
+import { readAuthUser } from "@/lib/auth-availability";
+import { createClient } from "@/lib/supabase/server";
 import { AuthAlert, AuthCard } from "../auth-card";
 import { verifyInvite } from "./actions";
+import { ConfirmSubmitButton } from "./submit-button";
 
 /**
  * 招待メールのリンクの着地点 (#264)。
@@ -25,6 +27,25 @@ export default async function ConfirmInvitePage({
   const link = parseInviteLink(params);
 
   if (params.error === "invalid" || !link) {
+    // ボタンを押した後 (= リンクは使用済み・セッションはある) にパスワードを
+    // 決めずに離れた講師が、同じリンクを開き直すとここに来る。パスワードが
+    // 無いので「ログインしてください」では戻れない。セッションが残っていれば
+    // 設定画面へ案内する。
+    if (await hasSession()) {
+      return (
+        <AuthCard title="パスワードの設定">
+          <p className="text-sm">
+            招待の確認は済んでいます。まだパスワードを決めていない場合は、続けて設定してください。
+          </p>
+          <Link
+            href="/auth/set-password"
+            className="block text-center text-sm underline underline-offset-4"
+          >
+            パスワードを設定する
+          </Link>
+        </AuthCard>
+      );
+    }
     return (
       <AuthCard title="招待リンクを使えません">
         <AuthAlert>
@@ -56,10 +77,22 @@ export default async function ConfirmInvitePage({
       <form action={verifyInvite}>
         <input type="hidden" name="token_hash" value={link.tokenHash} />
         <input type="hidden" name="type" value={link.type} />
-        <Button type="submit" className="w-full">
-          パスワードの設定へ進む
-        </Button>
+        <ConfirmSubmitButton />
       </form>
     </AuthCard>
   );
+}
+
+/**
+ * 案内を出し分けるためだけに見る。認証 API に届かない・cookie が壊れている
+ * 場合は「セッション無し」に倒す (どちらでも本来の失敗画面が出るだけで、
+ * ここを理由に SystemUnavailable にはしない)。
+ */
+async function hasSession(): Promise<boolean> {
+  try {
+    const read = await readAuthUser(await createClient());
+    return read.reachable && read.user !== null;
+  } catch {
+    return false;
+  }
 }
