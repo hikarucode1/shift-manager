@@ -10,7 +10,13 @@ import { Badge } from "@/components/ui/badge";
 import { isIndeterminate, toFailedResult } from "@/lib/action-failure";
 import { cn } from "@/lib/utils";
 import { avatarColor, avatarInitial } from "@/lib/avatar";
-import { inviteTutor, renameTutor, setTutorActive } from "./actions";
+import type { InviteStatus } from "@/lib/invite-resend";
+import {
+  inviteTutor,
+  renameTutor,
+  resendInvite,
+  setTutorActive,
+} from "./actions";
 
 export type TutorRow = {
   id: string;
@@ -21,10 +27,21 @@ export type TutorRow = {
   isAdmin: boolean;
   /** auth.users と連携済み (= ログイン可能) か */
   linked: boolean;
+  /**
+   * 招待を受け取ったか (#265)。未連携は null。
+   * unknown = 認証 API から読めなかった (再送の可否はサーバーが判定する)
+   */
+  inviteStatus: InviteStatus | null;
   createdAt: string;
 };
 
-type StatusFilter = "all" | "linked" | "unlinked";
+type StatusFilter = "all" | "linked" | "pending" | "unlinked";
+
+// 「招待中」の絞り込みは再送の対象を探すためのもの。無効な講師には再送できない
+// (resendRefusal) ので数えない。
+function isResendable(t: TutorRow) {
+  return t.isActive && t.inviteStatus === "pending";
+}
 
 // 列幅: 氏名 / メール / 状態 / 担当科目 / 操作
 const COLS = "grid-cols-[1.2fr_1.6fr_.9fr_1.3fr_.8fr]";
@@ -62,11 +79,13 @@ export function TutorManager({
 
   const linkedCount = tutors.filter((t) => t.linked).length;
   const stubCount = tutors.length - linkedCount;
+  const pendingCount = tutors.filter(isResendable).length;
 
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase();
     return tutors.filter((t) => {
       if (statusFilter === "linked" && !t.linked) return false;
+      if (statusFilter === "pending" && !isResendable(t)) return false;
       if (statusFilter === "unlinked" && t.linked) return false;
       if (!q) return true;
       if (t.displayName.toLowerCase().includes(q)) return true;
@@ -160,6 +179,7 @@ export function TutorManager({
         >
           <option value="all">すべての状態</option>
           <option value="linked">連携済 ({linkedCount})</option>
+          <option value="pending">うち招待中 ({pendingCount})</option>
           <option value="unlinked">未連携 ({stubCount})</option>
         </select>
         <Button
@@ -290,12 +310,19 @@ export function TutorManager({
                           <Badge className="border-transparent bg-accent/10 text-accent hover:bg-accent/10">
                             未連携
                           </Badge>
-                        ) : t.isActive ? (
+                        ) : !t.isActive ? (
+                          <Badge variant="secondary">無効</Badge>
+                        ) : t.inviteStatus === "pending" ? (
+                          <Badge
+                            className="border-transparent bg-amber-50 text-amber-700 hover:bg-amber-50"
+                            title="招待メールのリンクがまだ使われていません"
+                          >
+                            招待中
+                          </Badge>
+                        ) : (
                           <Badge className="border-transparent bg-green-50 text-green-700 hover:bg-green-50">
                             連携済
                           </Badge>
-                        ) : (
-                          <Badge variant="secondary">無効</Badge>
                         )}
                       </div>
                       {/* 担当科目 (per-tutor マスタ未対応) */}
@@ -389,43 +416,69 @@ export function TutorManager({
                             </div>
                           </div>
                         ) : (
-                          <div className="flex items-center gap-2">
-                            <Button
-                              variant={t.isActive ? "outline" : "default"}
-                              size="sm"
-                              disabled={disableToggle}
-                              title={
-                                isSelf
-                                  ? "自分自身は変更できません"
+                          <>
+                            {/* 招待の再送 (#265)。受け取り済みと分かっている相手には出さない */}
+                            {t.isActive && t.inviteStatus !== "accepted" && (
+                              <div className="flex flex-wrap items-center gap-2">
+                                <Button
+                                  variant="outline"
+                                  size="sm"
+                                  disabled={isPending}
+                                  onClick={() =>
+                                    run(
+                                      () => resendInvite({ profileId: t.id }),
+                                      "招待メールを再送しました。前に送ったリンクは使えなくなります。",
+                                    )
+                                  }
+                                >
+                                  <Mail className="size-4" />
+                                  招待を再送
+                                </Button>
+                                <span className="text-xs text-muted-foreground">
+                                  {t.inviteStatus === "pending"
+                                    ? `${t.email} はまだ招待リンクを使っていません。期限切れのときに送り直せます。`
+                                    : "招待の状態を確認できませんでした。受け取り済みの場合は送信されません。"}
+                                </span>
+                              </div>
+                            )}
+                            <div className="flex items-center gap-2">
+                              <Button
+                                variant={t.isActive ? "outline" : "default"}
+                                size="sm"
+                                disabled={disableToggle}
+                                title={
+                                  isSelf
+                                    ? "自分自身は変更できません"
+                                    : wouldBeLastActive
+                                      ? "最後の有効な教室長は無効化できません"
+                                      : undefined
+                                }
+                                onClick={() =>
+                                  run(
+                                    () =>
+                                      setTutorActive({
+                                        id: t.id,
+                                        isActive: !t.isActive,
+                                      }),
+                                    t.isActive
+                                      ? "無効化しました。"
+                                      : "有効化しました。",
+                                  )
+                                }
+                              >
+                                {t.isActive ? "無効化" : "有効化"}
+                              </Button>
+                              <span className="text-xs text-muted-foreground">
+                                {isSelf
+                                  ? "自分自身の有効/無効は変更できません。"
                                   : wouldBeLastActive
-                                    ? "最後の有効な教室長は無効化できません"
-                                    : undefined
-                              }
-                              onClick={() =>
-                                run(
-                                  () =>
-                                    setTutorActive({
-                                      id: t.id,
-                                      isActive: !t.isActive,
-                                    }),
-                                  t.isActive
-                                    ? "無効化しました。"
-                                    : "有効化しました。",
-                                )
-                              }
-                            >
-                              {t.isActive ? "無効化" : "有効化"}
-                            </Button>
-                            <span className="text-xs text-muted-foreground">
-                              {isSelf
-                                ? "自分自身の有効/無効は変更できません。"
-                                : wouldBeLastActive
-                                  ? "最後の有効な教室長のため無効化できません（別の教室長を有効化してください）。"
-                                  : t.isAdmin
-                                    ? "教室長兼任のため、無効化すると教室長としてもログインできなくなります（削除はできません）。"
-                                    : "無効化するとログインできなくなります（削除はできません）。"}
-                            </span>
-                          </div>
+                                    ? "最後の有効な教室長のため無効化できません（別の教室長を有効化してください）。"
+                                    : t.isAdmin
+                                      ? "教室長兼任のため、無効化すると教室長としてもログインできなくなります（削除はできません）。"
+                                      : "無効化するとログインできなくなります（削除はできません）。"}
+                              </span>
+                            </div>
+                          </>
                         )}
 
                         <div>

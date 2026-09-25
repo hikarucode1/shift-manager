@@ -3,7 +3,38 @@ import { requireRole } from "@/lib/auth";
 import { db } from "@/db/client";
 import { profiles } from "@/db/schema";
 import { AdminTutorsNav } from "@/components/admin-section-nav";
+import { createAdminClient } from "@/lib/supabase/admin";
+import { inviteStatusOf, type InviteStatus } from "@/lib/invite-resend";
 import { TutorManager } from "./tutor-manager";
+
+/**
+ * 招待を受け取ったか (#265) は auth.users にしか無いので、一覧を開くたびに
+ * 認証 API から読む。profiles に写すと二重管理になりずれる。
+ * 読めなかったときは null を返し、一覧は「状態不明」で表示を続ける
+ * (再送ボタンは出し、可否は resendInvite がサーバーで判定する)。
+ */
+async function loadInviteStatuses(): Promise<Map<string, InviteStatus> | null> {
+  const perPage = 1000;
+  const statuses = new Map<string, InviteStatus>();
+  try {
+    const supabase = createAdminClient();
+    for (let page = 1; ; page++) {
+      const { data, error } = await supabase.auth.admin.listUsers({
+        page,
+        perPage,
+      });
+      if (error) {
+        console.error("AdminTutorsPage: listUsers failed:", error.message);
+        return null;
+      }
+      for (const u of data.users) statuses.set(u.id, inviteStatusOf(u));
+      if (data.users.length < perPage) return statuses;
+    }
+  } catch (e) {
+    console.error("AdminTutorsPage: listUsers threw", e);
+    return null;
+  }
+}
 
 export default async function AdminTutorsPage() {
   const { profile } = await requireRole("admin");
@@ -32,6 +63,8 @@ export default async function AdminTutorsPage() {
     .where(arrayContains(profiles.roles, ["tutor"]))
     .orderBy(asc(profiles.displayName));
 
+  const inviteStatuses = await loadInviteStatuses();
+
   const rows = tutors.map((t) => ({
     id: t.id,
     displayName: t.displayName,
@@ -39,6 +72,10 @@ export default async function AdminTutorsPage() {
     isActive: t.isActive,
     isAdmin: t.roles.includes("admin"),
     linked: t.authUserId !== null,
+    inviteStatus:
+      t.authUserId === null
+        ? null
+        : (inviteStatuses?.get(t.authUserId) ?? "unknown"),
     createdAt: t.createdAt.toISOString(),
   }));
 
