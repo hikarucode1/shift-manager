@@ -9,6 +9,13 @@ import { profiles } from "@/db/schema";
 import { isUniqueViolation } from "@/lib/db-errors";
 import { setProfileActive } from "@/lib/profile-active";
 import { createAdminClient } from "@/lib/supabase/admin";
+import {
+  ALREADY_ACCEPTED,
+  isInviteAccepted,
+  resendErrorMessage,
+  resendRefusal,
+  sameEmail,
+} from "@/lib/invite-resend";
 
 type ActionResult = { ok: true } | { ok: false; error: string };
 
@@ -142,6 +149,84 @@ export async function inviteTutor(input: unknown): Promise<ActionResult> {
     return {
       ok: false,
       error: "プロフィール反映に失敗しました。時間をおいて再度お試しください。",
+    };
+  }
+
+  revalidatePath("/admin/tutors");
+  return { ok: true };
+}
+
+const ResendSchema = z.object({ profileId: z.string().uuid() });
+
+/**
+ * 招待メールの再送 (#265)。招待リンクは 1 回きり・期限付きなので、期限切れや
+ * 取りこぼしのときに教室長が送り直す。判定は lib/invite-resend.ts。
+ * DB には書かない (auth ユーザーも profiles の紐付けも変わらない)。
+ */
+export async function resendInvite(input: unknown): Promise<ActionResult> {
+  await requireRole("admin");
+
+  const parsed = ResendSchema.safeParse(input);
+  if (!parsed.success) return { ok: false, error: "入力が不正です。" };
+
+  const [target] = await db
+    .select({
+      roles: profiles.roles,
+      authUserId: profiles.authUserId,
+      email: profiles.email,
+      isActive: profiles.isActive,
+    })
+    .from(profiles)
+    .where(eq(profiles.id, parsed.data.profileId))
+    .limit(1);
+  const refusal = resendRefusal(target);
+  if (refusal) return { ok: false, error: refusal };
+  const authUserId = target.authUserId!;
+
+  const supabase = createAdminClient();
+  const { data: found, error: readError } =
+    await supabase.auth.admin.getUserById(authUserId);
+  if (readError || !found?.user) {
+    console.error("resendInvite: getUserById failed:", readError?.message);
+    return { ok: false, error: resendErrorMessage(readError) };
+  }
+  if (isInviteAccepted(found.user)) {
+    return { ok: false, error: ALREADY_ACCEPTED };
+  }
+  // inviteUserByEmail はメールでユーザーを引く。宛先がずれていると別の
+  // ユーザーを新規作成してしまうので、紐付いている auth ユーザーのメールと
+  // 一致するときだけ送る。
+  const authEmail = found.user.email;
+  if (!authEmail || !sameEmail(authEmail, target.email)) {
+    console.error("resendInvite: profile email differs from auth email", {
+      authUserId,
+    });
+    return {
+      ok: false,
+      error:
+        "登録されているメールアドレスがログインアカウントと一致しないため、再送できません。",
+    };
+  }
+
+  const { data: invited, error } =
+    await supabase.auth.admin.inviteUserByEmail(authEmail);
+  if (error || !invited?.user) {
+    console.error("resendInvite: inviteUserByEmail failed:", error?.message);
+    return { ok: false, error: resendErrorMessage(error) };
+  }
+  if (invited.user.id !== authUserId) {
+    // 上の一致確認があるので起きない想定 (GoTrue がメールと aud で別ユーザーを
+    // 引いた = 新規作成した)。紐付いていない auth ユーザーを残さないよう消す
+    // (inviteTutor の巻き戻しと同じ)。消せばメールのリンクも使えなくなる。
+    console.error("resendInvite: invite went to a different auth user", {
+      expected: authUserId,
+      actual: invited.user.id,
+    });
+    await supabase.auth.admin.deleteUser(invited.user.id).catch(() => {});
+    return {
+      ok: false,
+      error:
+        "ログインアカウントの紐付けが一致しないため、再送できませんでした。",
     };
   }
 
