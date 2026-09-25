@@ -49,6 +49,9 @@ export default async function AdminTutorsPage() {
       and(arrayContains(profiles.roles, ["admin"]), eq(profiles.isActive, true)),
     );
 
+  // 認証 API の読み込みは DB と独立なので並べて待つ
+  const inviteStatusesPromise = loadInviteStatuses();
+
   const tutors = await db
     .select({
       id: profiles.id,
@@ -63,7 +66,7 @@ export default async function AdminTutorsPage() {
     .where(arrayContains(profiles.roles, ["tutor"]))
     .orderBy(asc(profiles.displayName));
 
-  const inviteStatuses = await loadInviteStatuses();
+  const inviteStatuses = await inviteStatusesPromise;
 
   const rows = tutors.map((t) => ({
     id: t.id,
@@ -92,6 +95,7 @@ export default async function AdminTutorsPage() {
         tutors={rows}
         currentProfileId={profile.id}
         activeAdminCount={activeAdminCount}
+        inviteStatusLoaded={inviteStatuses !== null}
       />
     </div>
   );

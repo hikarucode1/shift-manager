@@ -50,11 +50,14 @@ export function TutorManager({
   tutors,
   currentProfileId,
   activeAdminCount,
+  inviteStatusLoaded,
 }: {
   tutors: TutorRow[];
   currentProfileId: string;
   /** 有効な教室長の総数 (兼任者の「最後の有効教室長」判定に使う) */
   activeAdminCount: number;
+  /** 認証 API から招待の状態を読めたか。false なら「招待中」の件数も当てにならない */
+  inviteStatusLoaded: boolean;
 }) {
   const router = useRouter();
   const [isPending, startTransition] = useTransition();
@@ -159,6 +162,13 @@ export function TutorManager({
         >
           {notice.type === "error" && <AlertCircle className="size-4" />}
           {notice.text}
+        </p>
+      )}
+
+      {!inviteStatusLoaded && (
+        <p className="flex items-center gap-1 rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-800">
+          <AlertCircle className="size-4 shrink-0" />
+          招待の状態を読み込めませんでした。「状態不明」の講師が招待を受け取ったかは、時間をおいて再読み込みすると確認できます。
         </p>
       )}
 
@@ -318,6 +328,13 @@ export function TutorManager({
                             title="招待メールのリンクがまだ使われていません"
                           >
                             招待中
+                          </Badge>
+                        ) : t.inviteStatus === "unknown" ? (
+                          <Badge
+                            variant="outline"
+                            title="招待を受け取ったか確認できませんでした"
+                          >
+                            状態不明
                           </Badge>
                         ) : (
                           <Badge className="border-transparent bg-green-50 text-green-700 hover:bg-green-50">

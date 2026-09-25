@@ -78,9 +78,8 @@ describe("sameEmail", () => {
     expect(sameEmail("tutor@example.com", " Tutor@Example.com ")).toBe(true);
   });
 
-  it("違う宛先・auth 側にメールが無いときは一致としない", () => {
+  it("違う宛先は一致としない", () => {
     expect(sameEmail("a@example.com", "b@example.com")).toBe(false);
-    expect(sameEmail(undefined, "a@example.com")).toBe(false);
   });
 });
 

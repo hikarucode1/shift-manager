@@ -196,7 +196,8 @@ export async function resendInvite(input: unknown): Promise<ActionResult> {
   // inviteUserByEmail はメールでユーザーを引く。宛先がずれていると別の
   // ユーザーを新規作成してしまうので、紐付いている auth ユーザーのメールと
   // 一致するときだけ送る。
-  if (!sameEmail(found.user.email, target.email)) {
+  const authEmail = found.user.email;
+  if (!authEmail || !sameEmail(authEmail, target.email)) {
     console.error("resendInvite: profile email differs from auth email", {
       authUserId,
     });
@@ -208,17 +209,25 @@ export async function resendInvite(input: unknown): Promise<ActionResult> {
   }
 
   const { data: invited, error } =
-    await supabase.auth.admin.inviteUserByEmail(found.user.email!);
+    await supabase.auth.admin.inviteUserByEmail(authEmail);
   if (error || !invited?.user) {
     console.error("resendInvite: inviteUserByEmail failed:", error?.message);
     return { ok: false, error: resendErrorMessage(error) };
   }
   if (invited.user.id !== authUserId) {
-    // 上の一致確認があるので起きない想定。起きたら紐付けの不整合なので記録する
+    // 上の一致確認があるので起きない想定 (GoTrue がメールと aud で別ユーザーを
+    // 引いた = 新規作成した)。紐付いていない auth ユーザーを残さないよう消す
+    // (inviteTutor の巻き戻しと同じ)。消せばメールのリンクも使えなくなる。
     console.error("resendInvite: invite went to a different auth user", {
       expected: authUserId,
       actual: invited.user.id,
     });
+    await supabase.auth.admin.deleteUser(invited.user.id).catch(() => {});
+    return {
+      ok: false,
+      error:
+        "ログインアカウントの紐付けが一致しないため、再送できませんでした。",
+    };
   }
 
   revalidatePath("/admin/tutors");

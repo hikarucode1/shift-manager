@@ -56,8 +56,8 @@ export function resendRefusal(
 }
 
 /** DB のメールと auth 側のメールが同じ宛先か (GoTrue は小文字で保存する) */
-export function sameEmail(a: string | undefined, b: string): boolean {
-  return (a ?? "").trim().toLowerCase() === b.trim().toLowerCase();
+export function sameEmail(a: string, b: string): boolean {
+  return a.trim().toLowerCase() === b.trim().toLowerCase();
 }
 
 export const ALREADY_ACCEPTED =
