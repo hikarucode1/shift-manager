@@ -36,21 +36,22 @@ export function inviteStatusOf(user: ConfirmFields | undefined): InviteStatus {
 }
 
 /**
- * DB 側の前提を満たさない相手には Supabase を呼ぶ前に断る。
- * 無効化した講師に送り直すと、ログインできないアカウントのパスワードを決めさせることになる。
+ * DB 側の前提を満たさない相手には Supabase を呼ぶ前に断る。招待の再送と
+ * パスワード再設定メール (#268) で共通。
+ * 無効化した講師に送ると、ログインできないアカウントのパスワードを決めさせることになる。
  */
-export function resendRefusal(
+export function mailTargetRefusal(
   target:
     | { roles: string[]; authUserId: string | null; isActive: boolean }
     | undefined,
 ): string | null {
   if (!target) return "対象の講師が見つかりません。";
-  if (!target.roles.includes("tutor")) return "講師以外には再送できません。";
+  if (!target.roles.includes("tutor")) return "講師以外には送れません。";
   if (!target.authUserId) {
     return "この講師はまだ招待していません。「ログイン連携」から招待してください。";
   }
   if (!target.isActive) {
-    return "無効な講師には再送できません。先に有効化してください。";
+    return "無効な講師には送れません。先に有効化してください。";
   }
   return null;
 }
@@ -61,7 +62,7 @@ export function sameEmail(a: string, b: string): boolean {
 }
 
 export const ALREADY_ACCEPTED =
-  "この講師は招待を受け取り済みのため、再送できません。";
+  "この講師は招待を受け取り済みのため、再送できません。パスワードが分からない場合は「パスワード再設定メール」を送ってください。";
 
 /** getUserById / inviteUserByEmail の失敗を、教室長が次に何をすればよいかの文にする */
 export function resendErrorMessage(error: unknown): string {
@@ -83,4 +84,31 @@ export function resendErrorMessage(error: unknown): string {
     return "現在招待を送れません。時間をおいて再度お試しください。";
   }
   return "招待を再送できませんでした。時間をおいて再度お試しください。";
+}
+
+/**
+ * パスワード再設定メール (#268) は、招待を受け取り済みの講師にだけ送る。
+ * 招待中の講師に送っても GoTrue は受け付けて確認済みにしてしまうが、それなら
+ * 招待の再送で足りる (届くメールの文面も招待のほうが合っている)。
+ */
+export const NOT_YET_ACCEPTED =
+  "この講師はまだ招待を受け取っていません。「招待を再送」から送り直してください。";
+
+/** getUserById / resetPasswordForEmail の失敗を、教室長が次に何をすればよいかの文にする */
+export function resetErrorMessage(error: unknown): string {
+  // ⚠️ resendErrorMessage と同じく、429 は isAuthUnavailable より先に見る。
+  // GoTrue は同じユーザーへの再設定メールを既定で 60 秒に 1 通に絞る。
+  if (isAuthError(error)) {
+    switch (error.code) {
+      case "over_email_send_rate_limit":
+      case "over_request_rate_limit":
+        return "短時間に再設定メールを送りすぎました。時間をおいて再度お試しください。";
+      case "user_not_found":
+        return "この講師のログインアカウントが見つかりません。";
+    }
+  }
+  if (isAuthUnavailable(error)) {
+    return "現在再設定メールを送れません。時間をおいて再度お試しください。";
+  }
+  return "再設定メールを送れませんでした。時間をおいて再度お試しください。";
 }

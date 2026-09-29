@@ -5,14 +5,15 @@ import { createClient } from "@/lib/supabase/server";
 import { reportIncident } from "@/lib/incident";
 import {
   classifyVerifyError,
-  parseInviteLink,
+  parseEmailLink,
+  type EmailLink,
   type VerifyFailure,
 } from "@/lib/invite-link";
 
 /**
- * 招待リンクを確かめてセッションを作る (#264)。
+ * 招待リンク・パスワード再設定リンク (#268) を確かめてセッションを作る (#264)。
  *
- * ⚠️ **ページを開いただけでは呼ばない**。招待リンクは 1 回しか使えず、
+ * ⚠️ **ページを開いただけでは呼ばない**。どちらのリンクも 1 回しか使えず、
  * メールのセキュリティ製品 (Outlook の Safe Links など) はリンクを先に GET する。
  * GET で verifyOtp すると、本人が開く前にリンクが使い切られる。
  * ボタン (POST) を押したときだけ確かめる。
@@ -21,7 +22,7 @@ import {
  * setAll)。server action からなので cookies() への書き込みは有効。
  */
 export async function verifyInvite(formData: FormData) {
-  const link = parseInviteLink({
+  const link = parseEmailLink({
     token_hash: formData.get("token_hash"),
     type: formData.get("type"),
   });
@@ -46,16 +47,17 @@ export async function verifyInvite(formData: FormData) {
   }
 
   // redirect() は例外で抜けるので try の外で呼ぶ
-  if (failure) redirect(failurePath(failure, link.tokenHash));
+  if (failure) redirect(failurePath(failure, link));
   redirect("/auth/set-password");
 }
 
-function failurePath(failure: VerifyFailure, tokenHash?: string): string {
+function failurePath(failure: VerifyFailure, link?: EmailLink): string {
   const params = new URLSearchParams({ error: failure });
-  // 到達不能ならリンクはまだ使えるので、押し直せるように残す
-  if (failure === "unavailable" && tokenHash) {
-    params.set("token_hash", tokenHash);
-    params.set("type", "invite");
+  if (link) {
+    // 失敗画面の文言を招待・再設定で出し分けるため、type は常に残す
+    params.set("type", link.type);
+    // 到達不能ならリンクはまだ使えるので、押し直せるように残す
+    if (failure === "unavailable") params.set("token_hash", link.tokenHash);
   }
   return `/auth/confirm?${params}`;
 }

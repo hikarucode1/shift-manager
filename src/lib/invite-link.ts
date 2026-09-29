@@ -5,28 +5,32 @@ import {
 import { isAuthUnavailable } from "@/lib/auth-availability";
 
 /**
- * 招待リンク → パスワード設定 (#264) の判定をまとめる。
- * 画面と server action から分けてあるのはテストを掛けるため。
+ * 招待リンク → パスワード設定 (#264) と、パスワード再設定リンク (#268) の
+ * 判定をまとめる。画面と server action から分けてあるのはテストを掛けるため。
  *
- * 流れ:
- *   招待メール `{{ .SiteURL }}/auth/confirm?token_hash=...&type=invite`
+ * 流れ (type 以外は同じ):
+ *   招待メール     `{{ .SiteURL }}/auth/confirm?token_hash=...&type=invite`
+ *   再設定メール   `{{ .SiteURL }}/auth/confirm?token_hash=...&type=recovery`
  *   → /auth/confirm でボタンを押す → verifyOtp でセッションを作る
  *   → /auth/set-password で updateUser({ password })
  */
 
 /**
- * 受け付ける type は invite だけ。
- * recovery (パスワード再設定) や magiclink を通すと、このアプリが用意していない
- * ログイン経路が URL を書き換えるだけで開いてしまう。足すときは発行側と一緒に足す。
+ * 受け付ける type は、このアプリがメールを送る 2 つだけ。
+ * - invite  : 教室長の招待 (inviteTutor / resendInvite)
+ * - recovery: 教室長が送るパスワード再設定 (sendPasswordReset, #268)
+ * magiclink などを通すと、このアプリが用意していないログイン経路が URL を
+ * 書き換えるだけで開いてしまう。足すときは発行側と一緒に足す。
  */
-export type InviteLink = { tokenHash: string; type: "invite" };
+export type EmailLinkType = "invite" | "recovery";
+export type EmailLink = { tokenHash: string; type: EmailLinkType };
 
-export function parseInviteLink(params: {
+export function parseEmailLink(params: {
   token_hash?: unknown;
   type?: unknown;
-}): InviteLink | null {
+}): EmailLink | null {
   const { token_hash: tokenHash, type } = params;
-  if (type !== "invite") return null;
+  if (type !== "invite" && type !== "recovery") return null;
   if (typeof tokenHash !== "string" || tokenHash.trim() === "") return null;
   return { tokenHash, type };
 }
@@ -65,8 +69,10 @@ export function validateNewPassword(
   return null;
 }
 
+// 招待・再設定のどちらから来ても、使ったリンクはもう通らない。教室長は
+// 状態に応じて招待の再送か再設定メールを送れる (#268) ので、どちらかは言わない
 const SESSION_GONE =
-  "ログインの有効期限が切れました。招待メールのリンクは使用済みのため、教室長に招待の再送を依頼してください。";
+  "ログインの有効期限が切れました。メールのリンクは使用済みのため、教室長にメールの再送を依頼してください。";
 
 /** updateUser({ password }) の失敗を、本人が次に何をすればよいかの文にする */
 export function passwordUpdateErrorMessage(error: unknown): string {

@@ -1,0 +1,26 @@
+<!--
+  Supabase > Authentication > Email Templates > Reset Password に貼る本文 (#268)。
+  件名: 【Shift Manager】パスワードの再設定
+
+  教室長が講師一覧の「パスワード再設定メール」を押したときに届く。
+  講師が自分で送る入口はこのアプリに無い。
+
+  ⚠️ リンクは {{ .ConfirmationURL }} ではなく、下の形のまま使うこと
+  (理由は invite.html と同じ)。type=recovery 以外にすると /auth/confirm が弾く。
+-->
+<h2>パスワードの再設定</h2>
+
+<p>教室長から、シフト管理アプリ「Shift Manager」のパスワード再設定の案内が送られました。</p>
+
+<p>下のボタンを押して、新しいパスワードを決めてください。</p>
+
+<p>
+  <a href="{{ .SiteURL }}/auth/confirm?token_hash={{ .TokenHash }}&type=recovery"
+     style="display:inline-block;padding:10px 20px;background:#111827;color:#ffffff;border-radius:6px;text-decoration:none;">
+    パスワードを再設定する
+  </a>
+</p>
+
+<p>このリンクは 1 回だけ使えます。有効期限が切れた場合や、心当たりがない場合は教室長にお問い合わせください。</p>
+
+<p style="color:#6b7280;font-size:12px;">このメールは送信専用です。返信いただいてもお答えできません。</p>

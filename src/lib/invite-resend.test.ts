@@ -3,8 +3,9 @@ import { createClient } from "@supabase/supabase-js";
 import {
   ALREADY_ACCEPTED,
   inviteStatusOf,
+  mailTargetRefusal,
   resendErrorMessage,
-  resendRefusal,
+  resetErrorMessage,
   sameEmail,
 } from "@/lib/invite-resend";
 
@@ -13,6 +14,23 @@ import {
  * (invite-link.test.ts と同じ方針)。resendInvite が受け取るのと同じ
  * `auth.admin.inviteUserByEmail` の経路を通す。
  */
+async function resetError(status: number, body: unknown = {}) {
+  const client = createClient("http://auth.test", "service-key", {
+    global: {
+      fetch: async () =>
+        new Response(JSON.stringify(body), {
+          status,
+          headers: { "content-type": "application/json" },
+        }),
+    },
+    auth: { persistSession: false, autoRefreshToken: false },
+  });
+  // sendPasswordReset と同じく implicit (既定) のクライアントから呼ぶ
+  const { error } = await client.auth.resetPasswordForEmail("t@example.com");
+  expect(error).not.toBeNull();
+  return error;
+}
+
 async function inviteError(
   status: number,
   body: unknown = {},
@@ -53,7 +71,7 @@ describe("inviteStatusOf", () => {
   });
 });
 
-describe("resendRefusal", () => {
+describe("mailTargetRefusal", () => {
   const ok = {
     roles: ["tutor"],
     authUserId: "00000000-0000-0000-0000-000000000001",
@@ -61,15 +79,15 @@ describe("resendRefusal", () => {
   };
 
   it("連携済みで有効な講師は断らない (兼任者も含む)", () => {
-    expect(resendRefusal(ok)).toBeNull();
-    expect(resendRefusal({ ...ok, roles: ["admin", "tutor"] })).toBeNull();
+    expect(mailTargetRefusal(ok)).toBeNull();
+    expect(mailTargetRefusal({ ...ok, roles: ["admin", "tutor"] })).toBeNull();
   });
 
   it("存在しない・講師でない・未連携・無効は断る", () => {
-    expect(resendRefusal(undefined)).toMatch("見つかりません");
-    expect(resendRefusal({ ...ok, roles: ["admin"] })).toMatch("講師以外");
-    expect(resendRefusal({ ...ok, authUserId: null })).toMatch("ログイン連携");
-    expect(resendRefusal({ ...ok, isActive: false })).toMatch("無効な講師");
+    expect(mailTargetRefusal(undefined)).toMatch("見つかりません");
+    expect(mailTargetRefusal({ ...ok, roles: ["admin"] })).toMatch("講師以外");
+    expect(mailTargetRefusal({ ...ok, authUserId: null })).toMatch("ログイン連携");
+    expect(mailTargetRefusal({ ...ok, isActive: false })).toMatch("無効な講師");
   });
 });
 
@@ -123,5 +141,30 @@ describe("resendErrorMessage", () => {
       ),
     ).toMatch("再送できませんでした");
     expect(resendErrorMessage(null)).toMatch("再送できませんでした");
+  });
+});
+
+describe("resetErrorMessage", () => {
+  it("メール送信の上限 (429) は障害ではなく送りすぎとして伝える", async () => {
+    const error = await resetError(429, {
+      error_code: "over_email_send_rate_limit",
+      msg: "For security purposes, you can only request this after 60 seconds.",
+    });
+    expect(resetErrorMessage(error)).toMatch("送りすぎ");
+  });
+
+  it("認証 API に届かないときは時間をおくよう伝える", async () => {
+    expect(resetErrorMessage(await resetError(503))).toMatch(
+      "現在再設定メールを送れません",
+    );
+  });
+
+  it("それ以外は汎用の失敗文", async () => {
+    expect(
+      resetErrorMessage(
+        await resetError(400, { error_code: "validation_failed", msg: "bad" }),
+      ),
+    ).toMatch("送れませんでした");
+    expect(resetErrorMessage(null)).toMatch("送れませんでした");
   });
 });

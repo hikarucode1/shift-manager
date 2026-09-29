@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { parseInviteLink } from "@/lib/invite-link";
+import { parseEmailLink } from "@/lib/invite-link";
 import { readAuthUser } from "@/lib/auth-availability";
 import { createClient } from "@/lib/supabase/server";
 import { AuthAlert, AuthCard } from "../auth-card";
@@ -7,9 +7,10 @@ import { verifyInvite } from "./actions";
 import { ConfirmSubmitButton } from "./submit-button";
 
 /**
- * 招待メールのリンクの着地点 (#264)。
+ * 招待メール (#264) とパスワード再設定メール (#268) のリンクの着地点。
  * リンクは `{{ .SiteURL }}/auth/confirm?token_hash={{ .TokenHash }}&type=invite`
- * (テンプレートは docs/supabase/email-templates/invite.html)。
+ * (再設定は `type=recovery`)。テンプレートは docs/supabase/email-templates/
+ * の invite.html / recovery.html。
  *
  * ここでは何も確かめない。ボタンを押したら verifyInvite が確かめる
  * (理由は actions.ts)。
@@ -24,7 +25,8 @@ export default async function ConfirmInvitePage({
   }>;
 }) {
   const params = await searchParams;
-  const link = parseInviteLink(params);
+  const link = parseEmailLink(params);
+  const isRecovery = params.type === "recovery";
 
   if (params.error === "invalid" || !link) {
     // ボタンを押した後 (= リンクは使用済み・セッションはある) にパスワードを
@@ -35,7 +37,7 @@ export default async function ConfirmInvitePage({
       return (
         <AuthCard title="パスワードの設定">
           <p className="text-sm">
-            招待の確認は済んでいます。まだパスワードを決めていない場合は、続けて設定してください。
+            リンクの確認は済んでいます。まだパスワードを決めていない場合は、続けて設定してください。
           </p>
           <Link
             href="/auth/set-password"
@@ -47,10 +49,12 @@ export default async function ConfirmInvitePage({
       );
     }
     return (
-      <AuthCard title="招待リンクを使えません">
+      <AuthCard title="リンクを使えません">
         <AuthAlert>
           リンクの有効期限が切れているか、既に使われています。
-          教室長に招待の再送を依頼してください。
+          {isRecovery
+            ? "教室長にパスワード再設定メールの再送を依頼してください。"
+            : "教室長に招待の再送を依頼してください。"}
         </AuthAlert>
         <p className="text-center text-sm text-muted-foreground">
           パスワードを設定済みの方は
@@ -64,7 +68,7 @@ export default async function ConfirmInvitePage({
   }
 
   return (
-    <AuthCard title="ようこそ">
+    <AuthCard title={isRecovery ? "パスワードの再設定" : "ようこそ"}>
       {params.error === "unavailable" && (
         <AuthAlert>
           現在確認できません。時間をおいてもう一度押してください。
@@ -72,7 +76,9 @@ export default async function ConfirmInvitePage({
         </AuthAlert>
       )}
       <p className="text-sm">
-        教室長から招待が届いています。ボタンを押して、ログインに使うパスワードを決めてください。
+        {isRecovery
+          ? "ボタンを押して、新しいパスワードを決めてください。"
+          : "教室長から招待が届いています。ボタンを押して、ログインに使うパスワードを決めてください。"}
       </p>
       <form action={verifyInvite}>
         <input type="hidden" name="token_hash" value={link.tokenHash} />
