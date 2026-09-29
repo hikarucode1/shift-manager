@@ -4,8 +4,8 @@ import {
   ALREADY_ACCEPTED,
   emailInUseMessage,
   inviteStatusOf,
-  normalizeEmail,
   mailTargetRefusal,
+  normalizeEmail,
   resendErrorMessage,
   resetErrorMessage,
   sameEmail,
@@ -171,7 +171,7 @@ describe("resetErrorMessage", () => {
 });
 
 describe("normalizeEmail", () => {
-  it("前後の空白を落として小文字にする (事前確認の SQL の lower(trim()) と同じ形)", () => {
+  it("前後の空白を落として小文字にする", () => {
     expect(normalizeEmail("  Tutor@Example.COM ")).toBe("tutor@example.com");
   });
 });

@@ -12,11 +12,12 @@ import { createAdminClient } from "@/lib/supabase/admin";
 import {
   ALREADY_ACCEPTED,
   NOT_YET_ACCEPTED,
+  emailInUseAfterResendMessage,
   emailInUseMessage,
   isInviteAccepted,
   mailTargetRefusal,
-  resendErrorMessage,
   normalizeEmail,
+  resendErrorMessage,
   resetErrorMessage,
   sameEmail,
 } from "@/lib/invite-resend";
@@ -101,7 +102,8 @@ export async function inviteTutor(input: unknown): Promise<ActionResult> {
     .where(
       and(
         isNotNull(profiles.authUserId),
-        sql`lower(trim(${profiles.email})) = ${normalizeEmail(data.email)}`,
+        // SQL の trim() は半角スペースしか落とさないので、改行・タブも落とす
+        sql`lower(regexp_replace(${profiles.email}, '^\\s+|\\s+$', '', 'g')) = ${normalizeEmail(data.email)}`,
       ),
     )
     .limit(1);
@@ -160,23 +162,20 @@ export async function inviteTutor(input: unknown): Promise<ActionResult> {
     }
   } catch (e) {
     console.error("inviteTutor: profile write failed", e);
-    // profiles 反映に失敗したら招待した auth ユーザーを巻き戻す (孤児防止)。
-    // ⚠️ ただし返ってきた auth ユーザーが**他の profile に紐付いていたら消さない**
-    // (#272)。上の事前確認をすり抜けた場合 (profiles.email と auth 側のメールが
-    // ずれている、同時操作) に、既存講師のログインアカウントを消してしまう。
-    // 紐付きを確かめられないときも消さない。孤児が残るほうが、他人のアカウントを
-    // 消すよりましで、孤児は scripts/check-auth-orphans.ts で拾える。
-    const owner = await findProfileByAuthUserId(authUserId);
-    if (owner === null) {
-      await supabase.auth.admin.deleteUser(authUserId).catch(() => {});
-    } else {
-      console.error("inviteTutor: kept auth user linked to another profile", {
-        authUserId,
-        ownerKnown: owner !== undefined,
-      });
-      if (owner) {
-        return { ok: false, error: emailInUseMessage(owner.displayName) };
+    const rollback = await rollbackInvitedUser(
+      supabase,
+      authUserId,
+      "inviteTutor",
+    );
+    if (rollback.kind === "kept") {
+      const { owner } = rollback;
+      // 同時に押された同じ紐付けが先に通った (二度押しなど)。紐付けたかった
+      // 講師に紐付いているので、失敗と言わない
+      if (data.mode === "link" && owner.id === data.profileId) {
+        revalidatePath("/admin/tutors");
+        return { ok: true };
       }
+      return { ok: false, error: emailInUseAfterResendMessage(owner.displayName) };
     }
     if (isUniqueViolation(e, "profiles_tutor_name_uniq")) {
       return {
@@ -194,24 +193,50 @@ export async function inviteTutor(input: unknown): Promise<ActionResult> {
   return { ok: true };
 }
 
+type Rollback =
+  | { kind: "deleted" }
+  | { kind: "kept"; owner: { id: string; displayName: string } }
+  | { kind: "unknown" };
+
 /**
- * auth ユーザーに紐付いている profile。無ければ null、DB に聞けなければ
- * undefined (= 分からない)。巻き戻しの判定 (#272) 専用。
+ * 招待で返ってきた auth ユーザーを巻き戻す (孤児防止)。inviteTutor と
+ * resendInvite で共通。
+ *
+ * ⚠️ **他の profile に紐付いていたら消さない** (#272)。GoTrue は招待中
+ * (未確認) の同じメールのユーザーをエラーにせず、そのユーザーへ送り直して
+ * 返す。それを消すと既存講師のログインアカウントが消え、トリガー
+ * (handle_auth_user_deleted) で「未連携」に戻ってしまう。
+ * 紐付きを確かめられないときも消さない。孤児が残るほうが他人のアカウントを
+ * 消すよりましで、孤児は scripts/check-auth-orphans.ts で拾える。
  */
-async function findProfileByAuthUserId(
+async function rollbackInvitedUser(
+  supabase: ReturnType<typeof createAdminClient>,
   authUserId: string,
-): Promise<{ displayName: string } | null | undefined> {
+  label: string,
+): Promise<Rollback> {
+  let owner: { id: string; displayName: string } | undefined;
   try {
-    const [row] = await db
-      .select({ displayName: profiles.displayName })
+    [owner] = await db
+      .select({ id: profiles.id, displayName: profiles.displayName })
       .from(profiles)
       .where(eq(profiles.authUserId, authUserId))
       .limit(1);
-    return row ?? null;
   } catch (e) {
-    console.error("inviteTutor: owner lookup failed", e);
-    return undefined;
+    console.error(`${label}: could not check auth user owner; kept it`, {
+      authUserId,
+      error: e,
+    });
+    return { kind: "unknown" };
   }
+  if (owner) {
+    console.error(`${label}: auth user is linked to another profile; kept it`, {
+      authUserId,
+      profileId: owner.id,
+    });
+    return { kind: "kept", owner };
+  }
+  await supabase.auth.admin.deleteUser(authUserId).catch(() => {});
+  return { kind: "deleted" };
 }
 
 const MailTargetSchema = z.object({ profileId: z.string().uuid() });
@@ -303,12 +328,12 @@ export async function resendInvite(input: unknown): Promise<ActionResult> {
   if (invited.user.id !== authUserId) {
     // loadMailTarget の一致確認があるので起きない想定 (GoTrue がメールと aud で別ユーザーを
     // 引いた = 新規作成した)。紐付いていない auth ユーザーを残さないよう消す
-    // (inviteTutor の巻き戻しと同じ)。消せばメールのリンクも使えなくなる。
+    // (inviteTutor の巻き戻しと同じ。他の profile に紐付いていれば消さない)。
     console.error("resendInvite: invite went to a different auth user", {
       expected: authUserId,
       actual: invited.user.id,
     });
-    await supabase.auth.admin.deleteUser(invited.user.id).catch(() => {});
+    await rollbackInvitedUser(supabase, invited.user.id, "resendInvite");
     return {
       ok: false,
       error:

@@ -75,6 +75,15 @@ export function emailInUseMessage(ownerName: string): string {
   return `このメールアドレスは既に「${ownerName}」さんのログインに使われています。`;
 }
 
+/**
+ * 事前確認をすり抜けて GoTrue が既存の講師へ送り直してしまった後 (#272)。
+ * 巻き戻しでアカウントは残したが、その講師に前に届いたリンクはもう使えない
+ * (confirmation_token が差し替わった) ので、教室長に知らせる。
+ */
+export function emailInUseAfterResendMessage(ownerName: string): string {
+  return `${emailInUseMessage(ownerName)}「${ownerName}」さんへ招待メールが送り直されたため、前に届いたリンクは使えなくなっています。`;
+}
+
 export const ALREADY_ACCEPTED =
   "この講師は招待を受け取り済みのため、再送できません。パスワードが分からない場合は「パスワード再設定メール」を送ってください。";
 
