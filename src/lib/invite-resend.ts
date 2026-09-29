@@ -56,9 +56,32 @@ export function mailTargetRefusal(
   return null;
 }
 
-/** DB のメールと auth 側のメールが同じ宛先か (GoTrue は小文字で保存する) */
+/** GoTrue と同じ線でメールを比べるための形 (GoTrue は小文字で保存する) */
+export function normalizeEmail(email: string): string {
+  return email.trim().toLowerCase();
+}
+
+/** DB のメールと auth 側のメールが同じ宛先か */
 export function sameEmail(a: string, b: string): boolean {
-  return a.trim().toLowerCase() === b.trim().toLowerCase();
+  return normalizeEmail(a) === normalizeEmail(b);
+}
+
+/**
+ * 招待しようとしたメールが、既にログイン連携済みの別の profile で使われている (#272)。
+ * GoTrue は招待中 (未確認) の同じメールのユーザーをエラーにせず送り直すので、
+ * こちらで断らないとその講師のリンクが無効になり、巻き戻しで消えてしまう。
+ */
+export function emailInUseMessage(ownerName: string): string {
+  return `このメールアドレスは既に「${ownerName}」さんのログインに使われています。`;
+}
+
+/**
+ * 事前確認をすり抜けて GoTrue が既存の講師へ送り直してしまった後 (#272)。
+ * 巻き戻しでアカウントは残したが、その講師に前に届いたリンクはもう使えない
+ * (confirmation_token が差し替わった) ので、教室長に知らせる。
+ */
+export function emailInUseAfterResendMessage(ownerName: string): string {
+  return `${emailInUseMessage(ownerName)}「${ownerName}」さんへ招待メールが送り直されたため、前に届いたリンクは使えなくなっています。`;
 }
 
 export const ALREADY_ACCEPTED =
@@ -108,7 +131,7 @@ function mailErrorMessage(
  */
 export function inviteErrorMessage(error: unknown): string {
   // 受け取り済みの講師と同じメール。招待中の講師と同じメールはエラーに
-  // ならず、そちらへの再送になる (その後の巻き戻しの問題は #272)
+  // ならず、そちらへの再送になるので inviteTutor が招待前に断る (#272)
   if (isAuthError(error) && error.code === "email_exists") {
     return "このメールアドレスは既に登録されています。";
   }
