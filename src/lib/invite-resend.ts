@@ -83,6 +83,15 @@ function mailErrorMessage(
         return `短時間に${what}を送りすぎました。時間をおいて再度お試しください。`;
       case "user_not_found":
         return "この講師のログインアカウントが見つかりません。";
+      // 宛先ではなくプロジェクトの設定の問題。メールアドレスを疑わせない
+      // (Supabase 標準の SMTP はチームメンバー宛てにしか送れない、など)
+      case "email_address_not_authorized":
+      case "email_provider_disabled":
+        return `メールの送信設定の都合で${what}を送れません。Supabase のメール設定を確認してください。`;
+    }
+    // 手前のプロキシが返す 429 は error_code を持たないことがある
+    if (error.status === 429) {
+      return `短時間に${what}を送りすぎました。時間をおいて再度お試しください。`;
     }
   }
   if (isAuthUnavailable(error)) {
@@ -99,7 +108,7 @@ function mailErrorMessage(
  */
 export function inviteErrorMessage(error: unknown): string {
   // 受け取り済みの講師と同じメール。招待中の講師と同じメールはエラーに
-  // ならず、そちらへの再送になる (#272)
+  // ならず、そちらへの再送になる (その後の巻き戻しの問題は #272)
   if (isAuthError(error) && error.code === "email_exists") {
     return "このメールアドレスは既に登録されています。";
   }

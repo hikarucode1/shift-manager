@@ -204,6 +204,21 @@ describe("inviteErrorMessage", () => {
     }
   });
 
+  it("error_code の無い 429 (プロキシなど) も送りすぎとして伝える", async () => {
+    const error = await inviteError(429, { message: "Too Many Requests" });
+    expect(inviteErrorMessage(error)).toMatch("送りすぎ");
+  });
+
+  it("送信設定の問題はメールアドレスのせいにしない", async () => {
+    const error = await inviteError(400, {
+      error_code: "email_address_not_authorized",
+      msg: "Email address not authorized",
+    });
+    const message = inviteErrorMessage(error);
+    expect(message).toMatch("送信設定");
+    expect(message).not.toMatch("メールアドレスを確認");
+  });
+
   it("メッセージの文言ではなく code で分ける", async () => {
     // 旧実装は /rate|limit|too many/ と /already|registered|exists/ で誤分類した
     const error = await inviteError(400, {

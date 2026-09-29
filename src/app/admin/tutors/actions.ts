@@ -95,7 +95,12 @@ export async function inviteTutor(input: unknown): Promise<ActionResult> {
     await supabase.auth.admin.inviteUserByEmail(data.email);
 
   if (error || !invited?.user) {
-    console.error("inviteTutor: inviteUserByEmail failed:", error?.message);
+    // 画面の文言は code と status で決まるので、それも残す
+    console.error("inviteTutor: inviteUserByEmail failed", {
+      message: error?.message ?? "no user returned",
+      code: error?.code,
+      status: error?.status,
+    });
     return { ok: false, error: inviteErrorMessage(error) };
   }
   const authUserId = invited.user.id;
