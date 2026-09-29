@@ -2,7 +2,9 @@ import { describe, expect, it } from "vitest";
 import { createClient } from "@supabase/supabase-js";
 import {
   ALREADY_ACCEPTED,
+  emailInUseMessage,
   inviteStatusOf,
+  normalizeEmail,
   mailTargetRefusal,
   resendErrorMessage,
   resetErrorMessage,
@@ -165,5 +167,19 @@ describe("resetErrorMessage", () => {
       ),
     ).toMatch("送れませんでした");
     expect(resetErrorMessage(null)).toMatch("送れませんでした");
+  });
+});
+
+describe("normalizeEmail", () => {
+  it("前後の空白を落として小文字にする (事前確認の SQL の lower(trim()) と同じ形)", () => {
+    expect(normalizeEmail("  Tutor@Example.COM ")).toBe("tutor@example.com");
+  });
+});
+
+describe("emailInUseMessage", () => {
+  it("誰のログインに使われているかを伝える", () => {
+    expect(emailInUseMessage("山田")).toBe(
+      "このメールアドレスは既に「山田」さんのログインに使われています。",
+    );
   });
 });

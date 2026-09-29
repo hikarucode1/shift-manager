@@ -56,9 +56,23 @@ export function mailTargetRefusal(
   return null;
 }
 
-/** DB のメールと auth 側のメールが同じ宛先か (GoTrue は小文字で保存する) */
+/** GoTrue と同じ線でメールを比べるための形 (GoTrue は小文字で保存する) */
+export function normalizeEmail(email: string): string {
+  return email.trim().toLowerCase();
+}
+
+/** DB のメールと auth 側のメールが同じ宛先か */
 export function sameEmail(a: string, b: string): boolean {
-  return a.trim().toLowerCase() === b.trim().toLowerCase();
+  return normalizeEmail(a) === normalizeEmail(b);
+}
+
+/**
+ * 招待しようとしたメールが、既にログイン連携済みの別の profile で使われている (#272)。
+ * GoTrue は招待中 (未確認) の同じメールのユーザーをエラーにせず送り直すので、
+ * こちらで断らないとその講師のリンクが無効になり、巻き戻しで消えてしまう。
+ */
+export function emailInUseMessage(ownerName: string): string {
+  return `このメールアドレスは既に「${ownerName}」さんのログインに使われています。`;
 }
 
 export const ALREADY_ACCEPTED =

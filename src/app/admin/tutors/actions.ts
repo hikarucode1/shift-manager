@@ -2,7 +2,7 @@
 
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
-import { and, arrayContains, eq, isNull, ne } from "drizzle-orm";
+import { and, arrayContains, eq, isNotNull, isNull, ne, sql } from "drizzle-orm";
 import { requireRole } from "@/lib/auth";
 import { db } from "@/db/client";
 import { profiles } from "@/db/schema";
@@ -12,9 +12,11 @@ import { createAdminClient } from "@/lib/supabase/admin";
 import {
   ALREADY_ACCEPTED,
   NOT_YET_ACCEPTED,
+  emailInUseMessage,
   isInviteAccepted,
   mailTargetRefusal,
   resendErrorMessage,
+  normalizeEmail,
   resetErrorMessage,
   sameEmail,
 } from "@/lib/invite-resend";
@@ -89,6 +91,24 @@ export async function inviteTutor(input: unknown): Promise<ActionResult> {
     }
   }
 
+  // #272: 連携済みの profile が同じメールを使っていたら、GoTrue を呼ぶ**前に**断る。
+  // GoTrue は招待中 (未確認) の同じメールのユーザーをエラーにせず、そのユーザーへ
+  // 送り直して返す (invite.go)。呼んだ時点でその講師のリンクが無効になる。
+  // 未連携の stub は CSV 由来でメールが仮・重複のことがあるので見ない。
+  const [emailOwner] = await db
+    .select({ displayName: profiles.displayName })
+    .from(profiles)
+    .where(
+      and(
+        isNotNull(profiles.authUserId),
+        sql`lower(trim(${profiles.email})) = ${normalizeEmail(data.email)}`,
+      ),
+    )
+    .limit(1);
+  if (emailOwner) {
+    return { ok: false, error: emailInUseMessage(emailOwner.displayName) };
+  }
+
   const supabase = createAdminClient();
   const { data: invited, error } =
     await supabase.auth.admin.inviteUserByEmail(data.email);
@@ -139,9 +159,25 @@ export async function inviteTutor(input: unknown): Promise<ActionResult> {
       }
     }
   } catch (e) {
-    // profiles 反映に失敗したら招待した auth ユーザーを巻き戻す (孤児防止)
-    await supabase.auth.admin.deleteUser(authUserId).catch(() => {});
     console.error("inviteTutor: profile write failed", e);
+    // profiles 反映に失敗したら招待した auth ユーザーを巻き戻す (孤児防止)。
+    // ⚠️ ただし返ってきた auth ユーザーが**他の profile に紐付いていたら消さない**
+    // (#272)。上の事前確認をすり抜けた場合 (profiles.email と auth 側のメールが
+    // ずれている、同時操作) に、既存講師のログインアカウントを消してしまう。
+    // 紐付きを確かめられないときも消さない。孤児が残るほうが、他人のアカウントを
+    // 消すよりましで、孤児は scripts/check-auth-orphans.ts で拾える。
+    const owner = await findProfileByAuthUserId(authUserId);
+    if (owner === null) {
+      await supabase.auth.admin.deleteUser(authUserId).catch(() => {});
+    } else {
+      console.error("inviteTutor: kept auth user linked to another profile", {
+        authUserId,
+        ownerKnown: owner !== undefined,
+      });
+      if (owner) {
+        return { ok: false, error: emailInUseMessage(owner.displayName) };
+      }
+    }
     if (isUniqueViolation(e, "profiles_tutor_name_uniq")) {
       return {
         ok: false,
@@ -156,6 +192,26 @@ export async function inviteTutor(input: unknown): Promise<ActionResult> {
 
   revalidatePath("/admin/tutors");
   return { ok: true };
+}
+
+/**
+ * auth ユーザーに紐付いている profile。無ければ null、DB に聞けなければ
+ * undefined (= 分からない)。巻き戻しの判定 (#272) 専用。
+ */
+async function findProfileByAuthUserId(
+  authUserId: string,
+): Promise<{ displayName: string } | null | undefined> {
+  try {
+    const [row] = await db
+      .select({ displayName: profiles.displayName })
+      .from(profiles)
+      .where(eq(profiles.authUserId, authUserId))
+      .limit(1);
+    return row ?? null;
+  } catch (e) {
+    console.error("inviteTutor: owner lookup failed", e);
+    return undefined;
+  }
 }
 
 const MailTargetSchema = z.object({ profileId: z.string().uuid() });
