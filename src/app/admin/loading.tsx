@@ -5,22 +5,31 @@ import { StalledLoadingHint } from "@/components/stalled-loading-hint";
  *
  * ⚠️ これは「見栄え」のためのファイルではない。本命は初回 SSR の 500 回避。
  *
- * Next 16.2.4 で実測した挙動:
+ * Next 16.2.4 で実測した挙動 (2026-09-29 に本番ビルドで再確認、#190):
  *   - error.tsx のみ            → Server Component の throw は HTTP 500 +
  *                                 `__next_error__`。error.tsx は描画されない
  *   - error.tsx + loading.tsx   → 同じ throw が HTTP 200 + この fallback の
  *                                 HTML になり、RSC ストリームにエラーチャンク
  *                                 (`E{"digest":...}`) が乗って hydration 後に
  *                                 error.tsx が描画される
+ *   - `notFound()` も同じ。loading.tsx が無ければ 404、あれば 200 +
+ *     `<meta name="robots" content="noindex">`。`forbidden()` (403) も
+ *     同じ仕組みなので 200 になるはず (未実測。authInterrupts が未設定)
  *
  * loading.tsx が Suspense 境界を作るため、throw がシェルごと落とさずに
  * 境界で受け止められる。したがって URL 直アクセス (実際の障害経路) を
  * 救うにはこの 1 枚が必須で、error.tsx とセットで意味を持つ。
  *
- * トレードオフ (承知の上):
+ * トレードオフ (承知の上。#190 で比べ直して、このまま行くと決めた):
  *   - 失敗時も HTTP 200 を返すため、監視やクローラからは成功に見える。
  *     検知は console.error 頼みになるので `npm run check:migrations` の
  *     CI 自動化など別系統の検知が要る
+ *   - 配下のページで `notFound()` / `forbidden()` を使っても 404 / 403 は
+ *     返らない。ステータスが要る判定は middleware で行うこと
+ *     (admin/layout.tsx もこの境界の外だが、そこでの挙動は未実測)
+ *   - 「エラー画面を出す」と「5xx / 404 を返す」は、このセグメント構成では
+ *     両立しない。ステータスで死活を見たいなら、画面ではなく専用の
+ *     エンドポイントを見る
  *   - 正常時もページ遷移で一瞬スケルトンが出る (従来は前の画面が残った)
  *
  * ⚠️ layout.tsx が throw する場合はこの仕組みでも救えず 500 のまま
