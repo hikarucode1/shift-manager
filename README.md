@@ -279,8 +279,14 @@ GitHub 連携で main を本番、PR を Preview Deploy にする。
 しかもリンクの形式がこのアプリの `/auth/confirm` と合わないため、**差し替えないと
 招待された講師がパスワードを設定できない**。
 
+**Reset Password** も同様に
+[`docs/supabase/email-templates/recovery.html`](docs/supabase/email-templates/recovery.html)
+に差し替える。差し替えないと、講師一覧の「パスワード再設定メール」で届くリンクが
+`/auth/confirm` で受け取れない。
+
 招待の流れ: メールのリンク → `/auth/confirm`（ボタンを押すと確認）→
 `/auth/set-password`（パスワードを決める）→ 講師画面。
+パスワード再設定も同じ流れ（リンクの `type` が `recovery` になるだけ）。
 
 ### 4. デプロイ後の確認
 

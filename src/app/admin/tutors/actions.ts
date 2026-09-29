@@ -11,9 +11,11 @@ import { setProfileActive } from "@/lib/profile-active";
 import { createAdminClient } from "@/lib/supabase/admin";
 import {
   ALREADY_ACCEPTED,
+  NOT_YET_ACCEPTED,
   isInviteAccepted,
+  mailTargetRefusal,
   resendErrorMessage,
-  resendRefusal,
+  resetErrorMessage,
   sameEmail,
 } from "@/lib/invite-resend";
 
@@ -156,17 +158,25 @@ export async function inviteTutor(input: unknown): Promise<ActionResult> {
   return { ok: true };
 }
 
-const ResendSchema = z.object({ profileId: z.string().uuid() });
+const MailTargetSchema = z.object({ profileId: z.string().uuid() });
+
+type MailTarget =
+  | { ok: true; authUserId: string; email: string; accepted: boolean }
+  | { ok: false; error: string };
 
 /**
- * 招待メールの再送 (#265)。招待リンクは 1 回きり・期限付きなので、期限切れや
- * 取りこぼしのときに教室長が送り直す。判定は lib/invite-resend.ts。
- * DB には書かない (auth ユーザーも profiles の紐付けも変わらない)。
+ * 招待の再送とパスワード再設定メール (#268) の送り先を確かめる。
+ * どちらも GoTrue がメールアドレスでユーザーを引くので、紐付いている auth
+ * ユーザーのメールと profiles のメールが一致するときだけ送る。
+ * 招待は宛先がずれると別のユーザーを新規作成し、再設定は該当者がいなくても
+ * 黙って 200 を返す (recover.go) ので、どちらも送る前に止める。
  */
-export async function resendInvite(input: unknown): Promise<ActionResult> {
-  await requireRole("admin");
-
-  const parsed = ResendSchema.safeParse(input);
+async function loadMailTarget(
+  input: unknown,
+  label: string,
+  errorMessage: (error: unknown) => string,
+): Promise<MailTarget> {
+  const parsed = MailTargetSchema.safeParse(input);
   if (!parsed.success) return { ok: false, error: "入力が不正です。" };
 
   const [target] = await db
@@ -179,7 +189,7 @@ export async function resendInvite(input: unknown): Promise<ActionResult> {
     .from(profiles)
     .where(eq(profiles.id, parsed.data.profileId))
     .limit(1);
-  const refusal = resendRefusal(target);
+  const refusal = mailTargetRefusal(target);
   if (refusal) return { ok: false, error: refusal };
   const authUserId = target.authUserId!;
 
@@ -187,35 +197,55 @@ export async function resendInvite(input: unknown): Promise<ActionResult> {
   const { data: found, error: readError } =
     await supabase.auth.admin.getUserById(authUserId);
   if (readError || !found?.user) {
-    console.error("resendInvite: getUserById failed:", readError?.message);
-    return { ok: false, error: resendErrorMessage(readError) };
+    console.error(`${label}: getUserById failed:`, readError?.message);
+    return { ok: false, error: errorMessage(readError) };
   }
-  if (isInviteAccepted(found.user)) {
-    return { ok: false, error: ALREADY_ACCEPTED };
-  }
-  // inviteUserByEmail はメールでユーザーを引く。宛先がずれていると別の
-  // ユーザーを新規作成してしまうので、紐付いている auth ユーザーのメールと
-  // 一致するときだけ送る。
   const authEmail = found.user.email;
   if (!authEmail || !sameEmail(authEmail, target.email)) {
-    console.error("resendInvite: profile email differs from auth email", {
+    console.error(`${label}: profile email differs from auth email`, {
       authUserId,
     });
     return {
       ok: false,
       error:
-        "登録されているメールアドレスがログインアカウントと一致しないため、再送できません。",
+        "登録されているメールアドレスがログインアカウントと一致しないため、送れません。",
     };
   }
+  return {
+    ok: true,
+    authUserId,
+    email: authEmail,
+    accepted: isInviteAccepted(found.user),
+  };
+}
 
-  const { data: invited, error } =
-    await supabase.auth.admin.inviteUserByEmail(authEmail);
+/**
+ * 招待メールの再送 (#265)。招待リンクは 1 回きり・期限付きなので、期限切れや
+ * 取りこぼしのときに教室長が送り直す。判定は lib/invite-resend.ts。
+ * DB には書かない (auth ユーザーも profiles の紐付けも変わらない)。
+ */
+export async function resendInvite(input: unknown): Promise<ActionResult> {
+  await requireRole("admin");
+
+  const target = await loadMailTarget(
+    input,
+    "resendInvite",
+    resendErrorMessage,
+  );
+  if (!target.ok) return target;
+  if (target.accepted) return { ok: false, error: ALREADY_ACCEPTED };
+  const { authUserId } = target;
+
+  const supabase = createAdminClient();
+  const { data: invited, error } = await supabase.auth.admin.inviteUserByEmail(
+    target.email,
+  );
   if (error || !invited?.user) {
     console.error("resendInvite: inviteUserByEmail failed:", error?.message);
     return { ok: false, error: resendErrorMessage(error) };
   }
   if (invited.user.id !== authUserId) {
-    // 上の一致確認があるので起きない想定 (GoTrue がメールと aud で別ユーザーを
+    // loadMailTarget の一致確認があるので起きない想定 (GoTrue がメールと aud で別ユーザーを
     // 引いた = 新規作成した)。紐付いていない auth ユーザーを残さないよう消す
     // (inviteTutor の巻き戻しと同じ)。消せばメールのリンクも使えなくなる。
     console.error("resendInvite: invite went to a different auth user", {
@@ -231,6 +261,43 @@ export async function resendInvite(input: unknown): Promise<ActionResult> {
   }
 
   revalidatePath("/admin/tutors");
+  return { ok: true };
+}
+
+/**
+ * パスワード再設定メールを送る (#268)。招待を受け取った後にパスワードを
+ * 決めずに離れた講師や、パスワードを忘れた講師が戻る手段。
+ * 講師が自分で送る入口 (/login の「パスワードを忘れた」) は置かない。画面から
+ * 誰でも送れる形にすると教室用 Gmail の送信枠と評判を削られやすいため。
+ * ⚠️ これは入口を増やさないだけで、GoTrue の POST /auth/v1/recover 自体は
+ * anon キーで誰でも叩ける (Supabase 標準の挙動)。その抑えは GoTrue 側の
+ * 同一宛先 60 秒制限とプロジェクトのメール送信レート制限に頼っている。
+ *
+ * メールのリンクは /auth/confirm (type=recovery) → /auth/set-password。
+ * DB には書かない。
+ */
+export async function sendPasswordReset(input: unknown): Promise<ActionResult> {
+  await requireRole("admin");
+
+  const target = await loadMailTarget(
+    input,
+    "sendPasswordReset",
+    resetErrorMessage,
+  );
+  if (!target.ok) return target;
+  if (!target.accepted) return { ok: false, error: NOT_YET_ACCEPTED };
+
+  // ⚠️ 管理用クライアント (flowType 既定の implicit) から呼ぶこと。
+  // @supabase/ssr のクライアントは PKCE なので、code_verifier が**教室長の**
+  // ブラウザの cookie に書かれ、メールの token_hash も pkce_ 付きになる。
+  // implicit なら素の token_hash が届き、講師の端末で verifyOtp できる。
+  const supabase = createAdminClient();
+  const { error } = await supabase.auth.resetPasswordForEmail(target.email);
+  if (error) {
+    console.error("sendPasswordReset: resetPasswordForEmail failed:", error.message);
+    return { ok: false, error: resetErrorMessage(error) };
+  }
+
   return { ok: true };
 }
 

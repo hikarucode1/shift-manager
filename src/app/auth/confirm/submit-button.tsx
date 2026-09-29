@@ -6,7 +6,7 @@ import { Button } from "@/components/ui/button";
 /**
  * 送信中は押せなくする。招待リンクは 1 回しか使えないので、二度押しすると
  * 2 回目が使用済み (otp_expired) で弾かれ、その redirect が後から勝つと
- * ログインできているのに「招待リンクを使えません」と出る。
+ * ログインできているのに「リンクを使えません」と出る。
  */
 export function ConfirmSubmitButton() {
   const { pending } = useFormStatus();

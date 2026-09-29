@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { createClient } from "@supabase/supabase-js";
 import {
   classifyVerifyError,
-  parseInviteLink,
+  parseEmailLink,
   passwordUpdateErrorMessage,
   validateNewPassword,
 } from "@/lib/invite-link";
@@ -40,24 +40,29 @@ async function verifyError(respond: () => Promise<Response>) {
   return error;
 }
 
-describe("parseInviteLink", () => {
-  it("type=invite と token_hash があれば通す", () => {
-    expect(parseInviteLink({ token_hash: "abc", type: "invite" })).toEqual({
-      tokenHash: "abc",
-      type: "invite",
-    });
-  });
+describe("parseEmailLink", () => {
+  it.each(["invite", "recovery"] as const)(
+    "type=%s と token_hash があれば通す",
+    (type) => {
+      expect(parseEmailLink({ token_hash: "abc", type })).toEqual({
+        tokenHash: "abc",
+        type,
+      });
+    },
+  );
 
   it.each([
-    ["recovery", { token_hash: "abc", type: "recovery" }],
+    // このアプリが発行していないログイン経路は開かない
     ["magiclink", { token_hash: "abc", type: "magiclink" }],
+    ["signup", { token_hash: "abc", type: "signup" }],
+    ["type が配列", { token_hash: "abc", type: ["invite", "recovery"] }],
     ["type なし", { token_hash: "abc" }],
     ["token_hash なし", { type: "invite" }],
     ["token_hash が空白", { token_hash: "  ", type: "invite" }],
     // searchParams は同名キーが複数あると配列になる
     ["token_hash が配列", { token_hash: ["a", "b"], type: "invite" }],
   ])("%s は弾く", (_, params) => {
-    expect(parseInviteLink(params)).toBeNull();
+    expect(parseEmailLink(params)).toBeNull();
   });
 });
 
@@ -133,7 +138,7 @@ describe("passwordUpdateErrorMessage", () => {
     expect(passwordUpdateErrorMessage(error)).toMatch(/今と同じ/);
   });
 
-  it("セッションが無ければ再送を案内する", async () => {
+  it("セッションが無ければメールの再送を案内する", async () => {
     const { error } = await clientRespondingWith(
       respondWith(200),
     ).auth.updateUser({ password: "abcd1234" });

@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
-import { AlertCircle, Mail, UserPlus, X } from "lucide-react";
+import { AlertCircle, KeyRound, Mail, UserPlus, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -15,6 +15,7 @@ import {
   inviteTutor,
   renameTutor,
   resendInvite,
+  sendPasswordReset,
   setTutorActive,
 } from "./actions";
 
@@ -38,7 +39,7 @@ export type TutorRow = {
 type StatusFilter = "all" | "linked" | "pending" | "unlinked";
 
 // 「招待中」の絞り込みは再送の対象を探すためのもの。無効な講師には再送できない
-// (resendRefusal) ので数えない。
+// (mailTargetRefusal) ので数えない。
 function isResendable(t: TutorRow) {
   return t.isActive && t.inviteStatus === "pending";
 }
@@ -455,6 +456,31 @@ export function TutorManager({
                                   {t.inviteStatus === "pending"
                                     ? `${t.email} はまだ招待リンクを使っていません。期限切れのときに送り直せます。`
                                     : "招待の状態を確認できませんでした。受け取り済みの場合は送信されません。"}
+                                </span>
+                              </div>
+                            )}
+                            {/* パスワード再設定メール (#268)。招待中と分かっている相手には
+                                招待の再送のほうを使う (サーバーも NOT_YET_ACCEPTED で断る) */}
+                            {t.isActive && t.inviteStatus !== "pending" && (
+                              <div className="flex flex-wrap items-center gap-2">
+                                <Button
+                                  variant="outline"
+                                  size="sm"
+                                  disabled={isPending}
+                                  onClick={() =>
+                                    run(
+                                      () => sendPasswordReset({ profileId: t.id }),
+                                      "パスワード再設定メールを送りました。",
+                                    )
+                                  }
+                                >
+                                  <KeyRound className="size-4" />
+                                  パスワード再設定メール
+                                </Button>
+                                <span className="text-xs text-muted-foreground">
+                                  {t.inviteStatus === "accepted"
+                                    ? `パスワードが分からなくなったときに ${t.email} へ送ります。リンクから新しいパスワードを決めてもらいます。`
+                                    : "招待を受け取り済みの講師にだけ送信されます。"}
                                 </span>
                               </div>
                             )}
