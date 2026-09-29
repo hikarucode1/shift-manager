@@ -65,7 +65,7 @@ export const ALREADY_ACCEPTED =
   "この講師は招待を受け取り済みのため、再送できません。パスワードが分からない場合は「パスワード再設定メール」を送ってください。";
 
 /**
- * 教室長が講師へ送るメール (招待の再送・パスワード再設定) の失敗を、
+ * 教室長が講師へ送るメール (招待・招待の再送・パスワード再設定) の失敗を、
  * 次に何をすればよいかの文にする。
  * ⚠️ 429 は isAuthUnavailable より先に見る。isAuthUnavailable でも true に
  * なるが、メール送信の上限は「待てば直る」と具体的に言えるので分けて伝える。
@@ -89,6 +89,25 @@ function mailErrorMessage(
     return `現在${what}を送れません。時間をおいて再度お試しください。`;
   }
   return `${failed}時間をおいて再度お試しください。`;
+}
+
+/**
+ * 初めての招待 (inviteTutor) の inviteUserByEmail の失敗 (#269)。
+ * 以前はメッセージの正規表現で分けていて、500 や到達不能まで「メールアドレスを
+ * 確認」と出ていた。再送と同じく error.code と到達可否で分ける。
+ * 分類できないもの (メールアドレスの形式が不正など) は入力を疑うよう伝える。
+ */
+export function inviteErrorMessage(error: unknown): string {
+  // 受け取り済みの講師と同じメール。招待中の講師と同じメールはエラーに
+  // ならず、そちらへの再送になる (#272)
+  if (isAuthError(error) && error.code === "email_exists") {
+    return "このメールアドレスは既に登録されています。";
+  }
+  return mailErrorMessage(
+    error,
+    "招待",
+    "招待に失敗しました。メールアドレスを確認のうえ、",
+  );
 }
 
 /** getUserById / inviteUserByEmail の失敗 */
