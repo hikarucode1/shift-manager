@@ -64,26 +64,40 @@ export function sameEmail(a: string, b: string): boolean {
 export const ALREADY_ACCEPTED =
   "この講師は招待を受け取り済みのため、再送できません。パスワードが分からない場合は「パスワード再設定メール」を送ってください。";
 
-/** getUserById / inviteUserByEmail の失敗を、教室長が次に何をすればよいかの文にする */
-export function resendErrorMessage(error: unknown): string {
-  // ⚠️ isAuthUnavailable より先に見る。429 は isAuthUnavailable でも true に
-  // なるが、メール送信の上限は「待てば直る」と具体的に言えるので分けて伝える。
+/**
+ * 教室長が講師へ送るメール (招待の再送・パスワード再設定) の失敗を、
+ * 次に何をすればよいかの文にする。
+ * ⚠️ 429 は isAuthUnavailable より先に見る。isAuthUnavailable でも true に
+ * なるが、メール送信の上限は「待てば直る」と具体的に言えるので分けて伝える。
+ * GoTrue は同じユーザーへのメールを既定で 60 秒に 1 通に絞る。
+ */
+function mailErrorMessage(
+  error: unknown,
+  what: "招待" | "再設定メール",
+  failed: string,
+): string {
   if (isAuthError(error)) {
     switch (error.code) {
-      // 確認済みかを読んだ後に講師がリンクを使った場合もここに来る
-      case "email_exists":
-        return ALREADY_ACCEPTED;
       case "over_email_send_rate_limit":
       case "over_request_rate_limit":
-        return "短時間に招待を送りすぎました。時間をおいて再度お試しください。";
+        return `短時間に${what}を送りすぎました。時間をおいて再度お試しください。`;
       case "user_not_found":
         return "この講師のログインアカウントが見つかりません。";
     }
   }
   if (isAuthUnavailable(error)) {
-    return "現在招待を送れません。時間をおいて再度お試しください。";
+    return `現在${what}を送れません。時間をおいて再度お試しください。`;
   }
-  return "招待を再送できませんでした。時間をおいて再度お試しください。";
+  return `${failed}時間をおいて再度お試しください。`;
+}
+
+/** getUserById / inviteUserByEmail の失敗 */
+export function resendErrorMessage(error: unknown): string {
+  // 確認済みかを読んだ後に講師がリンクを使った場合もここに来る
+  if (isAuthError(error) && error.code === "email_exists") {
+    return ALREADY_ACCEPTED;
+  }
+  return mailErrorMessage(error, "招待", "招待を再送できませんでした。");
 }
 
 /**
@@ -94,21 +108,11 @@ export function resendErrorMessage(error: unknown): string {
 export const NOT_YET_ACCEPTED =
   "この講師はまだ招待を受け取っていません。「招待を再送」から送り直してください。";
 
-/** getUserById / resetPasswordForEmail の失敗を、教室長が次に何をすればよいかの文にする */
+/** getUserById / resetPasswordForEmail の失敗 */
 export function resetErrorMessage(error: unknown): string {
-  // ⚠️ resendErrorMessage と同じく、429 は isAuthUnavailable より先に見る。
-  // GoTrue は同じユーザーへの再設定メールを既定で 60 秒に 1 通に絞る。
-  if (isAuthError(error)) {
-    switch (error.code) {
-      case "over_email_send_rate_limit":
-      case "over_request_rate_limit":
-        return "短時間に再設定メールを送りすぎました。時間をおいて再度お試しください。";
-      case "user_not_found":
-        return "この講師のログインアカウントが見つかりません。";
-    }
-  }
-  if (isAuthUnavailable(error)) {
-    return "現在再設定メールを送れません。時間をおいて再度お試しください。";
-  }
-  return "再設定メールを送れませんでした。時間をおいて再度お試しください。";
+  return mailErrorMessage(
+    error,
+    "再設定メール",
+    "再設定メールを送れませんでした。",
+  );
 }

@@ -13,10 +13,13 @@ import type { NextResponse } from "next/server";
  * `/auth/*` の素通し時にもこれを呼ぶので、将来 `/auth/callback` や
  * パスワード再設定の route を足すなら要注意: コールバック時点で壊れた chunk が
  * 残っていると、直前に書かれた verifier まで巻き添えで消え、コード交換が
- * 失敗する。現状 `/auth/` 配下は signout と招待 (#264) の confirm /
- * set-password で、招待は PKCE を使わない `verifyOtp({ token_hash })` なので
- * code-verifier に依存しない。`exchangeCodeForSession` / `signInWithOAuth` /
- * `signInWithOtp` / `resetPasswordForEmail` は未使用。
+ * 失敗する。現状 `/auth/` 配下は signout と、招待 (#264)・パスワード再設定
+ * (#268) の confirm / set-password。どちらも PKCE を使わない
+ * `verifyOtp({ token_hash })` なので code-verifier に依存しない。
+ * `resetPasswordForEmail` は教室長の講師一覧から**管理用クライアント
+ * (implicit)** で呼んでいる (sendPasswordReset)。@supabase/ssr のクライアントに
+ * 替えると PKCE になり、この注意がそのまま当たる。
+ * `exchangeCodeForSession` / `signInWithOAuth` / `signInWithOtp` は未使用。
  *
  * ⚠️ 削除は `path=/` 決め打ち。`@supabase/ssr` は
  * `{...DEFAULT_COOKIE_OPTIONS, ...cookieOptions}` で書くので、将来

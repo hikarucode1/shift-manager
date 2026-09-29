@@ -21,7 +21,7 @@ import {
  * セッション cookie は `verifyOtp` の中で書かれる (`lib/supabase/server.ts` の
  * setAll)。server action からなので cookies() への書き込みは有効。
  */
-export async function verifyInvite(formData: FormData) {
+export async function verifyEmailLink(formData: FormData) {
   const link = parseEmailLink({
     token_hash: formData.get("token_hash"),
     type: formData.get("type"),
@@ -37,13 +37,13 @@ export async function verifyInvite(formData: FormData) {
     });
     if (error) {
       failure = classifyVerifyError(error);
-      if (failure === "unavailable") reportIncident("verify-invite", error);
+      if (failure === "unavailable") reportIncident("verify-email-link", error);
     }
   } catch (e) {
     // auth-js は AuthError 以外をそのまま throw する。判定できていないので
     // リンクは使える側に倒す (invalid にすると、押し直せば通る人に再送させてしまう)
     failure = "unavailable";
-    reportIncident("verify-invite", e);
+    reportIncident("verify-email-link", e);
   }
 
   // redirect() は例外で抜けるので try の外で呼ぶ

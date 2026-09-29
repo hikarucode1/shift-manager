@@ -11,32 +11,15 @@ import {
 
 /**
  * エラーは自分で `new` せず、本物の auth-js に応答を流して作る
- * (invite-link.test.ts と同じ方針)。resendInvite が受け取るのと同じ
- * `auth.admin.inviteUserByEmail` の経路を通す。
+ * (invite-link.test.ts と同じ方針)。resendInvite / sendPasswordReset が
+ * 受け取るのと同じ `inviteUserByEmail` / `resetPasswordForEmail` の経路を通す。
  */
-async function resetError(status: number, body: unknown = {}) {
-  const client = createClient("http://auth.test", "service-key", {
-    global: {
-      fetch: async () =>
-        new Response(JSON.stringify(body), {
-          status,
-          headers: { "content-type": "application/json" },
-        }),
-    },
-    auth: { persistSession: false, autoRefreshToken: false },
-  });
-  // sendPasswordReset と同じく implicit (既定) のクライアントから呼ぶ
-  const { error } = await client.auth.resetPasswordForEmail("t@example.com");
-  expect(error).not.toBeNull();
-  return error;
-}
-
-async function inviteError(
+function clientRespondingWith(
   status: number,
-  body: unknown = {},
+  body: unknown,
   headers: Record<string, string> = {},
 ) {
-  const client = createClient("http://auth.test", "service-key", {
+  return createClient("http://auth.test", "service-key", {
     global: {
       fetch: async () =>
         new Response(JSON.stringify(body), {
@@ -46,7 +29,23 @@ async function inviteError(
     },
     auth: { persistSession: false, autoRefreshToken: false },
   });
+}
+
+async function inviteError(
+  status: number,
+  body: unknown = {},
+  headers: Record<string, string> = {},
+) {
+  const client = clientRespondingWith(status, body, headers);
   const { error } = await client.auth.admin.inviteUserByEmail("t@example.com");
+  expect(error).not.toBeNull();
+  return error;
+}
+
+/** sendPasswordReset と同じく implicit (既定) のクライアントから呼ぶ */
+async function resetError(status: number, body: unknown = {}) {
+  const client = clientRespondingWith(status, body);
+  const { error } = await client.auth.resetPasswordForEmail("t@example.com");
   expect(error).not.toBeNull();
   return error;
 }

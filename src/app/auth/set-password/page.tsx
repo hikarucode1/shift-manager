@@ -8,7 +8,7 @@ import { AuthCard } from "../auth-card";
 import { SetPasswordForm } from "./set-password-form";
 
 /**
- * パスワードを決める画面 (#264)。招待リンク → /auth/confirm の次に来る。
+ * パスワードを決める画面 (#264)。招待・再設定 (#268) のリンク → /auth/confirm の次に来る。
  *
  * /auth 配下は layout のガードも error.tsx も無いので、/login と同じく
  * resolveOrIncident で包む (#188)。

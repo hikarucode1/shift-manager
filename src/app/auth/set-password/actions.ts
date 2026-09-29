@@ -13,7 +13,8 @@ export type SetPasswordState = { error: string } | null;
 
 /**
  * ログイン中の本人のパスワードを決める (#264)。
- * 招待リンクから来た講師は、verifyInvite が作ったセッションでここに着く。
+ * 招待リンク・パスワード再設定リンク (#268) から来た講師は、verifyEmailLink が
+ * 作ったセッションでここに着く。
  */
 export async function setPassword(
   _prev: SetPasswordState,

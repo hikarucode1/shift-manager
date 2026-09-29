@@ -267,8 +267,11 @@ export async function resendInvite(input: unknown): Promise<ActionResult> {
 /**
  * パスワード再設定メールを送る (#268)。招待を受け取った後にパスワードを
  * 決めずに離れた講師や、パスワードを忘れた講師が戻る手段。
- * 講師が自分で送る入口 (/login の「パスワードを忘れた」) は置かない。誰でも
- * 任意の宛先へ送らせられると、教室用 Gmail の送信枠と評判を削られるため。
+ * 講師が自分で送る入口 (/login の「パスワードを忘れた」) は置かない。画面から
+ * 誰でも送れる形にすると教室用 Gmail の送信枠と評判を削られやすいため。
+ * ⚠️ これは入口を増やさないだけで、GoTrue の POST /auth/v1/recover 自体は
+ * anon キーで誰でも叩ける (Supabase 標準の挙動)。その抑えは GoTrue 側の
+ * 同一宛先 60 秒制限とプロジェクトのメール送信レート制限に頼っている。
  *
  * メールのリンクは /auth/confirm (type=recovery) → /auth/set-password。
  * DB には書かない。
