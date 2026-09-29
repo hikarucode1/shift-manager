@@ -12,6 +12,7 @@ import { createAdminClient } from "@/lib/supabase/admin";
 import {
   ALREADY_ACCEPTED,
   NOT_YET_ACCEPTED,
+  inviteErrorMessage,
   isInviteAccepted,
   mailTargetRefusal,
   resendErrorMessage,
@@ -94,22 +95,13 @@ export async function inviteTutor(input: unknown): Promise<ActionResult> {
     await supabase.auth.admin.inviteUserByEmail(data.email);
 
   if (error || !invited?.user) {
-    const msg = error?.message ?? "unknown";
-    console.error("inviteTutor: inviteUserByEmail failed:", msg);
-    if (/already|registered|exists/i.test(msg)) {
-      return { ok: false, error: "このメールアドレスは既に登録されています。" };
-    }
-    if (/rate|limit|too many/i.test(msg)) {
-      return {
-        ok: false,
-        error: "短時間に招待を送りすぎました。時間をおいて再度お試しください。",
-      };
-    }
-    return {
-      ok: false,
-      error:
-        "招待に失敗しました。メールアドレスを確認のうえ、時間をおいて再度お試しください。",
-    };
+    // 画面の文言は code と status で決まるので、それも残す
+    console.error("inviteTutor: inviteUserByEmail failed", {
+      message: error?.message ?? "no user returned",
+      code: error?.code,
+      status: error?.status,
+    });
+    return { ok: false, error: inviteErrorMessage(error) };
   }
   const authUserId = invited.user.id;
 

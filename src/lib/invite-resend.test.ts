@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import { createClient } from "@supabase/supabase-js";
 import {
   ALREADY_ACCEPTED,
+  inviteErrorMessage,
   inviteStatusOf,
   mailTargetRefusal,
   resendErrorMessage,
@@ -165,5 +166,65 @@ describe("resetErrorMessage", () => {
       ),
     ).toMatch("送れませんでした");
     expect(resetErrorMessage(null)).toMatch("送れませんでした");
+  });
+});
+
+describe("inviteErrorMessage", () => {
+  it("確認済みユーザーと同じメール (email_exists) は登録済みと伝える", async () => {
+    const msg = "A user with this email address has already been registered";
+    const legacy = await inviteError(422, { error_code: "email_exists", msg });
+    const versioned = await inviteError(
+      422,
+      { code: "email_exists", msg },
+      { "x-supabase-api-version": "2024-01-01" },
+    );
+    expect(inviteErrorMessage(legacy)).toMatch("既に登録されています");
+    expect(inviteErrorMessage(versioned)).toMatch("既に登録されています");
+  });
+
+  it("メール送信の上限 (429) は送りすぎとして伝える", async () => {
+    const error = await inviteError(429, {
+      error_code: "over_email_send_rate_limit",
+      msg: "email rate limit exceeded",
+    });
+    expect(inviteErrorMessage(error)).toMatch("送りすぎ");
+  });
+
+  it("認証 API の障害はメールアドレスのせいにしない (#269)", async () => {
+    for (const error of [
+      await inviteError(503),
+      await inviteError(500, {
+        error_code: "unexpected_failure",
+        msg: "Database error saving new user",
+      }),
+    ]) {
+      const message = inviteErrorMessage(error);
+      expect(message).toMatch("現在招待を送れません");
+      expect(message).not.toMatch("メールアドレスを確認");
+    }
+  });
+
+  it("error_code の無い 429 (プロキシなど) も送りすぎとして伝える", async () => {
+    const error = await inviteError(429, { message: "Too Many Requests" });
+    expect(inviteErrorMessage(error)).toMatch("送りすぎ");
+  });
+
+  it("送信設定の問題はメールアドレスのせいにしない", async () => {
+    const error = await inviteError(400, {
+      error_code: "email_address_not_authorized",
+      msg: "Email address not authorized",
+    });
+    const message = inviteErrorMessage(error);
+    expect(message).toMatch("送信設定");
+    expect(message).not.toMatch("メールアドレスを確認");
+  });
+
+  it("メッセージの文言ではなく code で分ける", async () => {
+    // 旧実装は /rate|limit|too many/ と /already|registered|exists/ で誤分類した
+    const error = await inviteError(400, {
+      error_code: "email_address_invalid",
+      msg: "Email address exists but is invalid: rate limit",
+    });
+    expect(inviteErrorMessage(error)).toMatch("メールアドレスを確認");
   });
 });
