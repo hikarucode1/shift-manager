@@ -88,7 +88,7 @@ export const ALREADY_ACCEPTED =
   "この講師は招待を受け取り済みのため、再送できません。パスワードが分からない場合は「パスワード再設定メール」を送ってください。";
 
 /**
- * 教室長が講師へ送るメール (招待の再送・パスワード再設定) の失敗を、
+ * 教室長が講師へ送るメール (招待・招待の再送・パスワード再設定) の失敗を、
  * 次に何をすればよいかの文にする。
  * ⚠️ 429 は isAuthUnavailable より先に見る。isAuthUnavailable でも true に
  * なるが、メール送信の上限は「待てば直る」と具体的に言えるので分けて伝える。
@@ -106,12 +106,40 @@ function mailErrorMessage(
         return `短時間に${what}を送りすぎました。時間をおいて再度お試しください。`;
       case "user_not_found":
         return "この講師のログインアカウントが見つかりません。";
+      // 宛先ではなくプロジェクトの設定の問題。メールアドレスを疑わせない
+      // (Supabase 標準の SMTP はチームメンバー宛てにしか送れない、など)
+      case "email_address_not_authorized":
+      case "email_provider_disabled":
+        return `メールの送信設定の都合で${what}を送れません。Supabase のメール設定を確認してください。`;
+    }
+    // 手前のプロキシが返す 429 は error_code を持たないことがある
+    if (error.status === 429) {
+      return `短時間に${what}を送りすぎました。時間をおいて再度お試しください。`;
     }
   }
   if (isAuthUnavailable(error)) {
     return `現在${what}を送れません。時間をおいて再度お試しください。`;
   }
   return `${failed}時間をおいて再度お試しください。`;
+}
+
+/**
+ * 初めての招待 (inviteTutor) の inviteUserByEmail の失敗 (#269)。
+ * 以前はメッセージの正規表現で分けていて、500 や到達不能まで「メールアドレスを
+ * 確認」と出ていた。再送と同じく error.code と到達可否で分ける。
+ * 分類できないもの (メールアドレスの形式が不正など) は入力を疑うよう伝える。
+ */
+export function inviteErrorMessage(error: unknown): string {
+  // 受け取り済みの講師と同じメール。招待中の講師と同じメールはエラーに
+  // ならず、そちらへの再送になるので inviteTutor が招待前に断る (#272)
+  if (isAuthError(error) && error.code === "email_exists") {
+    return "このメールアドレスは既に登録されています。";
+  }
+  return mailErrorMessage(
+    error,
+    "招待",
+    "招待に失敗しました。メールアドレスを確認のうえ、",
+  );
 }
 
 /** getUserById / inviteUserByEmail の失敗 */
