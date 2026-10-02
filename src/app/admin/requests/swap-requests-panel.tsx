@@ -22,6 +22,13 @@ const approval = (r: AdminSwapRequest) =>
     isProxy: r.isProxy,
   });
 
+type Notice = {
+  type: "ok" | "error";
+  text: string;
+  /** 自動で消さない。見落とすと困る知らせ (#278 の欠勤失効) にだけ使う */
+  sticky?: boolean;
+};
+
 export function SwapRequestsPanel({
   pending,
 }: {
@@ -29,10 +36,7 @@ export function SwapRequestsPanel({
 }) {
   const router = useRouter();
   const [isPending, startTransition] = useTransition();
-  const [notice, setNotice] = useState<{
-    type: "ok" | "error";
-    text: string;
-  } | null>(null);
+  const [notice, setNotice] = useState<Notice | null>(null);
   const [rejectId, setRejectId] = useState<string | null>(null);
   const [rejectNote, setRejectNote] = useState("");
   // #231: 代理募集 (教室長が作ったもの) は「却下」ではなく「取り下げ」。
@@ -40,21 +44,25 @@ export function SwapRequestsPanel({
   const [mode, setMode] = useState<"reject" | "withdraw">("reject");
 
   useEffect(() => {
-    if (!notice) return;
+    if (!notice || notice.sticky) return;
     const t = setTimeout(() => setNotice(null), 4000);
     return () => clearTimeout(t);
   }, [notice]);
 
-  function run(
-    fn: () => Promise<{ ok: boolean; error?: string }>,
-    okMsg: string,
+  function run<R extends { ok: boolean; error?: string }>(
+    fn: () => Promise<R>,
+    // 結果で文言を変えたいとき (#278) は関数で渡す
+    okMsg: string | ((res: R) => Omit<Notice, "type">),
     onOk?: () => void,
   ) {
     setNotice(null);
     startTransition(async () => {
       const res = await fn().catch(toFailedResult);
       if (res.ok) {
-        setNotice({ type: "ok", text: okMsg });
+        setNotice({
+          type: "ok",
+          ...(typeof okMsg === "string" ? { text: okMsg } : okMsg(res as R)),
+        });
         onOk?.();
         router.refresh();
       } else {
@@ -233,7 +241,20 @@ export function SwapRequestsPanel({
                                       id: r.id,
                                       applicationId: a.applicationId,
                                     }),
-                                  `${a.applicantName} を代講者として承認しました。`,
+                                  (res) => {
+                                    const base = `${a.applicantName} を代講者として承認しました。`;
+                                    // ⚠️ 失効は承認の副作用で、カードには事前に
+                                    // 出ていない。4 秒で消すと気づかないまま
+                                    // 終わるので、この場合だけ残す (#278)
+                                    // 「記録」と言わない理由は #250 と同じ
+                                    // (失効したのが未承認の申請だけのことがある)
+                                    return res.ok && res.expiredAbsences > 0
+                                      ? {
+                                          text: `${base}このコマの欠勤申請は失効させました（交代が成立したため）。「記録」タブから確認できます。`,
+                                          sticky: true,
+                                        }
+                                      : { text: base };
+                                  },
                                 )
                               }
                             >
