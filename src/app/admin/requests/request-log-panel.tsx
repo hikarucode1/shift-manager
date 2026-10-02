@@ -12,6 +12,7 @@ import type {
 } from "@/lib/request-log-query";
 import { isIndeterminate, toFailedResult } from "@/lib/action-failure";
 import { swapCancelNotice } from "@/lib/swap-cancel-notice";
+import { requestsLogHref } from "@/lib/requests-search-params";
 import { fmtDateTimeJst } from "@/lib/datetime";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -47,10 +48,13 @@ export function RequestLogPanel({
     { type: "ok" | "error"; text: string } | null
   >(null);
 
-  function setFilter(key: string, value: string) {
-    const sp = new URLSearchParams({ tab: "log", period, type, state });
-    sp.set(key, value);
-    startTransition(() => router.replace(`/admin/requests?${sp.toString()}`));
+  // 値は Select の options から来るので型は呼び出し側で合っている。不正値が
+  // 来ても page 側の `parseRequestsSearchParams` が既定に落とす
+  function setFilter(key: "period" | "type" | "state", value: string) {
+    const next = { period, type, state, [key]: value } as Parameters<
+      typeof requestsLogHref
+    >[0];
+    startTransition(() => router.replace(requestsLogHref(next)));
   }
 
   function submit(entry: RequestLogEntry) {
