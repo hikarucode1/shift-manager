@@ -33,4 +33,33 @@ describe("sinceOf", () => {
       "2025-10-15T10:00:00.000Z",
     );
   });
+
+  it.each([
+    { period: "1m", now: "2028-03-31T10:00:00Z", expected: "2028-02-29T10:00:00.000Z", what: "閏年は 2/29 にクランプ" },
+    { period: "3m", now: "2028-05-31T10:00:00Z", expected: "2028-02-29T10:00:00.000Z", what: "閏年 (3 ヶ月)" },
+    { period: "1m", now: "2028-02-29T10:00:00Z", expected: "2028-01-29T10:00:00.000Z", what: "閏日が起点" },
+    { period: "1m", now: "2026-12-31T10:00:00Z", expected: "2026-11-30T10:00:00.000Z", what: "31 日 → 30 日の月" },
+    { period: "1m", now: "2026-05-31T10:00:00Z", expected: "2026-04-30T10:00:00.000Z", what: "31 日 → 30 日の月 (5 月)" },
+    { period: "3m", now: "2026-03-31T10:00:00Z", expected: "2025-12-31T10:00:00.000Z", what: "年またぎではクランプしない" },
+    { period: "1m", now: "2026-01-31T10:00:00Z", expected: "2025-12-31T10:00:00.000Z", what: "年またぎ (1 ヶ月)" },
+  ] as const)("$period $now → $expected ($what)", ({ period, now, expected }) => {
+    expect(sinceOf(period, new Date(now))!.toISOString()).toBe(expected);
+  });
+
+  // ⚠️ 上はどれも JST 19:00 で、UTC と JST の暦が一致する。#279 のずれは
+  // JST 0:00〜9:00 (UTC ではまだ前日) にしか出ないので、その時間帯で固定する。
+  // 実行環境の TZ に依存しないことは `TZ=UTC` / `TZ=Asia/Tokyo` の両方で確認する
+  describe("暦は JST で数える (#279)", () => {
+    it("JST 3/31 08:00 の 1 ヶ月前は JST 2/28 08:00 (UTC だと 3/30 なので 3/1 にずれていた)", () => {
+      expect(sinceOf("1m", new Date("2026-03-30T23:00:00Z"))!.toISOString()).toBe(
+        "2026-02-27T23:00:00.000Z",
+      );
+    });
+
+    it("JST 5/1 05:00 の 1 ヶ月前は JST 4/1 05:00 (UTC だと 4/30 なので 3/31 にずれていた)", () => {
+      expect(sinceOf("1m", new Date("2026-04-30T20:00:00Z"))!.toISOString()).toBe(
+        "2026-03-31T20:00:00.000Z",
+      );
+    });
+  });
 });
