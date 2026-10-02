@@ -602,6 +602,16 @@ export async function cancelApprovedSwap(
     // もらった」と思ったまま来ない = コマに誰も居ない**が起きる。B 側には
     // 「引き受けた代講」の一覧が無い (getTutorSwapRequests は requesterId 基準)
     // ので、B にとっては通知が唯一の手がかり。承認と同じく tx の外で送る。
+    //
+    // ⚠️ **落選した応募者 (C) には通知しない。書き落としではない** (#277)。
+    // 却下 (#238) や講師本人の取り消し (#245) は応募者に通知するので非対称に
+    // 見えるが、あちらは「予定を空けて待っている人に結果が届かない」問題だった。
+    // C は承認時に「他の講師に決まりました」を受け取り済みで、取り消しても
+    // 募集は再開しない (status は cancelled) ので C にできることが無い。
+    // 取り消し理由は B の事情なので C には見せない (`canSeeDecisionNote`) ため、
+    // 通知しても中身が無い。代わりが要るなら、募集し直せば `swap_posted` で
+    // C にも届く。C の /tutor/open-swaps は「決まった代講が取り消されました」
+    // に変わる (`application-outcome.ts`)
     const cancelSlotLabel = await slotLabelSafe(info.slotNumber);
     await Promise.all([
       notify([info.requesterId], {
