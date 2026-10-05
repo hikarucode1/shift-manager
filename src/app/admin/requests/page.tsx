@@ -2,12 +2,11 @@ import Link from "next/link";
 import { requireRole } from "@/lib/auth";
 import { getPendingAbsenceRequests } from "@/lib/absences";
 import { getPendingSwapRequests } from "@/lib/swaps";
+import { getRequestLog } from "@/lib/request-log-query";
 import {
-  getRequestLog,
-  type LogPeriodFilter,
-  type LogStateFilter,
-  type LogTypeFilter,
-} from "@/lib/request-log-query";
+  parseRequestsSearchParams,
+  requestsHref,
+} from "@/lib/requests-search-params";
 import { jstToday } from "@/lib/week";
 import { Badge } from "@/components/ui/badge";
 import { cn } from "@/lib/utils";
@@ -17,8 +16,6 @@ import { RecordSubstitutionForm } from "./record-substitution-form";
 import { RequestsPanel } from "./requests-panel";
 import { SwapRequestsPanel } from "./swap-requests-panel";
 import { RequestLogPanel } from "./request-log-panel";
-
-type Tab = "pending" | "log";
 
 /**
  * 申請承認 (#224)。
@@ -44,15 +41,8 @@ export default async function AdminRequestsPage({
   await requireRole("admin");
   const sp = await searchParams;
 
-  const tab: Tab = sp.tab === "log" ? "log" : "pending";
-  const period: LogPeriodFilter =
-    sp.period === "3m" || sp.period === "all" ? sp.period : "1m";
-  const type: LogTypeFilter =
-    sp.type === "absence" || sp.type === "swap" ? sp.type : "all";
-  const state: LogStateFilter =
-    sp.state === "approved" || sp.state === "cancelled" || sp.state === "rejected"
-      ? sp.state
-      : "all";
+  const view = parseRequestsSearchParams(sp);
+  const { tab, period, type, state } = view;
 
   const [pendingAbsences, pendingSwaps, log] = await Promise.all([
     getPendingAbsenceRequests(),
@@ -65,13 +55,9 @@ export default async function AdminRequestsPage({
 
   const pendingCount = pendingAbsences.length + pendingSwaps.length;
   const today = jstToday();
-  // 未対応 ⇄ 記録 を行き来してもフィルタを捨てない
-  const logHref = `/admin/requests?${new URLSearchParams({
-    tab: "log",
-    period,
-    type,
-    state,
-  }).toString()}`;
+  // 未対応 ⇄ 記録 を行き来してもフィルタを捨てない (両方のリンクに載せる)
+  const pendingHref = requestsHref({ ...view, tab: "pending" });
+  const logHref = requestsHref({ ...view, tab: "log" });
 
   return (
     <div className="space-y-6">
@@ -94,7 +80,7 @@ export default async function AdminRequestsPage({
           リンクとして正しく公開する (nav + aria-current) */}
       <nav aria-label="表示の切り替え" className="flex gap-1 border-b">
         <TabLink
-          href="/admin/requests"
+          href={pendingHref}
           active={tab === "pending"}
           label="未対応"
           count={pendingCount}

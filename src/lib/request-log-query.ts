@@ -14,14 +14,14 @@ import {
   type LogStatus,
   type RequestLogEntry,
 } from "@/lib/request-log";
+import {
+  LOG_PERIOD_MONTHS,
+  LOG_STATES,
+  type LogPeriodFilter,
+  type LogStateFilter,
+  type LogTypeFilter,
+} from "@/lib/requests-search-params";
 import { jstToday, weekdayOf } from "@/lib/week";
-
-/** 台帳に出す状態。`pending` は未対応タブの担当なので含めない */
-export const LOG_STATES = ["approved", "cancelled", "rejected"] as const;
-export type LogStateFilter = (typeof LOG_STATES)[number] | "all";
-export type LogTypeFilter = "all" | "absence" | "swap";
-/** 既定は直近 1 ヶ月。飽和 (#224) は件数上限ではなく期間で抑える */
-export type LogPeriodFilter = "1m" | "3m" | "all";
 
 export type RequestLog = {
   rows: RequestLogEntry[];
@@ -30,6 +30,9 @@ export type RequestLog = {
 };
 
 const DEFAULT_LIMIT = 50;
+
+/** JST は夏時間が無いので固定オフセットで足りる */
+const JST_OFFSET_MS = 9 * 60 * 60 * 1000;
 
 /**
  * 期間フィルタの下限。
@@ -40,12 +43,16 @@ const DEFAULT_LIMIT = 50;
  */
 export function sinceOf(period: LogPeriodFilter, now: Date): Date | null {
   if (period === "all") return null;
-  const months = period === "1m" ? 1 : 3;
-  const d = new Date(now);
-  const day = d.getDate();
-  d.setMonth(d.getMonth() - months);
-  if (d.getDate() !== day) d.setDate(0); // 前月末へ戻す
-  return d;
+  const months = LOG_PERIOD_MONTHS[period];
+  // ⚠️ **暦は JST で数える** (#279)。`getDate` / `setMonth` は実行環境の TZ を
+  // 使うので、本番 (Vercel = UTC) では JST 0:00〜9:00 に前日の暦で引いてしまい、
+  // 窓が 1 日ずれる (JST 3/31 08:00 の 1 ヶ月前が 2/28 でなく 3/1 になる)。
+  // +9h した時刻を UTC の暦として扱えば、実行環境の TZ に依存しない
+  const d = new Date(now.getTime() + JST_OFFSET_MS);
+  const day = d.getUTCDate();
+  d.setUTCMonth(d.getUTCMonth() - months);
+  if (d.getUTCDate() !== day) d.setUTCDate(0); // 前月末へ戻す
+  return new Date(d.getTime() - JST_OFFSET_MS);
 }
 
 /**

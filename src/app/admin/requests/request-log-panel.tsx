@@ -4,14 +4,22 @@ import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { AlertCircle, Info } from "lucide-react";
 import type { RequestLogEntry } from "@/lib/request-log";
-import type {
-  LogPeriodFilter,
-  LogStateFilter,
-  LogTypeFilter,
-  RequestLog,
-} from "@/lib/request-log-query";
+import type { RequestLog } from "@/lib/request-log-query";
 import { isIndeterminate, toFailedResult } from "@/lib/action-failure";
 import { swapCancelNotice } from "@/lib/swap-cancel-notice";
+import {
+  LOG_PERIOD_LABELS,
+  LOG_PERIODS,
+  LOG_STATE_LABELS,
+  LOG_STATE_FILTERS,
+  LOG_TYPE_LABELS,
+  LOG_TYPES,
+  requestsHref,
+  type LogPeriodFilter,
+  type LogStateFilter,
+  type LogTypeFilter,
+  type RequestsFilters,
+} from "@/lib/requests-search-params";
 import { fmtDateTimeJst } from "@/lib/datetime";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -19,6 +27,17 @@ import { Card, CardContent } from "@/components/ui/card";
 import { cn } from "@/lib/utils";
 import { cancelApprovedAbsence } from "./absence-actions";
 import { cancelApprovedSwap } from "./swap-actions";
+
+// 選択肢は候補の定数から作る (描画のたびに作り直さない)
+const PERIOD_OPTIONS = LOG_PERIODS.map(
+  (v) => [v, LOG_PERIOD_LABELS[v]] as [LogPeriodFilter, string],
+);
+const TYPE_OPTIONS = LOG_TYPES.map(
+  (v) => [v, LOG_TYPE_LABELS[v]] as [LogTypeFilter, string],
+);
+const STATE_OPTIONS = LOG_STATE_FILTERS.map(
+  (v) => [v, LOG_STATE_LABELS[v]] as [LogStateFilter, string],
+);
 
 /**
  * 申請台帳 (#224)。承認済み・取り消し済み・却下を種別をまたいで 1 本で出す。
@@ -47,10 +66,16 @@ export function RequestLogPanel({
     { type: "ok" | "error"; text: string } | null
   >(null);
 
-  function setFilter(key: string, value: string) {
-    const sp = new URLSearchParams({ tab: "log", period, type, state });
-    sp.set(key, value);
-    startTransition(() => router.replace(`/admin/requests?${sp.toString()}`));
+  // 1 回に変えるのは 1 キーだけ。`Partial` だと `{ period: undefined }` も
+  // 通ってしまい、URL に "undefined" が入る
+  function setFilter(
+    patch:
+      | Pick<RequestsFilters, "period">
+      | Pick<RequestsFilters, "type">
+      | Pick<RequestsFilters, "state">,
+  ) {
+    const next = { tab: "log" as const, period, type, state, ...patch };
+    startTransition(() => router.replace(requestsHref(next)));
   }
 
   function submit(entry: RequestLogEntry) {
@@ -94,35 +119,22 @@ export function RequestLogPanel({
           id="log-period"
           label="期間"
           value={period}
-          onChange={(v) => setFilter("period", v)}
-          options={[
-            ["1m", "直近1ヶ月"],
-            ["3m", "直近3ヶ月"],
-            ["all", "すべて"],
-          ]}
+          onChange={(v) => setFilter({ period: v })}
+          options={PERIOD_OPTIONS}
         />
         <Select
           id="log-type"
           label="種別"
           value={type}
-          onChange={(v) => setFilter("type", v)}
-          options={[
-            ["all", "すべて"],
-            ["absence", "欠勤"],
-            ["swap", "交代・代講"],
-          ]}
+          onChange={(v) => setFilter({ type: v })}
+          options={TYPE_OPTIONS}
         />
         <Select
           id="log-state"
           label="状態"
           value={state}
-          onChange={(v) => setFilter("state", v)}
-          options={[
-            ["all", "すべて"],
-            ["approved", "承認済み"],
-            ["cancelled", "取り消し済み"],
-            ["rejected", "却下"],
-          ]}
+          onChange={(v) => setFilter({ state: v })}
+          options={STATE_OPTIONS}
         />
       </div>
 
@@ -274,7 +286,8 @@ export function RequestLogPanel({
   );
 }
 
-function Select({
+// 値の型は options から決まる。間違った候補値を書くと型エラーになる
+function Select<V extends string>({
   id,
   label,
   value,
@@ -283,9 +296,9 @@ function Select({
 }: {
   id: string;
   label: string;
-  value: string;
-  onChange: (v: string) => void;
-  options: [string, string][];
+  value: V;
+  onChange: (v: V) => void;
+  options: [V, string][];
 }) {
   return (
     <span className="flex items-center gap-1">
@@ -295,7 +308,8 @@ function Select({
       <select
         id={id}
         value={value}
-        onChange={(e) => onChange(e.target.value)}
+        // <select> は options に書いた値しか返さない
+        onChange={(e) => onChange(e.target.value as V)}
         className="rounded-md border bg-background px-2 py-1 text-sm"
       >
         {options.map(([v, l]) => (
