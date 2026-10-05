@@ -23,9 +23,6 @@ import {
 } from "@/lib/requests-search-params";
 import { jstToday, weekdayOf } from "@/lib/week";
 
-// 候補値の定義は requests-search-params.ts (クライアントからも読むため)
-export type { LogPeriodFilter, LogStateFilter, LogTypeFilter };
-
 export type RequestLog = {
   rows: RequestLogEntry[];
   /** limit を超える行がまだ残っているか。**件数ではない** */

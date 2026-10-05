@@ -28,6 +28,17 @@ import { cn } from "@/lib/utils";
 import { cancelApprovedAbsence } from "./absence-actions";
 import { cancelApprovedSwap } from "./swap-actions";
 
+// 選択肢は候補の定数から作る (描画のたびに作り直さない)
+const PERIOD_OPTIONS = LOG_PERIODS.map(
+  (v) => [v, LOG_PERIOD_LABELS[v]] as [LogPeriodFilter, string],
+);
+const TYPE_OPTIONS = LOG_TYPES.map(
+  (v) => [v, LOG_TYPE_LABELS[v]] as [LogTypeFilter, string],
+);
+const STATE_OPTIONS = LOG_STATE_FILTERS.map(
+  (v) => [v, LOG_STATE_LABELS[v]] as [LogStateFilter, string],
+);
+
 /**
  * 申請台帳 (#224)。承認済み・取り消し済み・却下を種別をまたいで 1 本で出す。
  *
@@ -55,7 +66,14 @@ export function RequestLogPanel({
     { type: "ok" | "error"; text: string } | null
   >(null);
 
-  function setFilter(patch: Partial<RequestsFilters>) {
+  // 1 回に変えるのは 1 キーだけ。`Partial` だと `{ period: undefined }` も
+  // 通ってしまい、URL に "undefined" が入る
+  function setFilter(
+    patch:
+      | Pick<RequestsFilters, "period">
+      | Pick<RequestsFilters, "type">
+      | Pick<RequestsFilters, "state">,
+  ) {
     const next = { tab: "log" as const, period, type, state, ...patch };
     startTransition(() => router.replace(requestsHref(next)));
   }
@@ -102,21 +120,21 @@ export function RequestLogPanel({
           label="期間"
           value={period}
           onChange={(v) => setFilter({ period: v })}
-          options={LOG_PERIODS.map((v) => [v, LOG_PERIOD_LABELS[v]])}
+          options={PERIOD_OPTIONS}
         />
         <Select
           id="log-type"
           label="種別"
           value={type}
           onChange={(v) => setFilter({ type: v })}
-          options={LOG_TYPES.map((v) => [v, LOG_TYPE_LABELS[v]])}
+          options={TYPE_OPTIONS}
         />
         <Select
           id="log-state"
           label="状態"
           value={state}
           onChange={(v) => setFilter({ state: v })}
-          options={LOG_STATE_FILTERS.map((v) => [v, LOG_STATE_LABELS[v]])}
+          options={STATE_OPTIONS}
         />
       </div>
 

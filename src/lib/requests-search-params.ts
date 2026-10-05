@@ -43,7 +43,13 @@ export const LOG_STATE_LABELS: Record<LogStateFilter, string> = {
   rejected: "却下",
 };
 
-const DEFAULT_FILTERS = { period: "1m", type: "all", state: "all" } as const;
+/** 既定のタブとフィルタ。正規化 (parse) と URL を組む側 (href) の両方がここを見る */
+const DEFAULT_VIEW = {
+  tab: "pending",
+  period: "1m",
+  type: "all",
+  state: "all",
+} as const;
 
 export type RequestsTab = (typeof REQUESTS_TABS)[number];
 
@@ -76,10 +82,10 @@ export function parseRequestsSearchParams(sp: {
   state?: string;
 }): RequestsView {
   return {
-    tab: oneOf(REQUESTS_TABS, sp.tab, "pending"),
-    period: oneOf(LOG_PERIODS, sp.period, DEFAULT_FILTERS.period),
-    type: oneOf(LOG_TYPES, sp.type, DEFAULT_FILTERS.type),
-    state: oneOf(LOG_STATE_FILTERS, sp.state, DEFAULT_FILTERS.state),
+    tab: oneOf(REQUESTS_TABS, sp.tab, DEFAULT_VIEW.tab),
+    period: oneOf(LOG_PERIODS, sp.period, DEFAULT_VIEW.period),
+    type: oneOf(LOG_TYPES, sp.type, DEFAULT_VIEW.type),
+    state: oneOf(LOG_STATE_FILTERS, sp.state, DEFAULT_VIEW.state),
   };
 }
 
@@ -93,9 +99,8 @@ export function parseRequestsSearchParams(sp: {
  */
 export function requestsHref(view: RequestsView): string {
   const sp = new URLSearchParams();
-  if (view.tab !== "pending") sp.set("tab", view.tab);
-  for (const key of ["period", "type", "state"] as const) {
-    if (view[key] !== DEFAULT_FILTERS[key]) sp.set(key, view[key]);
+  for (const key of ["tab", "period", "type", "state"] as const) {
+    if (view[key] !== DEFAULT_VIEW[key]) sp.set(key, view[key]);
   }
   const q = sp.toString();
   return q ? `/admin/requests?${q}` : "/admin/requests";
