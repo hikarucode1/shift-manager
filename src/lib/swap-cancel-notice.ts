@@ -1,7 +1,11 @@
 import {
   closeAction,
+  pendingSwapApproval,
   type PendingSwapApproval,
 } from "@/lib/pending-swap-approval";
+// 型だけ。notifications.ts は server-only だが、型の import は消えるので
+// クライアント (request-log-panel) から読んでも問題ない
+import type { NotificationInput } from "@/lib/notifications";
 
 /**
  * 承認済み代講を取り消したあと、教室長に出す知らせ。
@@ -10,26 +14,33 @@ import {
  * - 同じコマに元講師の募集が残っていれば、閉じるか承認するかを促す (#283)。
  *   記録 (#215) は募集を閉じないので、記録を取り消すと担当が戻って募集が
  *   再び承認できる状態になる
+ * - 代講者が同じコマに出した募集が残っていれば、閉じるよう促す (#287)。
+ *   担当が元講師に戻ったので、その募集は承認できない
  *
- * ⚠️ **講師に知らせたとは書かない。** 講師への訂正は best-effort (失敗しても
- * 取り消しは成功扱い) で、代講者 B には送らない。教室長に伝えるのは、
- * 教室長がすべきこと (承認か却下) だけにする。
+ * ⚠️ **講師に知らせたとは書かない。** 講師への通知は best-effort (失敗しても
+ * 取り消しは成功扱い)。しかも元講師の募集の「また有効になりました」は、
+ * 代講者 B が応募していても B には送らない (B には取り消しの通知が別に届く)。
+ * 教室長に伝えるのは、教室長がすべきこと (承認か却下) だけにする。
  *
  * ⚠️ 承認できない理由と閉じ方 (却下 / 取り下げ) は、「未対応」タブと同じ
  * `pendingSwapApproval` の結果から作る。ここで文言を持つと、理由が増えたとき
  * にずれる
  */
 
-/** 取り消したコマに元講師の pending 募集が残っているか (#283) */
+/**
+ * 取り消したコマに残っている pending 募集 1 件。元講師の募集 (#283) と
+ * 代講者の募集 (#287) があり、両方残ることもある
+ */
 export type PendingSwapAfterCancel = {
+  /** 募集を出した講師 */
   requesterName: string;
   isProxy: boolean;
   approval: PendingSwapApproval;
-} | null;
+};
 
 export function swapCancelNotice(res: {
   expiredAbsences: number;
-  pendingSwap: PendingSwapAfterCancel;
+  pendingSwaps: PendingSwapAfterCancel[];
 }): string {
   const parts = ["取り消しました。"];
   if (res.expiredAbsences > 0) {
@@ -37,8 +48,7 @@ export function swapCancelNotice(res: {
       "このコマの欠勤申請が交代成立時に自動失効しています。必要なら「代理で欠勤を登録する」から登録し直してください。",
     );
   }
-  const p = res.pendingSwap;
-  if (p) {
+  for (const p of res.pendingSwaps) {
     parts.push(
       p.approval.approvable
         ? `このコマには ${p.requesterName} さんの交代申請が残っていて、担当が戻ったため再び承認できます。「未対応」タブで承認するか、${closeAction(p.isProxy)}`
@@ -46,4 +56,160 @@ export function swapCancelNotice(res: {
     );
   }
   return parts.join("");
+}
+
+/**
+ * 代講を取り消したとき、代講者 B への通知「引き受けた代講が取り消されました」に
+ * 足す一文 (#287 / #288)。B の名前で募集が出ていなければ何も足さない。
+ *
+ * - 「このコマの募集」と書くと、B が元講師の募集に応募している場合にその
+ *   応募まで無効と読めるので、「あなたの名前で出ている」と限定する。教室長の
+ *   代理募集 (#231) もあるので「あなたが出した」とは書かない
+ * - **閉じるのは教室長だけ** (記録 #253 と同じ形)。B にも頼むと、B と教室長が
+ *   別々に動いて、閉じる操作が 2 回走りうる。B には「教室長が対応します」と
+ *   だけ伝える。
+ *   ⚠️ **それでも応募者への 2 通目は防げていない。** 教室長が却下すれば、
+ *   応募者に「却下されました」、B に「交代・代講申請が却下されました」が届く。
+ *   本筋の直し方は、取り消しの時点でシステムが中立に閉じること (#293)
+ * - 行き先は変えない (`/tutor/open-swaps`)。この通知の本題は代講が取り消された
+ *   ことで、その結果 (#245「決まった代講が取り消されました」) が見えるのは
+ *   open-swaps だけ
+ */
+export function substituteCancelSuffix(hasSubstituteSwap: boolean): string {
+  return hasSubstituteSwap
+    ? " ／ このコマの担当ではなくなったため、あなたの名前で出ている交代・代講の募集は承認できません。教室長が対応します。"
+    : "";
+}
+
+/** 募集の応募者への通知の理由。経路で違う (#288 レビュー) */
+export const ORPHANED_WHY = {
+  /** 記録 (#253): 担当が代講者に変わった */
+  recorded: "このコマは別の形で対応されました。",
+  /**
+   * 代講の取り消し (#287): 担当が元に戻った。**名前を出さない** — 元講師本人も
+   * 宛先に入るので、「担当が 山田 さんに戻った」だと本人に自分の名前が
+   * 第三者のように届く
+   */
+  cancelled:
+    "代講が取り消され、このコマの担当が元に戻ったため、この募集は承認できません。",
+} as const;
+
+/**
+ * 担当が変わって承認できなくなった募集の、応募者への通知 (#253 / #287)。
+ * 記録と代講の取り消しで同じ題にし、理由だけ変える。本文に**誰の募集か**を
+ * 入れる — 同じコマに 2 つの募集があると、どちらの話か分からない (#288)
+ */
+export function noLongerApprovableForApplicants(
+  date: string,
+  slotLabel: string,
+  ownerName: string,
+  why: string,
+): NotificationInput {
+  return {
+    type: "swap_result",
+    title: "応募していた代講の募集は承認できなくなりました",
+    body: `対象: ${date} ${slotLabel} (${ownerName}さんの募集) ／ ${why}`,
+    href: "/tutor/open-swaps",
+  };
+}
+
+/**
+ * 担当が戻って再び承認できるようになった募集の、応募者への通知 (#283)。
+ * 「承認できなくなりました」と対なので並べて置く
+ */
+export function approvableAgainForApplicants(
+  date: string,
+  slotLabel: string,
+  ownerName: string,
+): NotificationInput {
+  return {
+    type: "swap_result",
+    title: "応募していた代講の募集がまた有効になりました",
+    body: `対象: ${date} ${slotLabel} (${ownerName}さんの募集) ／ 代講の記録が取り消されたため、募集は再び承認を待っています。`,
+    href: "/tutor/open-swaps",
+  };
+}
+
+/**
+ * コミット後に「まだ pending か」を確かめ直した結果。確認自体が失敗したら
+ * `unknown` (どちらに倒すかは募集で違う。`planCancelNotices` 参照)
+ */
+export type RecheckResult = "pending" | "closed" | "unknown";
+
+/**
+ * 承認済み代講を取り消したあと、どの募集に何を送り、教室長に何を出すか
+ * (#283 / #287 / #288)。**判断はここに集める** — 通知の判断で何度も不具合が
+ * 見つかった場所なので、server action から出してテストで固める。
+ *
+ * - 元講師 A の募集: `pending` で承認できるときだけ「また有効になりました」。
+ *   `unknown` では送らない (閉じた募集に送ると嘘になる)
+ * - 代講者 B の募集: `pending` か `unknown` なら「承認できなくなりました」。
+ *   B の募集は二度と承認できないので、送っても嘘にならず、送らないと応募者が
+ *   待ち続ける
+ * - 教室長への案内は、**`pending` と確かめられたときだけ**出す (閉じたかも
+ *   しれない募集を「残っています」と言わない)。B への追記は「承認できない」
+ *   という事実だけなので、応募者に送るのと同じ条件 (`pending` か `unknown`)
+ */
+export function planCancelNotices(i: {
+  /** A の募集 (取り消しで担当が戻ったので、承認できる可能性がある) */
+  requesterSwap: { id: string; isProxy: boolean } | null;
+  requesterRecheck: RecheckResult;
+  /** B の募集 (担当でなくなったので、必ず承認できない) */
+  substituteSwap: { id: string; isProxy: boolean } | null;
+  substituteRecheck: RecheckResult;
+  isPastDate: boolean;
+  requesterName: string;
+  substituteName: string;
+}): {
+  /** 「また有効になりました」を応募者に送る募集 */
+  revivedSwapId: string | null;
+  /** 「承認できなくなりました」を応募者に送る募集 */
+  orphanedSwapId: string | null;
+  /** 教室長への案内 (`swapCancelNotice` に渡す) */
+  pendingSwaps: PendingSwapAfterCancel[];
+  /** B への通知に足す一文 */
+  substituteSuffix: string;
+} {
+  const entryFor = (
+    swap: { isProxy: boolean },
+    requesterName: string,
+    requesterAssigned: boolean,
+  ): PendingSwapAfterCancel => ({
+    requesterName,
+    isProxy: swap.isProxy,
+    approval: pendingSwapApproval({
+      isPastDate: i.isPastDate,
+      requesterAssigned,
+      // 見出しにしか効かない
+      isEnded: false,
+      isProxy: swap.isProxy,
+    }),
+  });
+  // pending と確かめられた募集だけ、教室長への案内 (と B への追記) に出す
+  const a =
+    i.requesterSwap && i.requesterRecheck === "pending"
+      ? {
+          id: i.requesterSwap.id,
+          entry: entryFor(i.requesterSwap, i.requesterName, true),
+        }
+      : null;
+  const b =
+    i.substituteSwap && i.substituteRecheck === "pending"
+      ? entryFor(i.substituteSwap, i.substituteName, false)
+      : null;
+  return {
+    revivedSwapId: a?.entry.approval.approvable ? a.id : null,
+    orphanedSwapId:
+      i.substituteSwap && i.substituteRecheck !== "closed"
+        ? i.substituteSwap.id
+        : null,
+    pendingSwaps: [a?.entry ?? null, b].filter(
+      (e): e is PendingSwapAfterCancel => e !== null,
+    ),
+    // B への追記は「承認できない」という事実だけなので、確かめ直しが失敗した
+    // (unknown) ときも出してよい。応募者に送るのと同じ条件にする
+    substituteSuffix: substituteCancelSuffix(
+      i.substituteSwap !== null && i.substituteRecheck !== "closed",
+    ),
+  };
 }

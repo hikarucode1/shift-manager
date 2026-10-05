@@ -70,7 +70,8 @@ export function RequestLogPanel({
         : cancelApprovedSwap({ id: entry.id, reason: trimmed }).then((r) =>
             // ⚠️ 交代の取り消しで同一コマの欠勤が自動失効していたら必ず伝える。
             // 黙って消すと、#217 で登録した欠勤が消えたことに気づけない (#225)。
-            // 同じコマに元講師の募集が残っていれば、それも伝える (#283)
+            // 同じコマに元講師 (#283) や代講者 (#287) の募集が残っていれば、
+            // それも伝える (両方のこともある)
             r.ok ? { ok: true as const, text: swapCancelNotice(r) } : r,
           )
       ).catch(toFailedResult);
