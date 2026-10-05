@@ -9,6 +9,10 @@ import { db } from "@/db/client";
 import { absenceRequests, swapRequests, weeklyShifts } from "@/db/schema";
 import { isUniqueViolation } from "@/lib/db-errors";
 import { isValidIsoDate, jstToday } from "@/lib/week";
+import { isTutorBusyAt } from "@/lib/swaps";
+import { getSlotMeta } from "@/lib/slot-meta";
+import { isSlotPast } from "@/lib/slot-time";
+import { pendingAbsenceActions } from "@/lib/pending-absence-actions";
 
 type ActionResult = { ok: true } | { ok: false; error: string };
 
@@ -222,6 +226,46 @@ export async function decideAbsenceRequest(
 
   if (decision === "rejected" && decisionNote.length === 0) {
     return { ok: false, error: "却下する場合は理由を入力してください。" };
+  }
+
+  // ⚠️ **担当でなくなった、まだ来ていないコマの欠勤は承認しない** (#289)。
+  // 承認済みの欠勤は (講師, 日付, コマ) の組で残り続け、その講師があとで
+  // 担当に戻ると欠勤マークが付いてしまう。カードは `pendingAbsenceActions` で
+  // 承認ボタンを出さないが、開いたまま担当が変わることがあるのでここでも
+  // 確かめる。判定はカードと同じ関数。終わったコマは承認できる (休んだ記録)
+  if (decision === "approved") {
+    const [target] = await db
+      .select({
+        tutorId: absenceRequests.tutorId,
+        date: absenceRequests.date,
+        slotNumber: absenceRequests.slotNumber,
+      })
+      .from(absenceRequests)
+      .where(
+        and(eq(absenceRequests.id, id), eq(absenceRequests.status, "pending")),
+      )
+      .limit(1);
+    if (target) {
+      const meta = await getSlotMeta();
+      const actions = pendingAbsenceActions({
+        tutorAssigned: await isTutorBusyAt(
+          target.date,
+          target.slotNumber,
+          target.tutorId,
+        ),
+        isEnded: isSlotPast(
+          target.date,
+          meta.get(target.slotNumber)?.end ?? "",
+        ),
+      });
+      if (!actions.canApprove) {
+        return {
+          ok: false,
+          error:
+            "このコマは今は担当ではないので承認できません。「不要として閉じる」を使ってください。",
+        };
+      }
+    }
   }
 
   const updated = await db

@@ -11,7 +11,8 @@ import { shortDate } from "@/lib/week";
 import { cn } from "@/lib/utils";
 import { avatarColor, avatarInitial } from "@/lib/avatar";
 import { decideAbsenceRequest } from "@/app/tutor/absences/actions";
-import { pendingAbsenceNotice } from "@/lib/pending-absence-notice";
+import { pendingAbsenceActions } from "@/lib/pending-absence-actions";
+import { closeUnassignedAbsence } from "./absence-actions";
 
 export function RequestsPanel({ pending }: { pending: PendingAbsence[] }) {
   const router = useRouter();
@@ -34,6 +35,12 @@ export function RequestsPanel({ pending }: { pending: PendingAbsence[] }) {
     fn: () => Promise<{ ok: boolean; error?: string }>,
     okMsg: string,
     onOk?: () => void,
+    /**
+     * 失敗したときも画面を読み直すか。承認がサーバで「今は担当ではない」と
+     * 弾かれたとき (#289)、カードを開いたまま担当が変わっていたので、読み
+     * 直して「不要として閉じる」の出し分けに切り替える
+     */
+    refreshOnError = false,
   ) {
     setNotice(null);
     startTransition(async () => {
@@ -47,7 +54,7 @@ export function RequestsPanel({ pending }: { pending: PendingAbsence[] }) {
         // #202: reject 由来は「書いたか不明」。画面を古いまま放置せず
         // サーバーの真実を取りに行く (返り値の { ok: false } は確実に
         // 書いていないので触らない)。
-        if (isIndeterminate(res)) router.refresh();
+        if (isIndeterminate(res) || refreshOnError) router.refresh();
       }
     });
   }
@@ -78,8 +85,8 @@ export function RequestsPanel({ pending }: { pending: PendingAbsence[] }) {
       ) : (
         <div className="space-y-3">
           {pending.map((p) => {
-            // 担当が変わったコマは知らせる (#289)。承認は塞がない
-            const unassignedNotice = pendingAbsenceNotice(p);
+            // 担当が変わったコマは、出す操作と案内を切り替える (#289)
+            const actions = pendingAbsenceActions(p);
             return (
               <div key={p.id} className="space-y-3 rounded-lg border p-3.5">
                 <div className="flex items-start gap-3">
@@ -112,14 +119,14 @@ export function RequestsPanel({ pending }: { pending: PendingAbsence[] }) {
                     </p>
                     {/* #211: 「実施済み = 押してはいけない」と誤読されないように。
                       後から欠勤を登録するのは正当な実務なので承認してよい */}
-                    {p.isEnded && (
+                    {actions.showEndedHint && (
                       <p className="text-xs text-muted-foreground">
                         終了したコマです。実際に欠勤していた場合は承認して構いません。
                       </p>
                     )}
-                    {unassignedNotice && (
+                    {actions.notice && (
                       <p className="text-xs font-medium text-foreground">
-                        {unassignedNotice}
+                        {actions.notice}
                       </p>
                     )}
                   </div>
@@ -172,33 +179,57 @@ export function RequestsPanel({ pending }: { pending: PendingAbsence[] }) {
                   </div>
                 ) : (
                   <div className="flex gap-2">
-                    <Button
-                      size="sm"
-                      disabled={isPending}
-                      onClick={() =>
-                        run(
-                          () =>
-                            decideAbsenceRequest({
-                              id: p.id,
-                              decision: "approved",
-                            }),
-                          "承認しました。",
-                        )
-                      }
-                    >
-                      承認
-                    </Button>
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      disabled={isPending}
-                      onClick={() => {
-                        setRejectId(p.id);
-                        setRejectNote("");
-                      }}
-                    >
-                      却下
-                    </Button>
+                    {actions.canApprove && (
+                      <Button
+                        size="sm"
+                        disabled={isPending}
+                        onClick={() =>
+                          run(
+                            () =>
+                              decideAbsenceRequest({
+                                id: p.id,
+                                decision: "approved",
+                              }),
+                            "承認しました。",
+                            undefined,
+                            true,
+                          )
+                        }
+                      >
+                        承認
+                      </Button>
+                    )}
+                    {actions.canReject && (
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        disabled={isPending}
+                        onClick={() => {
+                          setRejectId(p.id);
+                          setRejectNote("");
+                        }}
+                      >
+                        却下
+                      </Button>
+                    )}
+                    {actions.canClose && (
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        disabled={isPending}
+                        onClick={() =>
+                          run(
+                            () => closeUnassignedAbsence({ id: p.id }),
+                            "不要として閉じました。講師に通知が届きます。",
+                            undefined,
+                            // 今も担当で弾かれたら、読み直して承認 / 却下に戻す
+                            true,
+                          )
+                        }
+                      >
+                        不要として閉じる
+                      </Button>
+                    )}
                   </div>
                 )}
               </div>

@@ -2,7 +2,7 @@
 
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
-import { and, eq } from "drizzle-orm";
+import { and, eq, sql } from "drizzle-orm";
 import { requireRole } from "@/lib/auth";
 import { notify } from "@/lib/notifications";
 import { db } from "@/db/client";
@@ -11,6 +11,7 @@ import { findPendingSwap } from "@/lib/swaps";
 import { isUniqueViolation } from "@/lib/db-errors";
 import { getSlotMeta } from "@/lib/slot-meta";
 import { isValidIsoDate, weekdayOf } from "@/lib/week";
+import { ABSENCE_CLOSED_UNASSIGNED_NOTE } from "@/lib/pending-absence-actions";
 
 type ActionResult = { ok: true } | { ok: false; error: string };
 
@@ -224,4 +225,97 @@ export async function createAbsenceOnBehalf(
   revalidatePath("/admin/requests");
   revalidatePath("/tutor/absences");
   return { ok: true, pendingSwap: swapDup !== null };
+}
+
+const CloseUnassignedInput = z.object({
+  id: z.string().uuid("対象が正しく指定されていません。"),
+});
+
+/**
+ * 担当でなくなったコマの未承認の欠勤申請を「不要として閉じる」(#289)。
+ *
+ * 代講の取り消し・CSV の取り込みなどで担当が変わると、元の担当者の欠勤申請が
+ * 「未対応」に残る。却下すると講師に「却下されました」(=出勤しろ、と読める)
+ * が届くので、中立に閉じる操作を別に用意する。カードの出し分けは
+ * `pendingAbsenceActions`。
+ *
+ * ⚠️ **今も担当なら閉じない。** 担当かどうかは UPDATE の WHERE に入れて、
+ * 確認と書き込みを 1 つの文にする (間に担当が戻る窓を作らない)。条件は
+ * `isTutorBusyAt` と同じ (`weekly_shifts` に (講師, 日, コマ) の行があるか)。
+ *
+ * 状態は `cancelled`、理由は `ABSENCE_CLOSED_UNASSIGNED_NOTE`。台帳では教室長の
+ * 「取り消し」として出て、コメント欄に理由が出る。`decided_by` は閉じた教室長
+ * (自動失効と違い、教室長の判断なので null にしない)
+ */
+export async function closeUnassignedAbsence(
+  input: unknown,
+): Promise<ActionResult> {
+  const { profile } = await requireRole("admin");
+  const parsed = CloseUnassignedInput.safeParse(input);
+  if (!parsed.success) {
+    return {
+      ok: false,
+      error: parsed.error.issues[0]?.message ?? "入力が不正です。",
+    };
+  }
+  const { id } = parsed.data;
+
+  const updated = await db
+    .update(absenceRequests)
+    .set({
+      status: "cancelled",
+      decidedBy: profile.id,
+      decidedAt: new Date(),
+      decisionNote: ABSENCE_CLOSED_UNASSIGNED_NOTE,
+      updatedAt: new Date(),
+    })
+    .where(
+      and(
+        eq(absenceRequests.id, id),
+        eq(absenceRequests.status, "pending"),
+        sql`not exists (
+          select 1 from ${weeklyShifts}
+          where ${weeklyShifts.tutorId} = ${absenceRequests.tutorId}
+            and ${weeklyShifts.date} = ${absenceRequests.date}
+            and ${weeklyShifts.slotNumber} = ${absenceRequests.slotNumber}
+        )`,
+      ),
+    )
+    .returning({
+      tutorId: absenceRequests.tutorId,
+      date: absenceRequests.date,
+      slotNumber: absenceRequests.slotNumber,
+    });
+
+  if (updated.length === 0) {
+    // 0 行の理由を見分ける。まだ pending なら「今も担当」で弾いた
+    const [row] = await db
+      .select({ status: absenceRequests.status })
+      .from(absenceRequests)
+      .where(eq(absenceRequests.id, id))
+      .limit(1);
+    return {
+      ok: false,
+      error:
+        row?.status === "pending"
+          ? "このコマは今も担当なので、承認か却下をしてください。"
+          : "処理できませんでした（既に対応済みの可能性があります）。",
+    };
+  }
+
+  const { tutorId, date, slotNumber } = updated[0];
+  const meta = await getSlotMeta();
+  const slotLabel = meta.get(slotNumber)?.label ?? `${slotNumber}限`;
+  const { label } = weekdayOf(date);
+  // ⚠️ 「却下」と言わない。中立に、担当でなくなったことだけを伝える
+  await notify([tutorId], {
+    type: "absence_result",
+    title: "欠勤申請は不要になりました（担当が変わったため）",
+    body: `対象日: ${date}（${label}）${slotLabel} ／ このコマは今はあなたの担当ではありません。`,
+    href: "/tutor/absences",
+  });
+
+  revalidatePath("/admin/requests");
+  revalidatePath("/tutor/absences");
+  return { ok: true };
 }
