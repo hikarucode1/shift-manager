@@ -1,3 +1,8 @@
+import {
+  closeAction,
+  type PendingSwapApproval,
+} from "@/lib/pending-swap-approval";
+
 /**
  * 承認済み代講を取り消したあと、教室長に出す知らせ。
  *
@@ -8,14 +13,18 @@
  *
  * ⚠️ **講師に知らせたとは書かない。** 講師への訂正は best-effort (失敗しても
  * 取り消しは成功扱い) で、代講者 B には送らない。教室長に伝えるのは、
- * 教室長がすべきこと (承認か却下) だけにする
+ * 教室長がすべきこと (承認か却下) だけにする。
+ *
+ * ⚠️ 承認できない理由と閉じ方 (却下 / 取り下げ) は、「未対応」タブと同じ
+ * `pendingSwapApproval` の結果から作る。ここで文言を持つと、理由が増えたとき
+ * にずれる
  */
 
 /** 取り消したコマに元講師の pending 募集が残っているか (#283) */
 export type PendingSwapAfterCancel = {
   requesterName: string;
-  /** 承認できるか (`isPendingSwapApprovable`) */
-  approvable: boolean;
+  isProxy: boolean;
+  approval: PendingSwapApproval;
 } | null;
 
 export function swapCancelNotice(res: {
@@ -31,9 +40,9 @@ export function swapCancelNotice(res: {
   const p = res.pendingSwap;
   if (p) {
     parts.push(
-      p.approvable
-        ? `このコマには ${p.requesterName} さんの交代申請が残っていて、担当が戻ったため再び承認できます。「未対応」タブで承認するか、却下（教室長が出した代理募集なら取り下げ）してください。`
-        : `このコマには ${p.requesterName} さんの交代申請が残っていますが、過去のコマなので承認できません。「未対応」タブで却下（教室長が出した代理募集なら取り下げ）してください。`,
+      p.approval.approvable
+        ? `このコマには ${p.requesterName} さんの交代申請が残っていて、担当が戻ったため再び承認できます。「未対応」タブで承認するか、${closeAction(p.isProxy)}`
+        : `このコマには ${p.requesterName} さんの交代申請が「未対応」タブに残っています。${p.approval.notice ?? ""}`,
     );
   }
   return parts.join("");

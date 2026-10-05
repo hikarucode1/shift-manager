@@ -291,14 +291,14 @@ export async function isTutorBusyAt(
  * よう、ここに 1 つだけ置く。`swap_requests_active_uniq` (0006) が
  * (requester_id, date, slot_number) の pending を 1 件に制限している
  */
-export async function findPendingSwapId(
+export async function findPendingSwap(
   requesterId: string,
   date: string,
   slotNumber: number,
   executor: Executor = db,
-): Promise<string | null> {
+): Promise<{ id: string; isProxy: boolean } | null> {
   const rows = await executor
-    .select({ id: swapRequests.id })
+    .select({ id: swapRequests.id, createdBy: swapRequests.createdBy })
     .from(swapRequests)
     .where(
       and(
@@ -309,7 +309,10 @@ export async function findPendingSwapId(
       ),
     )
     .limit(1);
-  return rows[0]?.id ?? null;
+  const r = rows[0];
+  if (!r) return null;
+  // 代理募集 (#231) の判定は一覧 (`getPendingSwapRequests`) と同じ式
+  return { id: r.id, isProxy: r.createdBy !== null && r.createdBy !== requesterId };
 }
 
 /**

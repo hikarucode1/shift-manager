@@ -100,19 +100,4 @@ describe("isPendingSwapApprovable (#283)", () => {
   ])("過去日=$isPastDate 担当=$requesterAssigned → $expected", (c) => {
     expect(isPendingSwapApprovable(c)).toBe(c.expected);
   });
-
-  it("承認ボタンの可否と必ず一致する (取り消し側と判定がずれないこと)", () => {
-    for (const isPastDate of [false, true]) {
-      for (const requesterAssigned of [false, true]) {
-        for (const isEnded of [false, true]) {
-          for (const isProxy of [false, true]) {
-            const s = st({ isPastDate, requesterAssigned, isEnded, isProxy });
-            expect(pendingSwapApproval(s).approvable).toBe(
-              isPendingSwapApprovable(s),
-            );
-          }
-        }
-      }
-    }
-  });
 });

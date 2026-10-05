@@ -6,7 +6,8 @@ import { and, eq } from "drizzle-orm";
 import { requireRole } from "@/lib/auth";
 import { notify } from "@/lib/notifications";
 import { db } from "@/db/client";
-import { absenceRequests, swapRequests, weeklyShifts } from "@/db/schema";
+import { absenceRequests, weeklyShifts } from "@/db/schema";
+import { findPendingSwap } from "@/lib/swaps";
 import { isUniqueViolation } from "@/lib/db-errors";
 import { getSlotMeta } from "@/lib/slot-meta";
 import { isValidIsoDate, weekdayOf } from "@/lib/week";
@@ -181,18 +182,8 @@ export async function createAbsenceOnBehalf(
     };
   }
 
-  const swapDup = await db
-    .select({ id: swapRequests.id })
-    .from(swapRequests)
-    .where(
-      and(
-        eq(swapRequests.requesterId, tutorId),
-        eq(swapRequests.date, date),
-        eq(swapRequests.slotNumber, slotNumber),
-        eq(swapRequests.status, "pending"),
-      ),
-    )
-    .limit(1);
+  // 記録・取り消し (#253 / #283) と同じ関数で探す
+  const swapDup = await findPendingSwap(tutorId, date, slotNumber);
 
   try {
     await db.insert(absenceRequests).values({
@@ -232,5 +223,5 @@ export async function createAbsenceOnBehalf(
 
   revalidatePath("/admin/requests");
   revalidatePath("/tutor/absences");
-  return { ok: true, pendingSwap: swapDup.length > 0 };
+  return { ok: true, pendingSwap: swapDup !== null };
 }
