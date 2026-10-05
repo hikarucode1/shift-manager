@@ -55,7 +55,7 @@ function closeHint(isProxy: boolean): string {
   return isProxy ? "取り下げは可能です" : "却下は可能です";
 }
 
-function closeAction(isProxy: boolean): string {
+export function closeAction(isProxy: boolean): string {
   return isProxy ? "取り下げてください。" : "却下してください。";
 }
 
@@ -68,14 +68,34 @@ function blocked(reason: string, isProxy: boolean): PendingSwapApproval {
   };
 }
 
+/**
+ * その募集を承認できるか (#283)。**画面側の定義はここ 1 つ。**
+ *
+ * 「未対応」タブの承認ボタン (`pendingSwapApproval`) と、記録を取り消して
+ * 募集が再び承認できるようになったかの判定 (`cancelApprovedSwap`) が共有する。
+ *
+ * ⚠️ **実際に承認するサーバ (`decideSwapRequest`) はこれを通らない。** 同じ
+ * 条件を自前で持つ (過去日ガードと、付け替えの UPDATE の行数)。条件を
+ * 足すときは**両方**変えること。片方だけだと、ボタンが押せるのに必ず失敗する
+ * (#262 の再演) か、取り消し側が「また承認できます」と嘘を言う
+ */
+export function isPendingSwapApprovable(
+  s: Pick<PendingSwapApprovalState, "isPastDate" | "requesterAssigned">,
+): boolean {
+  return !s.isPastDate && s.requesterAssigned;
+}
+
 export function pendingSwapApproval(
   s: PendingSwapApprovalState,
 ): PendingSwapApproval {
-  if (s.isPastDate) {
-    return blocked("過去のコマのため承認できません", s.isProxy);
-  }
-  if (!s.requesterAssigned) {
-    return blocked("このコマは担当が変わったため承認できません", s.isProxy);
+  if (!isPendingSwapApprovable(s)) {
+    // 理由の順序は `decideSwapRequest` と揃える (過去日が先)
+    return blocked(
+      s.isPastDate
+        ? "過去のコマのため承認できません"
+        : "このコマは担当が変わったため承認できません",
+      s.isProxy,
+    );
   }
   if (s.isEnded) {
     return {

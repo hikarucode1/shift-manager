@@ -11,6 +11,7 @@ import type {
   RequestLog,
 } from "@/lib/request-log-query";
 import { isIndeterminate, toFailedResult } from "@/lib/action-failure";
+import { swapCancelNotice } from "@/lib/swap-cancel-notice";
 import { fmtDateTimeJst } from "@/lib/datetime";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -60,27 +61,25 @@ export function RequestLogPanel({
     }
     setNotice(null);
     startTransition(async () => {
-      // ⚠️ kind による分岐はここだけ。server action の宛先なので構造上不可避
+      // ⚠️ kind による分岐はここだけ。server action の宛先なので構造上不可避。
+      // 成功時の文言も宛先ごとに決まるので、ここで一緒に作る
       const res = await (entry.kind === "absence"
-        ? cancelApprovedAbsence({ id: entry.id, reason: trimmed })
-        : cancelApprovedSwap({ id: entry.id, reason: trimmed })
+        ? cancelApprovedAbsence({ id: entry.id, reason: trimmed }).then((r) =>
+            r.ok ? { ok: true as const, text: "取り消しました。" } : r,
+          )
+        : cancelApprovedSwap({ id: entry.id, reason: trimmed }).then((r) =>
+            // ⚠️ 交代の取り消しで同一コマの欠勤が自動失効していたら必ず伝える。
+            // 黙って消すと、#217 で登録した欠勤が消えたことに気づけない (#225)。
+            // 同じコマに元講師の募集が残っていれば、それも伝える (#283)
+            r.ok ? { ok: true as const, text: swapCancelNotice(r) } : r,
+          )
       ).catch(toFailedResult);
       if (!res.ok) {
         setNotice({ type: "error", text: res.error });
         if (isIndeterminate(res)) router.refresh();
         return;
       }
-      // ⚠️ 交代の取り消しで同一コマの欠勤が自動失効していたら必ず伝える。
-      // 黙って消すと、#217 で登録した欠勤が消えたことに気づけない (#225)
-      const expired =
-        "expiredAbsences" in res ? (res.expiredAbsences as number) : 0;
-      setNotice({
-        type: "ok",
-        text:
-          expired > 0
-            ? "取り消しました。このコマの欠勤申請が交代成立時に自動失効しています。必要なら「代理で欠勤を登録する」から登録し直してください。"
-            : "取り消しました。",
-      });
+      setNotice({ type: "ok", text: res.text });
       setOpenId(null);
       setReason("");
       router.refresh();

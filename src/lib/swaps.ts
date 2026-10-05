@@ -283,6 +283,39 @@ export async function isTutorBusyAt(
 }
 
 /**
+ * その講師がそのコマに出している pending の募集 (無ければ null)。
+ *
+ * 記録 (`recordSubstitution`, #253) が「承認できなくなりました」を送る相手と、
+ * 記録の取り消し (`cancelApprovedSwap`, #283) が「また承認できる」と訂正する
+ * 相手は、**同じ募集でなければならない**。対になる 2 経路で条件がずれない
+ * よう、ここに 1 つだけ置く。`swap_requests_active_uniq` (0006) が
+ * (requester_id, date, slot_number) の pending を 1 件に制限している
+ */
+export async function findPendingSwap(
+  requesterId: string,
+  date: string,
+  slotNumber: number,
+  executor: Executor = db,
+): Promise<{ id: string; isProxy: boolean } | null> {
+  const rows = await executor
+    .select({ id: swapRequests.id, createdBy: swapRequests.createdBy })
+    .from(swapRequests)
+    .where(
+      and(
+        eq(swapRequests.requesterId, requesterId),
+        eq(swapRequests.date, date),
+        eq(swapRequests.slotNumber, slotNumber),
+        eq(swapRequests.status, "pending"),
+      ),
+    )
+    .limit(1);
+  const r = rows[0];
+  if (!r) return null;
+  // 代理募集 (#231) の判定は一覧 (`getPendingSwapRequests`) と同じ式
+  return { id: r.id, isProxy: r.createdBy !== null && r.createdBy !== requesterId };
+}
+
+/**
  * 行 → コマ別の出勤講師 id。DB を触らない純関数なのでテストできる。
  */
 export function groupBusyBySlot(
