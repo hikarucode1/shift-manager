@@ -161,13 +161,14 @@ describe("planCancelNotices の送り先 (#283 / #287 / #288)", () => {
     expect(p.substituteSuffix).not.toBe("");
   });
 
-  it("B の募集: 分からないときは応募者には送るが、教室長と B には出さない", () => {
+  it("B の募集: 分からないときは応募者と B には伝えるが、教室長には出さない", () => {
     // B の募集は二度と承認できないので「承認できなくなりました」は嘘に
-    // ならないが、閉じたかもしれない募集を「残っています」とは言わない
+    // ならない。B への追記も同じ事実。ただし閉じたかもしれない募集を
+    // 教室長に「残っています」とは言わない
     const p = plan({ substituteSwap: B, substituteRecheck: "unknown" });
     expect(p.orphanedSwapId).toBe("swap-b");
     expect(p.pendingSwaps).toEqual([]);
-    expect(p.substituteSuffix).toBe("");
+    expect(p.substituteSuffix).not.toBe("");
   });
 
   it("B の募集: 閉じていたら誰にも出さない", () => {
