@@ -1,5 +1,5 @@
 import "server-only";
-import { and, asc, between, desc, eq, gte, inArray } from "drizzle-orm";
+import { and, asc, between, desc, eq, gte, inArray, sql } from "drizzle-orm";
 import { db } from "@/db/client";
 import { absenceRequests, profiles, weeklyShifts } from "@/db/schema";
 import { ABSENCE_AUTO_EXPIRED_NOTE } from "@/lib/absence-expiry";
@@ -54,6 +54,12 @@ export type PendingAbsence = AbsenceRequestRow & {
    * 「過去のコマの欠勤を承認しようとしている」と気づけるようにするための印。
    */
   isEnded: boolean;
+  /**
+   * 申請した講師が今もそのコマの担当か (#289)。false なら承認させず却下を
+   * 促す (`pendingAbsenceApproval`)。条件はサーバ (`decideAbsenceRequest`) の
+   * `isTutorBusyAt` と同じ (`weekly_shifts` に (講師, 日, コマ) の行があるか)
+   */
+  tutorAssigned: boolean;
 };
 
 function slotLabelOf(
@@ -174,6 +180,14 @@ export async function getPendingAbsenceRequests(): Promise<PendingAbsence[]> {
       decidedAt: absenceRequests.decidedAt,
       createdBy: absenceRequests.createdBy,
       createdAt: absenceRequests.createdAt,
+      // ⚠️ join ではなく exists にする。weekly_shifts は (upload, 講師, 日, コマ)
+      // で一意なので、join すると行が重複しうる
+      tutorAssigned: sql<boolean>`exists (
+        select 1 from ${weeklyShifts}
+        where ${weeklyShifts.tutorId} = ${absenceRequests.tutorId}
+          and ${weeklyShifts.date} = ${absenceRequests.date}
+          and ${weeklyShifts.slotNumber} = ${absenceRequests.slotNumber}
+      )`,
     })
     .from(absenceRequests)
     .innerJoin(profiles, eq(profiles.id, absenceRequests.tutorId))
@@ -200,6 +214,7 @@ export async function getPendingAbsenceRequests(): Promise<PendingAbsence[]> {
     autoExpired:
       r.decisionNote === ABSENCE_AUTO_EXPIRED_NOTE && r.decidedBy === null,
     isEnded: isSlotPast(r.date, slotLabelOf(meta, r.slotNumber).end),
+    tutorAssigned: r.tutorAssigned,
   }));
 }
 

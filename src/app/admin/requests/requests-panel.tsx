@@ -11,6 +11,7 @@ import { shortDate } from "@/lib/week";
 import { cn } from "@/lib/utils";
 import { avatarColor, avatarInitial } from "@/lib/avatar";
 import { decideAbsenceRequest } from "@/app/tutor/absences/actions";
+import { pendingAbsenceApproval } from "@/lib/pending-absence-approval";
 
 export function RequestsPanel({ pending }: { pending: PendingAbsence[] }) {
   const router = useRouter();
@@ -76,7 +77,11 @@ export function RequestsPanel({ pending }: { pending: PendingAbsence[] }) {
         </p>
       ) : (
         <div className="space-y-3">
-          {pending.map((p) => (
+          {/* 担当が変わったコマは承認させない (#289)。却下は塞がない。
+              カードごとに 1 回だけ判定して、注意とボタンで同じ結果を使う */}
+          {pending
+            .map((p) => ({ p, ap: pendingAbsenceApproval(p) }))
+            .map(({ p, ap }) => (
             <div key={p.id} className="space-y-3 rounded-lg border p-3.5">
               <div className="flex items-start gap-3">
                 <span
@@ -108,9 +113,14 @@ export function RequestsPanel({ pending }: { pending: PendingAbsence[] }) {
                   </p>
                   {/* #211: 「実施済み = 押してはいけない」と誤読されないように。
                       後から欠勤を登録するのは正当な実務なので承認してよい */}
-                  {p.isEnded && (
+                  {p.isEnded && ap.approvable && (
                     <p className="text-xs text-muted-foreground">
                       終了したコマです。実際に欠勤していた場合は承認して構いません。
+                    </p>
+                  )}
+                  {ap.notice && (
+                    <p className="text-xs font-medium text-destructive">
+                      {ap.notice}
                     </p>
                   )}
                 </div>
@@ -165,7 +175,7 @@ export function RequestsPanel({ pending }: { pending: PendingAbsence[] }) {
                 <div className="flex gap-2">
                   <Button
                     size="sm"
-                    disabled={isPending}
+                    disabled={isPending || !ap.approvable}
                     onClick={() =>
                       run(
                         () =>
