@@ -102,6 +102,16 @@ describe("swapCancelNotice (planCancelNotices 経由)", () => {
     expect(text.indexOf("山田")).toBeLessThan(text.indexOf("佐藤"));
   });
 
+  it("欠勤の自動失効と募集の両方があれば、両方出す", () => {
+    const text = adminText(
+      plan({ requesterSwap: A, requesterRecheck: "pending" }),
+      2,
+    );
+    expect(text).toContain("自動失効しています");
+    expect(text).toContain("再び承認できます");
+    expect(text.indexOf("自動失効")).toBeLessThan(text.indexOf("再び承認"));
+  });
+
   it("講師に知らせたとは言わない (通知は best-effort で、代講者には送らない)", () => {
     const text = adminText(
       plan({
@@ -172,27 +182,23 @@ describe("planCancelNotices の送り先 (#283 / #287 / #288)", () => {
 
 describe("substituteCancelSuffix (#287 / #288)", () => {
   it("B の名前で募集が出ていなければ何も足さない", () => {
-    expect(substituteCancelSuffix(null)).toBe("");
+    expect(substituteCancelSuffix(false)).toBe("");
   });
 
-  it("自分で出した募集なら、取り下げ方まで書く", () => {
-    const s = substituteCancelSuffix({ isProxy: false });
+  it("出ていれば承認できないことと、教室長が対応することを書く", () => {
+    const s = substituteCancelSuffix(true);
     expect(s).toContain(
       "あなたの名前で出ている交代・代講の募集は承認できません",
     );
-    expect(s).toContain("「交代申請」の画面から取り下げてください。");
+    expect(s).toContain("教室長が対応します。");
   });
 
-  it("代理募集は代講者に取り下げられないので、教室長が対応すると書く (#231)", () => {
-    const s = substituteCancelSuffix({ isProxy: true });
-    expect(s).toContain("教室長が対応します。");
-    expect(s).not.toContain("取り下げてください");
+  it("B には取り下げを頼まない (閉じるのは教室長だけ。2 通目を防ぐ)", () => {
+    expect(substituteCancelSuffix(true)).not.toContain("取り下げ");
   });
 
   it("「あなたが出した」とは書かない (代理募集のこともある)", () => {
-    expect(substituteCancelSuffix({ isProxy: true })).not.toContain(
-      "あなたが出した",
-    );
+    expect(substituteCancelSuffix(true)).not.toContain("あなたが出した");
   });
 });
 

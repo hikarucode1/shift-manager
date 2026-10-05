@@ -65,22 +65,18 @@ export function swapCancelNotice(res: {
  * - 「このコマの募集」と書くと、B が元講師の募集に応募している場合にその
  *   応募まで無効と読めるので、「あなたの名前で出ている」と限定する。教室長の
  *   代理募集 (#231) もあるので「あなたが出した」とは書かない
- * - **次の一手を書く。** B が自分で出した募集なら「交代申請」の画面から
- *   取り下げられる。代理募集は B には取り下げられない (`cancelSwapRequest` が
- *   createdBy で弾く) ので、教室長が対応すると書く
+ * - **閉じるのは教室長だけ。** B にも「取り下げて」と頼むと、B と教室長の
+ *   どちらかが動いた時点で応募者に 2 通目 (取り下げ / 却下) が届き、B の
+ *   募集が後から「却下」と出ることもある (PR #288 のレビュー)。記録 (#253) と
+ *   同じく教室長が閉じる形に揃え、B には「教室長が対応します」とだけ伝える
  * - 行き先は変えない (`/tutor/open-swaps`)。この通知の本題は代講が取り消された
  *   ことで、その結果 (#245「決まった代講が取り消されました」) が見えるのは
- *   open-swaps だけ。「交代申請」の画面には A の行は出ない (PR #288 のレビュー)
+ *   open-swaps だけ
  */
-export function substituteCancelSuffix(
-  substituteSwap: { isProxy: boolean } | null,
-): string {
-  if (!substituteSwap) return "";
-  return ` ／ このコマの担当ではなくなったため、あなたの名前で出ている交代・代講の募集は承認できません。${
-    substituteSwap.isProxy
-      ? "教室長が対応します。"
-      : "「交代申請」の画面から取り下げてください。"
-  }`;
+export function substituteCancelSuffix(hasSubstituteSwap: boolean): string {
+  return hasSubstituteSwap
+    ? " ／ このコマの担当ではなくなったため、あなたの名前で出ている交代・代講の募集は承認できません。教室長が対応します。"
+    : "";
 }
 
 /** 募集の応募者への通知の理由。経路で違う (#288 レビュー) */
@@ -186,26 +182,27 @@ export function planCancelNotices(i: {
       isProxy: swap.isProxy,
     }),
   });
+  // pending と確かめられた募集だけ、教室長への案内 (と B への追記) に出す
   const a =
     i.requesterSwap && i.requesterRecheck === "pending"
-      ? entryFor(i.requesterSwap, i.requesterName, true)
+      ? {
+          id: i.requesterSwap.id,
+          entry: entryFor(i.requesterSwap, i.requesterName, true),
+        }
       : null;
-  const bConfirmed =
+  const b =
     i.substituteSwap && i.substituteRecheck === "pending"
       ? entryFor(i.substituteSwap, i.substituteName, false)
       : null;
   return {
-    revivedSwapId:
-      i.requesterSwap && a && a.approval.approvable ? i.requesterSwap.id : null,
+    revivedSwapId: a?.entry.approval.approvable ? a.id : null,
     orphanedSwapId:
       i.substituteSwap && i.substituteRecheck !== "closed"
         ? i.substituteSwap.id
         : null,
-    pendingSwaps: [a, bConfirmed].filter(
+    pendingSwaps: [a?.entry ?? null, b].filter(
       (e): e is PendingSwapAfterCancel => e !== null,
     ),
-    substituteSuffix: substituteCancelSuffix(
-      bConfirmed && i.substituteSwap ? i.substituteSwap : null,
-    ),
+    substituteSuffix: substituteCancelSuffix(b !== null),
   };
 }

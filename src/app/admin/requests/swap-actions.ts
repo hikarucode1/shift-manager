@@ -1203,8 +1203,9 @@ export async function recordSubstitution(
     };
   }
 
-  const meta = await getSlotMeta();
-  const slotLabel = meta.get(slotNumber)?.label ?? `${slotNumber}限`;
+  // ⚠️ 記録はもうコミット済み。コマ名の取得で投げると通知が 1 通も出ず、
+  // 記録は承認済みの重複チェックで押し直せない (`slotLabelSafe`)
+  const slotLabel = await slotLabelSafe(slotNumber);
   // ⚠️ 二人とも自分では何もしていないので、通知が唯一の手がかり。
   // 承認経由の代講が両者に通知しているのと揃える
   await Promise.all([
