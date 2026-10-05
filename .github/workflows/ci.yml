@@ -32,25 +32,37 @@ jobs:
           cache: npm
 
       - name: Install dependencies
+        id: install
         run: npm ci
 
+      # ⚠️ install より後のステップは、前のステップが落ちても走らせる。
+      # 1 回の CI で全部の失敗を出すため (テストが落ちてビルドの失敗が隠れる、
+      # を防ぐ)。install 自体が落ちたら後ろは意味が無いので止める
       - name: Typecheck
         run: npm run typecheck
 
       - name: Lint
+        if: ${{ !cancelled() && steps.install.outcome == 'success' }}
         run: npm run lint
 
       - name: Test
+        if: ${{ !cancelled() && steps.install.outcome == 'success' }}
         # DB には接続しない (DB を使うテストは `@/db/client` を vi.mock で差し替える)。
+        # mock し忘れたテストが実 DB や .env.local に向かわないよう、届かない
+        # ダミーの DATABASE_URL を明示する (接続を試みたら即座に失敗する)。
         # TZ の固定は vitest.config.ts 側で行う (#279 / #282)。ここで重ねて指定すると
         # 定義が 2 か所になるので置かない
+        env:
+          DATABASE_URL: postgresql://user:pass@127.0.0.1:9/postgres
         run: npm test
 
       - name: RLS guard (static, no DB)
+        if: ${{ !cancelled() && steps.install.outcome == 'success' }}
         # 新規 public テーブルに RLS+REVOKE が無ければ落とす (#38)
         run: npm run check:rls
 
       - name: Build
+        if: ${{ !cancelled() && steps.install.outcome == 'success' }}
         # DB/Supabase へは接続しない (全ページ動的)。
         # モジュール読み込み時の eager 参照対策にダミー値を渡すだけ。
         env:
