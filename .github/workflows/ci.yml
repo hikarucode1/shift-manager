@@ -22,6 +22,10 @@ jobs:
     # 参照しており、変えると全 PR がマージできなくなる (test を足した #284 でも据え置き)
     name: typecheck / lint / build
     runs-on: ubuntu-latest
+    # テストが何かを開いたまま終わらない (mock し忘れた DB クライアント、タイマー
+    # など) と、既定では 6 時間待たされ、その間 PR がマージできない。普段は
+    # 2 分程度なので、余裕を見て打ち切る
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4
 
@@ -39,6 +43,7 @@ jobs:
       # 1 回の CI で全部の失敗を出すため (テストが落ちてビルドの失敗が隠れる、
       # を防ぐ)。install 自体が落ちたら後ろは意味が無いので止める
       - name: Typecheck
+        if: ${{ !cancelled() && steps.install.outcome == 'success' }}
         run: npm run typecheck
 
       - name: Lint
@@ -48,8 +53,10 @@ jobs:
       - name: Test
         if: ${{ !cancelled() && steps.install.outcome == 'success' }}
         # DB には接続しない (DB を使うテストは `@/db/client` を vi.mock で差し替える)。
-        # mock し忘れたテストが実 DB や .env.local に向かわないよう、届かない
-        # ダミーの DATABASE_URL を明示する (接続を試みたら即座に失敗する)。
+        # CI に .env.local は無いので、DATABASE_URL が未設定でも DB には届かない。
+        # それでも「テストは DB に接続しない」という前提をここで明示するため、
+        # 届かないポートのダミーを置く (Build のダミーとは目的が違う: あちらは
+        # モジュール読み込み時に値が要るだけ)。
         # TZ の固定は vitest.config.ts 側で行う (#279 / #282)。ここで重ねて指定すると
         # 定義が 2 か所になるので置かない
         env:
