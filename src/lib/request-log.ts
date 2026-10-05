@@ -35,7 +35,10 @@ export type RequestLogEvent =
   | "rejected"
   /** 教室長が承認済みを取り消した (#213 / #219) */
   | "cancelled-by-admin"
-  /** 教室長が承認前の代理募集を取り下げた (#231、交代のみ) */
+  /**
+   * 教室長が承認前に閉じた。交代: 代理募集の取り下げ (#231)。欠勤: 担当で
+   * なくなったコマの申請を「不要として閉じる」(#289)
+   */
   | "withdrawn-by-admin"
   /** 講師が自分で取り下げた */
   | "cancelled-by-tutor"
@@ -144,6 +147,8 @@ export type AbsenceLogInput = CommonInput & {
   isProxy: boolean;
   /** `decision_note` が交代成立の自動失効マーカーと一致するか */
   autoExpired: boolean;
+  /** `decision_note` が「不要として閉じる」(#289) のマーカーと一致するか */
+  closedUnassigned: boolean;
 };
 
 export type SwapLogInput = CommonInput & {
@@ -229,9 +234,15 @@ export function toAbsenceLogEntry(i: AbsenceLogInput): RequestLogEntry {
             // 「失効」に化ける。自動失効は必ず actorName が無いので AND で縛る
             i.autoExpired && i.actorName === null
             ? "auto-expired"
-            : i.actorName !== null
-              ? "cancelled-by-admin"
-              : "cancelled-by-tutor";
+            : // 「不要として閉じる」(#289) は承認を経ていないので、承認済みを
+              // 取り消した「取り消し」と分ける。note は自由文と衝突しうる
+              // (cancelApprovedAbsence の理由欄) が、そちらは承認済みから来る
+              // ので取り消しボタンの有無などに影響しない。ラベルの誤りで済む
+              i.closedUnassigned && i.actorName !== null
+              ? "withdrawn-by-admin"
+              : i.actorName !== null
+                ? "cancelled-by-admin"
+                : "cancelled-by-tutor";
   // 欠勤に代講者の概念は無い
   return base(
     i,

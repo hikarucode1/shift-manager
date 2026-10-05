@@ -182,7 +182,8 @@ const DecideInput = z.object({
 /**
  * 教室長: 欠勤申請を承認 / 却下。
  *
- * ⚠️ **日付・コマのガードを意図的に置いていない** (#211)。交代・代講の承認
+ * ⚠️ **担当中のコマには、日付・コマのガードを意図的に置いていない** (#211)。
+ * 例外は担当でなくなったコマだけ (#289。下の「例外」を参照)。交代・代講の承認
  * (`decideSwapRequest`) には `date < jstToday()` があるので「片方だけ直し忘れ」に
  * 見えるが、非対称は意図したもの:
  *
@@ -242,8 +243,9 @@ export async function decideAbsenceRequest(
   //   (講師, 日付, コマ) の組で残り、担当に戻ると欠勤マークが付くため (#291)。
   //   終わったコマは休んだ記録として承認できる
   // 「コマが終わったか」は時刻だけで決まるので先に判定し、担当であることが
-  // 要るときは UPDATE の WHERE に入れて、確認と書き込みを 1 つの文にする
-  // (間に担当が変わる窓を作らない)
+  // 要るときは UPDATE の WHERE に入れて、確認と書き込みを 1 つの文にする。
+  // ⚠️ 窓は**狭まるが消えない**。exists は weekly_shifts をロックしないので、
+  // CSV の取り込み (日付ごとに消して入れ直す) と同時に走ると、すり抜けうる
   const [target] = await db
     .select({
       date: absenceRequests.date,
@@ -260,12 +262,16 @@ export async function decideAbsenceRequest(
       error: "処理できませんでした（既に対応済みの可能性があります）。",
     };
   }
-  const ifUnassigned = pendingAbsenceActions({
-    tutorAssigned: false,
-    isEnded: await hasSlotEnded(target.date, target.slotNumber),
-  });
+  // 却下は「コマが終わったか」に関係なく担当が要るので、問い合わせを省く。
+  // 承認だけ、終わったかで変わる。どちらも `pendingAbsenceActions` (カードと
+  // 共有) を「担当でない」前提で引いて決める
+  const ifUnassigned = (isEnded: boolean) =>
+    pendingAbsenceActions({ tutorAssigned: false, isEnded });
   const requireAssigned =
-    decision === "approved" ? !ifUnassigned.canApprove : !ifUnassigned.canReject;
+    decision === "approved"
+      ? !ifUnassigned(await hasSlotEnded(target.date, target.slotNumber))
+          .canApprove
+      : !ifUnassigned(false).canReject;
 
   const updated = await db
     .update(absenceRequests)

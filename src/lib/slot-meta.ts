@@ -60,3 +60,21 @@ export const getSlotMeta = cache(async (): Promise<Map<number, SlotMeta>> => {
 export function slotNumbers(meta: Map<number, SlotMeta>): number[] {
   return [...meta.keys()].sort((a, b) => a - b);
 }
+
+/**
+ * コマの表示名。`slot_definitions.label` は自由文で admin が変更できるので
+ * `${n}限` を直書きしない (通知だけ他の画面とズレる)。
+ *
+ * ⚠️ **投げない。** 決定をコミットした後にこれが失敗して action ごと reject
+ * すると、通知が 1 通も出ないまま「失敗」と表示される (行はもう元の状態では
+ * ないので再実行もできない)。ラベルが取れないくらいなら既定表記で送る。
+ * swap-actions と absence-actions の、書き込み後の通知文で共有する
+ */
+export async function slotLabelSafe(n: number): Promise<string> {
+  try {
+    return (await getSlotMeta()).get(n)?.label ?? `${n}限`;
+  } catch (e) {
+    console.error("slotLabelSafe failed", e);
+    return `${n}限`;
+  }
+}

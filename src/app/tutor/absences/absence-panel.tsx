@@ -320,6 +320,14 @@ export function AbsencePanel({
                         <p className="mt-0.5 text-sm text-muted-foreground">
                           {h.decisionNote}（このコマは代講が入ったため、欠勤の記録は不要になりました）
                         </p>
+                      ) : h.closedUnassigned ? (
+                        // ⚠️ 「不要として閉じる」(#289) も赤字にしない。担当が
+                        // 変わった (またはコマが無くなった) ことの説明で、
+                        // 却下理由ではない。赤字の「教室長より」だと叱られた
+                        // と読める (PR #290 のレビュー)
+                        <p className="mt-0.5 text-sm text-muted-foreground">
+                          担当が変わったか、コマが無くなったため、この欠勤申請は不要になりました
+                        </p>
                       ) : (
                         <p className="mt-0.5 text-sm text-destructive">
                           教室長より: {h.decisionNote}

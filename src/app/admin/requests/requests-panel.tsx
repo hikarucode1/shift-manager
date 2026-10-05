@@ -41,6 +41,7 @@ export function RequestsPanel({ pending }: { pending: PendingAbsence[] }) {
      * 直して「不要として閉じる」の出し分けに切り替える
      */
     refreshOnError = false,
+    onError?: () => void,
   ) {
     setNotice(null);
     startTransition(async () => {
@@ -55,6 +56,7 @@ export function RequestsPanel({ pending }: { pending: PendingAbsence[] }) {
         // サーバーの真実を取りに行く (返り値の { ok: false } は確実に
         // 書いていないので触らない)。
         if (isIndeterminate(res) || refreshOnError) router.refresh();
+        onError?.();
       }
     });
   }
@@ -163,8 +165,13 @@ export function RequestsPanel({ pending }: { pending: PendingAbsence[] }) {
                               setRejectNote("");
                             },
                             // 担当でないと弾かれたら、読み直して「不要として
-                            // 閉じる」に切り替える (#289)
+                            // 閉じる」に切り替える (#289)。入力内容も消す —
+                            // 残すと、あとで担当に戻ったとき古い入力欄が出る
                             true,
+                            () => {
+                              setRejectId(null);
+                              setRejectNote("");
+                            },
                           )
                         }
                       >

@@ -9,7 +9,7 @@ import { db } from "@/db/client";
 import { absenceRequests, weeklyShifts } from "@/db/schema";
 import { findPendingSwap } from "@/lib/swaps";
 import { isUniqueViolation } from "@/lib/db-errors";
-import { getSlotMeta } from "@/lib/slot-meta";
+import { getSlotMeta, slotLabelSafe } from "@/lib/slot-meta";
 import { isValidIsoDate, weekdayOf } from "@/lib/week";
 import { ABSENCE_CLOSED_UNASSIGNED_NOTE } from "@/lib/pending-absence-actions";
 import { absenceTutorAssigned } from "@/lib/absences";
@@ -247,8 +247,9 @@ const CloseUnassignedInput = z.object({
  * `pendingAbsenceActions`。
  *
  * ⚠️ **今も担当なら閉じない。** 担当かどうか (`absenceTutorAssigned`) は
- * UPDATE の WHERE に入れて、確認と書き込みを 1 つの文にする (間に担当が戻る
- * 窓を作らない)。
+ * UPDATE の WHERE に入れて、確認と書き込みを 1 つの文にする。窓は狭まるが
+ * 消えない (exists は weekly_shifts をロックしないので、CSV の取り込みと同時に
+ * 走るとすり抜けうる)。
  *
  * 状態は `cancelled`、理由は `ABSENCE_CLOSED_UNASSIGNED_NOTE`。台帳では教室長の
  * 「取り消し」として出て、コメント欄に理由が出る。`decided_by` は閉じた教室長
@@ -306,15 +307,9 @@ export async function closeUnassignedAbsence(
   }
 
   const { tutorId, date, slotNumber } = updated[0];
-  // ⚠️ コマ名の取得は失敗しても投げない。行はもう pending ではないので、
-  // ここで action ごと落ちると押し直せず、講師に通知が届かないまま残る
-  // (swap-actions.ts の `slotLabelSafe` と同じ理由)
-  let slotLabel = `${slotNumber}限`;
-  try {
-    slotLabel = (await getSlotMeta()).get(slotNumber)?.label ?? slotLabel;
-  } catch (e) {
-    console.error("closeUnassignedAbsence slot label failed", e);
-  }
+  // ⚠️ コマ名の取得は失敗しても投げない (`slotLabelSafe`)。行はもう pending
+  // ではないので、ここで action ごと落ちると押し直せず、講師に通知が届かない
+  const slotLabel = await slotLabelSafe(slotNumber);
   const { label } = weekdayOf(date);
   // ⚠️ 「却下」と言わない。中立に、担当でなくなったことだけを伝える。
   // コマごと無くなった (CSV で休日) 場合もあるので、カードの案内と揃える

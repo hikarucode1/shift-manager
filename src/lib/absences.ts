@@ -13,6 +13,7 @@ import {
 import { db } from "@/db/client";
 import { absenceRequests, profiles, weeklyShifts } from "@/db/schema";
 import { ABSENCE_AUTO_EXPIRED_NOTE } from "@/lib/absence-expiry";
+import { ABSENCE_CLOSED_UNASSIGNED_NOTE } from "@/lib/pending-absence-actions";
 import { getSlotMeta } from "@/lib/slot-meta";
 import { isSlotPast } from "@/lib/slot-time";
 import { jstToday, weekdayOf } from "@/lib/week";
@@ -44,6 +45,13 @@ export type AbsenceRequestRow = {
    * 判定は admin 側 (`request-log.ts`) と同じく `decided_by` との AND。
    */
   autoExpired: boolean;
+  /**
+   * 教室長が「不要として閉じる」(#289) で閉じたか。自動失効と同じく、
+   * `decisionNote` を赤字の「教室長より」で出さないために要る — 担当でなく
+   * なったことの説明で、叱っているのではない。判定は note と `decided_by`
+   * (閉じた教室長が入る) の AND
+   */
+  closedUnassigned: boolean;
   decidedAt: string | null;
   createdAt: string;
   /**
@@ -180,6 +188,8 @@ export async function getTutorAbsenceRequests(
     isProxy: r.createdBy !== null && r.createdBy !== r.tutorId,
     autoExpired:
       r.decisionNote === ABSENCE_AUTO_EXPIRED_NOTE && r.decidedBy === null,
+    closedUnassigned:
+      r.decisionNote === ABSENCE_CLOSED_UNASSIGNED_NOTE && r.decidedBy !== null,
     date: r.date,
     slotNumber: r.slotNumber,
     slotLabel: slotLabelOf(meta, r.slotNumber).label,
@@ -235,6 +245,8 @@ export async function getPendingAbsenceRequests(): Promise<PendingAbsence[]> {
     // pending が自動失効していることは無いが、判定は各取得関数で素直に計算する
     autoExpired:
       r.decisionNote === ABSENCE_AUTO_EXPIRED_NOTE && r.decidedBy === null,
+    closedUnassigned:
+      r.decisionNote === ABSENCE_CLOSED_UNASSIGNED_NOTE && r.decidedBy !== null,
     isEnded: isSlotPast(r.date, slotLabelOf(meta, r.slotNumber).end),
     tutorAssigned: r.tutorAssigned,
   }));
