@@ -15,8 +15,10 @@ import { StalledLoadingHint } from "@/components/stalled-loading-hint";
  *   - `notFound()` も同じ。loading.tsx が無ければ 404、あれば 200 +
  *     `<meta name="robots" content="noindex">`
  *   - `forbidden()` (403) は**今は使えない**。`experimental.authInterrupts`
- *     が未設定なので、呼ぶと設定エラーとして throw し、error.tsx の汎用画面
- *     (障害に見える) になる。有効にしても同じ仕組みで 200 になるはず (未実測)
+ *     が未設定なので、呼ぶと**ただの Error** として throw する。page から呼ぶと
+ *     error.tsx の汎用画面、layout の権限確認 (`resolveOrIncident` の中) から
+ *     呼ぶと握り潰されて SystemUnavailable + エラー ID になる。どちらも障害に
+ *     見える。有効にしても page からなら同じ仕組みで 200 になるはず (未実測)
  *
  * loading.tsx が Suspense 境界を作るため、throw がシェルごと落とさずに
  * 境界で受け止められる。したがって URL 直アクセス (実際の障害経路) を
@@ -27,12 +29,17 @@ import { StalledLoadingHint } from "@/components/stalled-loading-hint";
  *     error.tsx の `console.error` は**利用者のブラウザ**に出るだけで、
  *     運用側には届かない。サーバ側で追えるのは Vercel の関数ログだけ
  *     (layout の失敗は `reportIncident` がエラー ID 付きで残す)。
- *     `npm run check:migrations` の CI 自動化など別系統の検知が要る
+ *     別系統の検知が要る — migration の未適用は `check-migrations.yml`
+ *     (#204 / #206。main への push と毎日の cron) が既に見ている。
+ *     死活は #275 のエンドポイント (まだ無い)
  *   - 配下のページで `notFound()` を使っても 404 は返らない。**配下の
- *     ページからはステータスを決められない**ので、404 / 403 が要るルートは
- *     このセグメントの外に置くか、200 を受け入れる
- *     (layout は境界の外だが、throw せず SystemUnavailable を描画する作り
- *     なので、ステータスを返す場所には使えない。下の ⚠️ を参照)
+ *     ページからはステータスを決められない**。404 が要るときの選択肢:
+ *     - layout で `notFound()` / `redirect()` する。layout は境界の外で、
+ *       `resolveOrIncident` もこの 2 つは握り潰さず投げ直す
+ *       (`unstable_rethrow`, shell-guard.test.ts で固定) ので、404 / 3xx に
+ *       なるはず (未実測。#187 で実測したのは layout の throw → 500)
+ *     - そのルートをこのセグメントの外に置く
+ *     - 200 を受け入れる
  *   - 「エラー画面を出す」と「5xx / 404 を返す」は、このセグメント構成では
  *     両立しない。ステータスで死活を見たいなら、画面ではなく専用の
  *     エンドポイントを見る (#275。まだ無い)
@@ -42,8 +49,14 @@ import { StalledLoadingHint } from "@/components/stalled-loading-hint";
  * (同セグメントの error.tsx は layout の外側を守れないため。#187 で実測)。
  * そこで AdminLayout は requireRole() を `resolveOrIncident` で包み、失敗しても
  * throw せず SystemUnavailable を描画する (#188)。**DB 全断でも 500 にはならず
- * SystemUnavailable の「画面を表示できませんでした。」になる** (ステータスは 200 のはず。未実測)。
- * つまり**ステータスコードの監視では DB 全断も検知できない** (#275)。
+ * SystemUnavailable の「画面を表示できませんでした。」になる** (ステータスは
+ * 200 のはず。未実測)。
+ * ただし**認証 API が 401 / 404 を返す形の停止** (ゲートウェイ型の pause 等)
+ * は「ログアウト」と区別できず、middleware が /login へ 307 する
+ * (`system-unavailable.tsx` の「到達不能と判定できない残りの形」)。
+ * つまり**ステータスコードの監視では DB 全断も検知できない**。#275 の監視も、
+ * 「200 + SystemUnavailable」だけを見ると 307 型の停止を見落とす。
+ * (tutor/loading.tsx はこの段落を参照している。ここを正とする)
  *
  * admin ページは KPI カード + 表/パネルという構成が多いので、
  * それに寄せた汎用スケルトンにしている (11 ページ共用)。
