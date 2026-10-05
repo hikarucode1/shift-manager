@@ -11,7 +11,7 @@ import { shortDate } from "@/lib/week";
 import { cn } from "@/lib/utils";
 import { avatarColor, avatarInitial } from "@/lib/avatar";
 import { decideAbsenceRequest } from "@/app/tutor/absences/actions";
-import { pendingAbsenceApproval } from "@/lib/pending-absence-approval";
+import { pendingAbsenceNotice } from "@/lib/pending-absence-notice";
 
 export function RequestsPanel({ pending }: { pending: PendingAbsence[] }) {
   const router = useRouter();
@@ -77,133 +77,133 @@ export function RequestsPanel({ pending }: { pending: PendingAbsence[] }) {
         </p>
       ) : (
         <div className="space-y-3">
-          {/* 担当が変わったコマは承認させない (#289)。却下は塞がない。
-              カードごとに 1 回だけ判定して、注意とボタンで同じ結果を使う */}
-          {pending
-            .map((p) => ({ p, ap: pendingAbsenceApproval(p) }))
-            .map(({ p, ap }) => (
-            <div key={p.id} className="space-y-3 rounded-lg border p-3.5">
-              <div className="flex items-start gap-3">
-                <span
-                  className={cn(
-                    "flex size-8 shrink-0 items-center justify-center rounded-full text-xs font-bold text-white",
-                    avatarColor(p.tutorId),
-                  )}
-                  aria-hidden
-                >
-                  {avatarInitial(p.tutorName)}
-                </span>
-                <div className="min-w-0 flex-1 space-y-0.5">
-                  <div className="flex flex-wrap items-center gap-2">
-                    <span className="font-medium">{p.tutorName}</span>
-                    <Badge variant="accent">未対応</Badge>
-                    {/* #211: 承認は塞がない (後から欠勤を登録するのは正当な実務)。
+          {pending.map((p) => {
+            // 担当が変わったコマは知らせる (#289)。承認は塞がない
+            const unassignedNotice = pendingAbsenceNotice(p);
+            return (
+              <div key={p.id} className="space-y-3 rounded-lg border p-3.5">
+                <div className="flex items-start gap-3">
+                  <span
+                    className={cn(
+                      "flex size-8 shrink-0 items-center justify-center rounded-full text-xs font-bold text-white",
+                      avatarColor(p.tutorId),
+                    )}
+                    aria-hidden
+                  >
+                    {avatarInitial(p.tutorName)}
+                  </span>
+                  <div className="min-w-0 flex-1 space-y-0.5">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <span className="font-medium">{p.tutorName}</span>
+                      <Badge variant="accent">未対応</Badge>
+                      {/* #211: 承認は塞がない (後から欠勤を登録するのは正当な実務)。
                         ただし過去のコマを承認しようとしていることは分かるように */}
+                      {p.isEnded && (
+                        <Badge variant="outline" className="text-[10px]">
+                          実施済み
+                        </Badge>
+                      )}
+                    </div>
+                    <p className="text-sm text-muted-foreground">
+                      {shortDate(p.date)}（{p.weekdayLabel}） {p.slotLabel}
+                    </p>
+                    <p className="text-sm text-muted-foreground">
+                      理由: {p.reason}
+                    </p>
+                    {/* #211: 「実施済み = 押してはいけない」と誤読されないように。
+                      後から欠勤を登録するのは正当な実務なので承認してよい */}
                     {p.isEnded && (
-                      <Badge variant="outline" className="text-[10px]">
-                        実施済み
-                      </Badge>
+                      <p className="text-xs text-muted-foreground">
+                        終了したコマです。実際に欠勤していた場合は承認して構いません。
+                      </p>
+                    )}
+                    {unassignedNotice && (
+                      <p className="text-xs font-medium text-foreground">
+                        {unassignedNotice}
+                      </p>
                     )}
                   </div>
-                  <p className="text-sm text-muted-foreground">
-                    {shortDate(p.date)}（{p.weekdayLabel}） {p.slotLabel}
-                  </p>
-                  <p className="text-sm text-muted-foreground">
-                    理由: {p.reason}
-                  </p>
-                  {/* #211: 「実施済み = 押してはいけない」と誤読されないように。
-                      後から欠勤を登録するのは正当な実務なので承認してよい */}
-                  {p.isEnded && ap.approvable && (
-                    <p className="text-xs text-muted-foreground">
-                      終了したコマです。実際に欠勤していた場合は承認して構いません。
-                    </p>
-                  )}
-                  {ap.notice && (
-                    <p className="text-xs font-medium text-destructive">
-                      {ap.notice}
-                    </p>
-                  )}
                 </div>
-              </div>
 
-              {rejectId === p.id ? (
-                <div className="space-y-2">
-                  <textarea
-                    value={rejectNote}
-                    onChange={(e) => setRejectNote(e.target.value)}
-                    rows={2}
-                    maxLength={500}
-                    placeholder="却下の理由を入力（講師に表示されます）"
-                    className="w-full rounded-md border bg-background px-3 py-2 text-sm focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
-                  />
+                {rejectId === p.id ? (
+                  <div className="space-y-2">
+                    <textarea
+                      value={rejectNote}
+                      onChange={(e) => setRejectNote(e.target.value)}
+                      rows={2}
+                      maxLength={500}
+                      placeholder="却下の理由を入力（講師に表示されます）"
+                      className="w-full rounded-md border bg-background px-3 py-2 text-sm focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+                    />
+                    <div className="flex gap-2">
+                      <Button
+                        variant="destructive"
+                        size="sm"
+                        disabled={isPending || !rejectNote.trim()}
+                        onClick={() =>
+                          run(
+                            () =>
+                              decideAbsenceRequest({
+                                id: p.id,
+                                decision: "rejected",
+                                decisionNote: rejectNote.trim(),
+                              }),
+                            "却下しました。",
+                            () => {
+                              setRejectId(null);
+                              setRejectNote("");
+                            },
+                          )
+                        }
+                      >
+                        却下を確定
+                      </Button>
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        onClick={() => {
+                          setRejectId(null);
+                          setRejectNote("");
+                        }}
+                      >
+                        やめる
+                      </Button>
+                    </div>
+                  </div>
+                ) : (
                   <div className="flex gap-2">
                     <Button
-                      variant="destructive"
                       size="sm"
-                      disabled={isPending || !rejectNote.trim()}
+                      disabled={isPending}
                       onClick={() =>
                         run(
                           () =>
                             decideAbsenceRequest({
                               id: p.id,
-                              decision: "rejected",
-                              decisionNote: rejectNote.trim(),
+                              decision: "approved",
                             }),
-                          "却下しました。",
-                          () => {
-                            setRejectId(null);
-                            setRejectNote("");
-                          },
+                          "承認しました。",
                         )
                       }
                     >
-                      却下を確定
+                      承認
                     </Button>
                     <Button
-                      variant="ghost"
+                      variant="outline"
                       size="sm"
+                      disabled={isPending}
                       onClick={() => {
-                        setRejectId(null);
+                        setRejectId(p.id);
                         setRejectNote("");
                       }}
                     >
-                      やめる
+                      却下
                     </Button>
                   </div>
-                </div>
-              ) : (
-                <div className="flex gap-2">
-                  <Button
-                    size="sm"
-                    disabled={isPending || !ap.approvable}
-                    onClick={() =>
-                      run(
-                        () =>
-                          decideAbsenceRequest({
-                            id: p.id,
-                            decision: "approved",
-                          }),
-                        "承認しました。",
-                      )
-                    }
-                  >
-                    承認
-                  </Button>
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    disabled={isPending}
-                    onClick={() => {
-                      setRejectId(p.id);
-                      setRejectNote("");
-                    }}
-                  >
-                    却下
-                  </Button>
-                </div>
-              )}
-            </div>
-          ))}
+                )}
+              </div>
+            );
+          })}
         </div>
       )}
     </div>

@@ -55,9 +55,9 @@ export type PendingAbsence = AbsenceRequestRow & {
    */
   isEnded: boolean;
   /**
-   * 申請した講師が今もそのコマの担当か (#289)。false なら承認させず却下を
-   * 促す (`pendingAbsenceApproval`)。条件はサーバ (`decideAbsenceRequest`) の
-   * `isTutorBusyAt` と同じ (`weekly_shifts` に (講師, 日, コマ) の行があるか)
+   * 申請した講師が今もそのコマの担当か (#289)。false ならカードに知らせを
+   * 出す (`pendingAbsenceNotice`)。承認は塞がない。条件は `isTutorBusyAt` と
+   * 同じ (`weekly_shifts` に (講師, 日, コマ) の行があるか)
    */
   tutorAssigned: boolean;
 };

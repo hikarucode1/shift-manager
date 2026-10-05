@@ -9,8 +9,6 @@ import { db } from "@/db/client";
 import { absenceRequests, swapRequests, weeklyShifts } from "@/db/schema";
 import { isUniqueViolation } from "@/lib/db-errors";
 import { isValidIsoDate, jstToday } from "@/lib/week";
-import { isTutorBusyAt } from "@/lib/swaps";
-import { ABSENCE_UNASSIGNED_NOTICE } from "@/lib/pending-absence-approval";
 
 type ActionResult = { ok: true } | { ok: false; error: string };
 
@@ -224,32 +222,6 @@ export async function decideAbsenceRequest(
 
   if (decision === "rejected" && decisionNote.length === 0) {
     return { ok: false, error: "却下する場合は理由を入力してください。" };
-  }
-
-  // ⚠️ **担当でなくなったコマの欠勤は承認しない** (#289)。カードは
-  // `pendingAbsenceApproval` で承認ボタンを塞ぐが、開いたまま担当が変わる
-  // ことがあるのでサーバでも確かめる。却下は塞がない。
-  // 確認と UPDATE の間に担当が変わる窓は残る (代講の承認と違い、欠勤の承認は
-  // weekly_shifts を書き換えないのでロックする対象が無い)。残っても、承認済みの
-  // 欠勤は週次表に何も出さない (講師・日付・コマの組で付く) ので害は小さい
-  if (decision === "approved") {
-    const [target] = await db
-      .select({
-        tutorId: absenceRequests.tutorId,
-        date: absenceRequests.date,
-        slotNumber: absenceRequests.slotNumber,
-      })
-      .from(absenceRequests)
-      .where(
-        and(eq(absenceRequests.id, id), eq(absenceRequests.status, "pending")),
-      )
-      .limit(1);
-    if (
-      target &&
-      !(await isTutorBusyAt(target.date, target.slotNumber, target.tutorId))
-    ) {
-      return { ok: false, error: ABSENCE_UNASSIGNED_NOTICE };
-    }
   }
 
   const updated = await db
