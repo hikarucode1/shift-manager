@@ -6,12 +6,21 @@
  *   記録 (#215) は募集を閉じないので、記録を取り消すと担当が戻って募集が
  *   再び承認できる状態になる
  *
- * ⚠️ 「応募者に通知済み」と言い切らない。通知は best-effort で、募集が
- * pending の間は新しい応募も入る (`record-substitution-form.tsx` と同じ判断)
+ * ⚠️ **講師に知らせたとは書かない。** 講師への訂正は best-effort (失敗しても
+ * 取り消しは成功扱い) で、代講者 B には送らない。教室長に伝えるのは、
+ * 教室長がすべきこと (承認か却下) だけにする
  */
+
+/** 取り消したコマに元講師の pending 募集が残っているか (#283) */
+export type PendingSwapAfterCancel = {
+  requesterName: string;
+  /** 承認できるか (`isPendingSwapApprovable`) */
+  approvable: boolean;
+} | null;
+
 export function swapCancelNotice(res: {
   expiredAbsences: number;
-  pendingSwap: { requesterName: string; approvable: boolean } | null;
+  pendingSwap: PendingSwapAfterCancel;
 }): string {
   const parts = ["取り消しました。"];
   if (res.expiredAbsences > 0) {
@@ -23,7 +32,7 @@ export function swapCancelNotice(res: {
   if (p) {
     parts.push(
       p.approvable
-        ? `このコマには ${p.requesterName} さんの交代申請が残っていて、担当が戻ったため再び承認できます。「未対応」タブで承認するか、却下（教室長が出した代理募集なら取り下げ）してください。申請者と現時点の応募者には、また承認できる状態に戻ったことを通知しました。`
+        ? `このコマには ${p.requesterName} さんの交代申請が残っていて、担当が戻ったため再び承認できます。「未対応」タブで承認するか、却下（教室長が出した代理募集なら取り下げ）してください。`
         : `このコマには ${p.requesterName} さんの交代申請が残っていますが、過去のコマなので承認できません。「未対応」タブで却下（教室長が出した代理募集なら取り下げ）してください。`,
     );
   }

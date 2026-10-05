@@ -1,5 +1,6 @@
 import { describe, it, expect } from "vitest";
 import {
+  isPendingSwapApprovable,
   pendingSwapApproval,
   type PendingSwapApprovalState,
 } from "./pending-swap-approval";
@@ -87,5 +88,31 @@ describe("pendingSwapApproval (#262)", () => {
       heading: "応募者から代講者を選んで承認:",
       notice: null,
     });
+  });
+});
+
+describe("isPendingSwapApprovable (#283)", () => {
+  it.each([
+    { isPastDate: false, requesterAssigned: true, expected: true },
+    { isPastDate: true, requesterAssigned: true, expected: false },
+    { isPastDate: false, requesterAssigned: false, expected: false },
+    { isPastDate: true, requesterAssigned: false, expected: false },
+  ])("過去日=$isPastDate 担当=$requesterAssigned → $expected", (c) => {
+    expect(isPendingSwapApprovable(c)).toBe(c.expected);
+  });
+
+  it("承認ボタンの可否と必ず一致する (取り消し側と判定がずれないこと)", () => {
+    for (const isPastDate of [false, true]) {
+      for (const requesterAssigned of [false, true]) {
+        for (const isEnded of [false, true]) {
+          for (const isProxy of [false, true]) {
+            const s = st({ isPastDate, requesterAssigned, isEnded, isProxy });
+            expect(pendingSwapApproval(s).approvable).toBe(
+              isPendingSwapApprovable(s),
+            );
+          }
+        }
+      }
+    }
   });
 });

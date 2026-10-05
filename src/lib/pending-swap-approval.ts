@@ -68,14 +68,31 @@ function blocked(reason: string, isProxy: boolean): PendingSwapApproval {
   };
 }
 
+/**
+ * その募集を承認できるか (#283)。**承認できる条件はここが唯一の定義。**
+ *
+ * 「未対応」タブの承認ボタン (`pendingSwapApproval`) と、記録を取り消して
+ * 募集が再び承認できるようになったかの判定 (`cancelApprovedSwap`) が共有する。
+ * 条件を足すときはここを変える — 片方だけだと、取り消し側が「また承認
+ * できます」と嘘を言う
+ */
+export function isPendingSwapApprovable(
+  s: Pick<PendingSwapApprovalState, "isPastDate" | "requesterAssigned">,
+): boolean {
+  return !s.isPastDate && s.requesterAssigned;
+}
+
 export function pendingSwapApproval(
   s: PendingSwapApprovalState,
 ): PendingSwapApproval {
-  if (s.isPastDate) {
-    return blocked("過去のコマのため承認できません", s.isProxy);
-  }
-  if (!s.requesterAssigned) {
-    return blocked("このコマは担当が変わったため承認できません", s.isProxy);
+  if (!isPendingSwapApprovable(s)) {
+    // 理由の順序は `decideSwapRequest` と揃える (過去日が先)
+    return blocked(
+      s.isPastDate
+        ? "過去のコマのため承認できません"
+        : "このコマは担当が変わったため承認できません",
+      s.isProxy,
+    );
   }
   if (s.isEnded) {
     return {

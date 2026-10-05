@@ -20,7 +20,8 @@ describe("swapCancelNotice", () => {
       pendingSwap: { requesterName: "山田", approvable: true },
     });
     expect(text).toContain("山田 さんの交代申請が残っていて、担当が戻ったため再び承認できます");
-    expect(text).toContain("通知しました");
+    // 訂正の通知は best-effort で、代講者には送らない。言い切らない
+    expect(text).not.toContain("通知");
   });
 
   it("過去のコマは承認できないので、却下だけを促し、通知したとは言わない (#283)", () => {
