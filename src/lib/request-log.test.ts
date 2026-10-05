@@ -30,6 +30,7 @@ const absence = (o: Partial<AbsenceLogInput> = {}): AbsenceLogInput => ({
   tutorName: "山田",
   isProxy: false,
   autoExpired: false,
+  closedUnassigned: false,
   ...o,
 });
 
@@ -83,6 +84,21 @@ describe("toAbsenceLogEntry", () => {
       absence({ status: "cancelled", autoExpired: true, actorName: "教室長A" }),
     );
     expect(e.event).toBe("cancelled-by-admin");
+  });
+
+  it("「不要として閉じる」(#289) は承認を経ていないので「教室長が取り下げ」", () => {
+    // 「取り消し」(cancelled-by-admin) は承認済みを取り消したもの。閉じたのは
+    // 未承認の申請なので、承認があったように読める表示にしない
+    const e = toAbsenceLogEntry(
+      absence({
+        status: "cancelled",
+        closedUnassigned: true,
+        actorName: "教室長A",
+        note: "担当変更のため不要",
+      }),
+    );
+    expect(e.event).toBe("withdrawn-by-admin");
+    expect(e.eventLabel).toBe("教室長が取り下げ");
   });
 
   it("教室長の取り消しと講師の自己取り下げを分ける", () => {

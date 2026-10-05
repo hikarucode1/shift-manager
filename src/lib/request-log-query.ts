@@ -4,6 +4,7 @@ import { alias } from "drizzle-orm/pg-core";
 import { db } from "@/db/client";
 import { absenceRequests, profiles, swapRequests } from "@/db/schema";
 import { ABSENCE_AUTO_EXPIRED_NOTE } from "@/lib/absence-expiry";
+import { ABSENCE_CLOSED_UNASSIGNED_NOTE } from "@/lib/pending-absence-actions";
 import { getSlotMeta } from "@/lib/slot-meta";
 import { isSlotPast } from "@/lib/slot-time";
 import {
@@ -176,6 +177,7 @@ export async function getRequestLog(opts: {
       // 行は created_by = null (= 講師本人が作った行)
       isProxy: r.createdBy !== null && r.createdBy !== r.tutorId,
       autoExpired: r.note === ABSENCE_AUTO_EXPIRED_NOTE,
+      closedUnassigned: r.note === ABSENCE_CLOSED_UNASSIGNED_NOTE,
     }),
   );
 

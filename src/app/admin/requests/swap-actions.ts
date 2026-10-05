@@ -26,7 +26,7 @@ import {
 import { substitutionNote } from "@/lib/substitution-note";
 import { isValidIsoDate, jstToday, weekdayOf } from "@/lib/week";
 import { isUniqueViolation } from "@/lib/db-errors";
-import { getSlotMeta } from "@/lib/slot-meta";
+import { getSlotMeta, slotLabelSafe } from "@/lib/slot-meta";
 import { db } from "@/db/client";
 import {
   absenceRequests,
@@ -88,23 +88,6 @@ function revalidateAll() {
   // #250: 承認・記録は同一コマの欠勤を自動失効させ、その行は /tutor/absences に
   // 出る。欠勤を書き換える他 4 アクションはすべてここを revalidate している
   revalidatePath("/tutor/absences");
-}
-
-/**
- * コマの表示名。`slot_definitions.label` は自由文で admin が変更できるので
- * `${n}限` を直書きしない (通知だけ他の画面とズレる)。
- *
- * ⚠️ **投げない。** 決定をコミットした後にこれが失敗して action ごと reject
- * すると、通知が 1 通も出ないまま「失敗」と表示される (行はもう pending では
- * ないので再実行もできない)。ラベルが取れないくらいなら既定表記で送る。
- */
-async function slotLabelSafe(n: number): Promise<string> {
-  try {
-    return (await getSlotMeta()).get(n)?.label ?? `${n}限`;
-  } catch (e) {
-    console.error("slotLabelSafe failed", e);
-    return `${n}限`;
-  }
 }
 
 const DecideInput = z.discriminatedUnion("decision", [

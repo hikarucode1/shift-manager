@@ -9,6 +9,9 @@ import { db } from "@/db/client";
 import { absenceRequests, swapRequests, weeklyShifts } from "@/db/schema";
 import { isUniqueViolation } from "@/lib/db-errors";
 import { isValidIsoDate, jstToday } from "@/lib/week";
+import { hasSlotEnded } from "@/lib/swaps";
+import { absenceTutorAssigned } from "@/lib/absences";
+import { pendingAbsenceActions } from "@/lib/pending-absence-actions";
 
 type ActionResult = { ok: true } | { ok: false; error: string };
 
@@ -179,7 +182,8 @@ const DecideInput = z.object({
 /**
  * 教室長: 欠勤申請を承認 / 却下。
  *
- * ⚠️ **日付・コマのガードを意図的に置いていない** (#211)。交代・代講の承認
+ * ⚠️ **担当中のコマには、日付・コマのガードを意図的に置いていない** (#211)。
+ * 例外は担当でなくなったコマだけ (#289。下の「例外」を参照)。交代・代講の承認
  * (`decideSwapRequest`) には `date < jstToday()` があるので「片方だけ直し忘れ」に
  * 見えるが、非対称は意図したもの:
  *
@@ -192,7 +196,13 @@ const DecideInput = z.object({
  *
  * そして「**後から欠勤を登録する**」(当日中に講師が出し忘れに気づいた / 教室長が
  * 後でまとめて処理する) は正当な実務。ここを塞ぐと #178・#213 と同じ
- * 「実態に合わせる手段が無い」詰みを作る。**ガードを足さないこと。**
+ * 「実態に合わせる手段が無い」詰みを作る。**担当中のコマに日付ガードを
+ * 足さないこと。**
+ *
+ * ⚠️ 例外は**担当でなくなったコマ**だけ (#289)。担当でない講師の欠勤は、
+ * まだ来ていないコマなら承認も却下もさせず、「不要として閉じる」
+ * (`closeUnassignedAbsence`) を使わせる。終わったコマの承認は上の理由で通す。
+ * 判定は `pendingAbsenceActions` (カードと共有)
  *
  * ⚠️ **作成側 (`createAbsenceRequest`) も日付粒度のままにしてあること**が、
  * この「後から登録する」を成立させている。交代側は #178 でピッカーから
@@ -224,6 +234,45 @@ export async function decideAbsenceRequest(
     return { ok: false, error: "却下する場合は理由を入力してください。" };
   }
 
+  // ⚠️ **担当でなくなったコマの扱い** (#289)。カードの出し分け
+  // (`pendingAbsenceActions`) と同じ関数で、サーバでも確かめる (カードを開いた
+  // まま担当が変わることがある)。
+  // - 却下: 担当でなければ常に弾く。担当でない講師に「却下されました」が
+  //   届くと「出勤しろ」と読める。「不要として閉じる」を使わせる
+  // - 承認: 担当でない**まだ来ていない**コマだけ弾く。承認済みの欠勤は
+  //   (講師, 日付, コマ) の組で残り、担当に戻ると欠勤マークが付くため (#291)。
+  //   終わったコマは休んだ記録として承認できる
+  // 「コマが終わったか」は時刻だけで決まるので先に判定し、担当であることが
+  // 要るときは UPDATE の WHERE に入れて、確認と書き込みを 1 つの文にする。
+  // ⚠️ 窓は**狭まるが消えない**。exists は weekly_shifts をロックしないので、
+  // CSV の取り込み (日付ごとに消して入れ直す) と同時に走ると、すり抜けうる
+  // 却下は「コマが終わったか」に関係なく、常に担当が要る (担当でない講師に
+  // 「却下されました」を送らない)。承認だけ、終わったかで変わるので、その
+  // ときだけ対象を読んで `pendingAbsenceActions` (カードと共有) に聞く
+  let requireAssigned = true;
+  if (decision === "approved") {
+    const [target] = await db
+      .select({
+        date: absenceRequests.date,
+        slotNumber: absenceRequests.slotNumber,
+      })
+      .from(absenceRequests)
+      .where(
+        and(eq(absenceRequests.id, id), eq(absenceRequests.status, "pending")),
+      )
+      .limit(1);
+    if (!target) {
+      return {
+        ok: false,
+        error: "処理できませんでした（既に対応済みの可能性があります）。",
+      };
+    }
+    requireAssigned = !pendingAbsenceActions({
+      tutorAssigned: false,
+      isEnded: await hasSlotEnded(target.date, target.slotNumber),
+    }).canApprove;
+  }
+
   const updated = await db
     .update(absenceRequests)
     .set({
@@ -237,6 +286,7 @@ export async function decideAbsenceRequest(
       and(
         eq(absenceRequests.id, id),
         eq(absenceRequests.status, "pending"),
+        requireAssigned ? absenceTutorAssigned() : undefined,
       ),
     )
     .returning({
@@ -246,9 +296,18 @@ export async function decideAbsenceRequest(
     });
 
   if (updated.length === 0) {
+    // 0 行の理由を見分ける。まだ pending なら「担当でない」で弾いた
+    const [row] = await db
+      .select({ status: absenceRequests.status })
+      .from(absenceRequests)
+      .where(eq(absenceRequests.id, id))
+      .limit(1);
     return {
       ok: false,
-      error: "処理できませんでした（既に対応済みの可能性があります）。",
+      error:
+        requireAssigned && row?.status === "pending"
+          ? `このコマは今は担当ではないので${decision === "approved" ? "承認" : "却下"}できません。「不要として閉じる」を使ってください。`
+          : "処理できませんでした（既に対応済みの可能性があります）。",
     };
   }
 

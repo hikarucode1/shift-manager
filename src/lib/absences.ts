@@ -1,8 +1,19 @@
 import "server-only";
-import { and, asc, between, desc, eq, gte, inArray } from "drizzle-orm";
+import {
+  and,
+  asc,
+  between,
+  desc,
+  eq,
+  gte,
+  inArray,
+  sql,
+  type SQL,
+} from "drizzle-orm";
 import { db } from "@/db/client";
 import { absenceRequests, profiles, weeklyShifts } from "@/db/schema";
 import { ABSENCE_AUTO_EXPIRED_NOTE } from "@/lib/absence-expiry";
+import { ABSENCE_CLOSED_UNASSIGNED_NOTE } from "@/lib/pending-absence-actions";
 import { getSlotMeta } from "@/lib/slot-meta";
 import { isSlotPast } from "@/lib/slot-time";
 import { jstToday, weekdayOf } from "@/lib/week";
@@ -34,6 +45,14 @@ export type AbsenceRequestRow = {
    * 判定は admin 側 (`request-log.ts`) と同じく `decided_by` との AND。
    */
   autoExpired: boolean;
+  /**
+   * 教室長が「不要として閉じる」(#289) で閉じたか。自動失効と同じく、
+   * `decisionNote` を赤字の「教室長より」で出さないために要る — 担当でなく
+   * なったことの説明で、叱っているのではない。判定は状態 (cancelled)・note・
+   * `decided_by` (閉じた教室長が入る) の AND。note は `cancelApprovedAbsence` の
+   * 理由欄で使えないよう弾いてある (`ABSENCE_CLOSED_UNASSIGNED_NOTE` 参照)
+   */
+  closedUnassigned: boolean;
   decidedAt: string | null;
   createdAt: string;
   /**
@@ -54,7 +73,32 @@ export type PendingAbsence = AbsenceRequestRow & {
    * 「過去のコマの欠勤を承認しようとしている」と気づけるようにするための印。
    */
   isEnded: boolean;
+  /**
+   * 申請した講師が今もそのコマの担当か (#289)。カードの出し分け
+   * (`pendingAbsenceActions`) に使う。条件は `absenceTutorAssigned`
+   */
+  tutorAssigned: boolean;
 };
+
+/**
+ * 欠勤申請の講師が、今もその (日, コマ) の担当か (#289)。`absence_requests` の
+ * 行に対して評価する SQL の断片。
+ *
+ * ⚠️ **一覧 (`getPendingAbsenceRequests`)・不要として閉じる
+ * (`closeUnassignedAbsence`)・承認 / 却下 (`decideAbsenceRequest`) の 3 か所が
+ * これを使う。** カードとサーバの判定がずれないよう、書き写さないこと。
+ * 条件は `isTutorBusyAt` (swaps.ts) と同じ (`weekly_shifts` に (講師, 日, コマ)
+ * の行があるか)。join ではなく exists にするのは、`weekly_shifts` が
+ * (upload, 講師, 日, コマ) で一意なので行が重複しうるため
+ */
+export function absenceTutorAssigned(): SQL<boolean> {
+  return sql<boolean>`exists (
+    select 1 from ${weeklyShifts}
+    where ${weeklyShifts.tutorId} = ${absenceRequests.tutorId}
+      and ${weeklyShifts.date} = ${absenceRequests.date}
+      and ${weeklyShifts.slotNumber} = ${absenceRequests.slotNumber}
+  )`;
+}
 
 function slotLabelOf(
   meta: Awaited<ReturnType<typeof getSlotMeta>>,
@@ -145,6 +189,10 @@ export async function getTutorAbsenceRequests(
     isProxy: r.createdBy !== null && r.createdBy !== r.tutorId,
     autoExpired:
       r.decisionNote === ABSENCE_AUTO_EXPIRED_NOTE && r.decidedBy === null,
+    closedUnassigned:
+      r.status === "cancelled" &&
+      r.decisionNote === ABSENCE_CLOSED_UNASSIGNED_NOTE &&
+      r.decidedBy !== null,
     date: r.date,
     slotNumber: r.slotNumber,
     slotLabel: slotLabelOf(meta, r.slotNumber).label,
@@ -174,6 +222,7 @@ export async function getPendingAbsenceRequests(): Promise<PendingAbsence[]> {
       decidedAt: absenceRequests.decidedAt,
       createdBy: absenceRequests.createdBy,
       createdAt: absenceRequests.createdAt,
+      tutorAssigned: absenceTutorAssigned(),
     })
     .from(absenceRequests)
     .innerJoin(profiles, eq(profiles.id, absenceRequests.tutorId))
@@ -199,7 +248,14 @@ export async function getPendingAbsenceRequests(): Promise<PendingAbsence[]> {
     // pending が自動失効していることは無いが、判定は各取得関数で素直に計算する
     autoExpired:
       r.decisionNote === ABSENCE_AUTO_EXPIRED_NOTE && r.decidedBy === null,
+    // pending が閉じていることは無いが、autoExpired と同じく判定は各取得関数で
+    // 素直に計算する (型を共有しているため)
+    closedUnassigned:
+      r.status === "cancelled" &&
+      r.decisionNote === ABSENCE_CLOSED_UNASSIGNED_NOTE &&
+      r.decidedBy !== null,
     isEnded: isSlotPast(r.date, slotLabelOf(meta, r.slotNumber).end),
+    tutorAssigned: r.tutorAssigned,
   }));
 }
 
