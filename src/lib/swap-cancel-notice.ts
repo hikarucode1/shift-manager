@@ -1,5 +1,6 @@
 import {
   closeAction,
+  pendingSwapApproval,
   type PendingSwapApproval,
 } from "@/lib/pending-swap-approval";
 
@@ -75,5 +76,79 @@ export function substituteCancelNotice(
     bodySuffix:
       " ／ このコマの担当ではなくなったため、あなたの名前で出ている交代・代講の募集は承認できません。",
     href: substituteSwap.isProxy ? "/tutor/open-swaps" : "/tutor/swaps",
+  };
+}
+
+/**
+ * 承認済み代講を取り消したあと、どの募集に何を送り、教室長に何を出すか
+ * (#283 / #287 / #288)。**判断はここに集める** — 通知の判断で何度も不具合が
+ * 見つかった場所なので、server action から出してテストで固める。
+ *
+ * 入力の `*Still` は、コミット後に「まだ pending か」を確かめ直した結果。
+ * - 元講師 A の募集: 確認が失敗したら false にする (呼び出し側)。「また有効に
+ *   なりました」は、閉じた募集に送ると嘘になるため
+ * - 代講者 B の募集: 確認が失敗したら true にする (呼び出し側)。B の募集は
+ *   二度と承認できないので、「承認できなくなりました」は送っても嘘にならず、
+ *   送らないと応募者が待ち続ける
+ *
+ * 教室長への案内と B への追記も、確かめ直しの結果に揃える (閉じた募集を
+ * 「残っています」と言わない)
+ */
+export function planCancelNotices(i: {
+  /** A の募集 (取り消しで担当が戻ったので、承認できる可能性がある) */
+  requesterSwap: { id: string; isProxy: boolean } | null;
+  requesterStill: boolean;
+  /** B の募集 (担当でなくなったので、必ず承認できない) */
+  substituteSwap: { id: string; isProxy: boolean } | null;
+  substituteStill: boolean;
+  isPastDate: boolean;
+  requesterName: string;
+  substituteName: string;
+}): {
+  /** 「また有効になりました」を応募者に送る募集 */
+  revivedSwapId: string | null;
+  /** 「承認できなくなりました」を応募者に送る募集 */
+  orphanedSwapId: string | null;
+  /** 教室長への案内 (`swapCancelNotice` に渡す) */
+  pendingSwaps: PendingSwapAfterCancel[];
+  /** B への通知の追記と行き先 */
+  substitute: ReturnType<typeof substituteCancelNotice>;
+} {
+  const entryFor = (
+    swap: { isProxy: boolean },
+    requesterName: string,
+    requesterAssigned: boolean,
+  ): PendingSwapAfterCancel => ({
+    requesterName,
+    isProxy: swap.isProxy,
+    approval: pendingSwapApproval({
+      isPastDate: i.isPastDate,
+      requesterAssigned,
+      // 見出しにしか効かない
+      isEnded: false,
+      isProxy: swap.isProxy,
+    }),
+  });
+  const a =
+    i.requesterSwap && i.requesterStill
+      ? {
+          swap: i.requesterSwap,
+          entry: entryFor(i.requesterSwap, i.requesterName, true),
+        }
+      : null;
+  const b =
+    i.substituteSwap && i.substituteStill
+      ? {
+          swap: i.substituteSwap,
+          entry: entryFor(i.substituteSwap, i.substituteName, false),
+        }
+      : null;
+  return {
+    revivedSwapId: a && a.entry.approval.approvable ? a.swap.id : null,
+    orphanedSwapId: b ? b.swap.id : null,
+    pendingSwaps: [a?.entry, b?.entry].filter(
+      (e): e is PendingSwapAfterCancel => e !== undefined,
+    ),
+    substitute: substituteCancelNotice(b ? b.swap : null),
   };
 }
