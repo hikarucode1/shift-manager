@@ -4,6 +4,7 @@ import { useCallback, useEffect, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { AlertCircle, Info } from "lucide-react";
 import { toFailedResult, isIndeterminate } from "@/lib/action-failure";
+import { EXPIRED_ABSENCE_NOTICE } from "@/lib/approval-notice";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { cn } from "@/lib/utils";
@@ -110,9 +111,7 @@ export function RecordSubstitutionForm({ today }: { today: string }) {
       }
       const parts = ["記録しました。週次シフト表の担当を差し替えました。"];
       if (res.expiredAbsences > 0) {
-        parts.push(
-          "このコマの欠勤の記録は失効させました（担当が変わったため）。「記録」タブから確認できます。",
-        );
+        parts.push(EXPIRED_ABSENCE_NOTICE);
       }
       if (res.pendingSwap) {
         parts.push(
