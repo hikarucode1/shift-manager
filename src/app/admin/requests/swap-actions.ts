@@ -611,6 +611,28 @@ export async function cancelApprovedSwap(
     // もらった」と思ったまま来ない = コマに誰も居ない**が起きる。B 側には
     // 「引き受けた代講」の一覧が無い (getTutorSwapRequests は requesterId 基準)
     // ので、B にとっては通知が唯一の手がかり。承認と同じく tx の外で送る。
+    //
+    // ⚠️ **承認で落選した応募者 (C) には通知しない。書き落としではない** (#277)。
+    // 応募者に通知する経路 — 却下 (`decideSwapRequest`, #238)、講師本人が自分の
+    // 募集を取り下げる `cancelSwapRequest` (#245)、教室長の代理取り下げ
+    // `cancelOpenSwapOnBehalf` (#231)、記録 `recordSubstitution` (#253) — は、
+    // どれも「予定を空けて待っている人に結果が届かない」問題だった。
+    // C は承認時に「他の講師に決まりました」を受け取っており (送信は best-effort)、
+    // この取り消しで C の応募した募集が再開することもない (status は cancelled)。
+    // C にできることが無い。
+    //
+    // 取り消し理由は C に見せない (`canSeeDecisionNote`)。B の事情 (来られなく
+    // なった等) が混ざりうるため。したがって通知しても中身が無い。
+    //
+    // 代わりが要るなら、まだ終わっていないコマは募集し直せば `swap_posted` が
+    // 届く (C がそのコマに入っていなければ)。終わったコマは記録 (#215) で直す。
+    // C の /tutor/open-swaps は「決まった代講が取り消されました」に変わる
+    // (`application-outcome.ts`)。
+    //
+    // ⚠️ **記録 (kind=recorded) の取り消しは別の穴がある** (#283)。記録しても
+    // 同じコマの A の pending 募集は閉じないので、取り消して担当が A に戻ると
+    // その募集が黙って承認できる状態に戻る。そちらの応募者は「承認できなく
+    // なりました」を受け取ったまま
     const cancelSlotLabel = await slotLabelSafe(info.slotNumber);
     await Promise.all([
       notify([info.requesterId], {
