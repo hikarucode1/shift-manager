@@ -41,9 +41,9 @@ jobs:
         run: npm run lint
 
       - name: Test
-        # DB には接続しない (純関数のみ)。TZ は本番 (Vercel) と同じ UTC (#279)
-        env:
-          TZ: UTC
+        # DB には接続しない (DB を使うテストは `@/db/client` を vi.mock で差し替える)。
+        # TZ の固定は vitest.config.ts 側で行う (#279 / #282)。ここで重ねて指定すると
+        # 定義が 2 か所になるので置かない
         run: npm test
 
       - name: RLS guard (static, no DB)
