@@ -6,7 +6,7 @@ on:
     # default activity types は [opened, synchronize, reopened] のみで、
     # PR の base ブランチ切替時 (= edited) では発火しない。base 切替後にも
     # CI を回したいので edited を明示追加 (#90)。本文タイトル編集の誤発火は
-    # 許容 (CI は typecheck/lint/build/RLS で 2 分程度)。
+    # 許容 (CI は typecheck/lint/test/build/RLS で 2 分程度)。
     types: [opened, synchronize, reopened, edited]
   push:
     branches: [main]
@@ -18,6 +18,8 @@ concurrency:
 
 jobs:
   verify:
+    # ⚠️ 名前は変えない。main のブランチ保護が required check としてこの名前を
+    # 参照しており、変えると全 PR がマージできなくなる (test を足した #284 でも据え置き)
     name: typecheck / lint / build
     runs-on: ubuntu-latest
     steps:
@@ -37,6 +39,12 @@ jobs:
 
       - name: Lint
         run: npm run lint
+
+      - name: Test
+        # DB には接続しない (純関数のみ)。TZ は本番 (Vercel) と同じ UTC (#279)
+        env:
+          TZ: UTC
+        run: npm test
 
       - name: RLS guard (static, no DB)
         # 新規 public テーブルに RLS+REVOKE が無ければ落とす (#38)
