@@ -23,8 +23,10 @@ export type LogTypeFilter = (typeof LOG_TYPES)[number];
 export type LogStateFilter = (typeof LOG_STATE_FILTERS)[number];
 
 /** 期間の月数。`all` は下限なし */
-export const LOG_PERIOD_MONTHS: Record<Exclude<LogPeriodFilter, "all">, number> =
-  { "1m": 1, "3m": 3 };
+export const LOG_PERIOD_MONTHS: Record<
+  Exclude<LogPeriodFilter, "all">,
+  number
+> = { "1m": 1, "3m": 3 };
 
 export const LOG_PERIOD_LABELS: Record<LogPeriodFilter, string> = {
   "1m": "直近1ヶ月",
