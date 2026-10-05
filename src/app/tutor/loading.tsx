@@ -13,8 +13,9 @@ import { StalledLoadingHint } from "@/components/stalled-loading-hint";
  * 書き忘れて穴が開くことがない。
  *
  * ⚠️ layout が失敗したときの挙動 (DB 全断・認証 API の停止で、どの画面と
- * ステータスになるか) は admin/loading.tsx の docstring を正とする。
- * TutorLayout も同じく `resolveOrIncident` で包んでいる (#188)
+ * ステータスになるか) は admin/loading.tsx の要約と、`system-unavailable.tsx`
+ * / `shell-guard.ts` を参照。TutorLayout も同じく `resolveOrIncident` で包んで
+ * いる (#188)
  *
  * 講師ページは「ネイビー hero + カード列」で統一されている (#130/#131) ので
  * スケルトンも同じ形にし、実データ描画時のガタつきを抑える。
