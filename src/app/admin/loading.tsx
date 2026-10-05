@@ -13,8 +13,10 @@ import { StalledLoadingHint } from "@/components/stalled-loading-hint";
  *                                 (`E{"digest":...}`) が乗って hydration 後に
  *                                 error.tsx が描画される
  *   - `notFound()` も同じ。loading.tsx が無ければ 404、あれば 200 +
- *     `<meta name="robots" content="noindex">`。`forbidden()` (403) も
- *     同じ仕組みなので 200 になるはず (未実測。authInterrupts が未設定)
+ *     `<meta name="robots" content="noindex">`
+ *   - `forbidden()` (403) は**今は使えない**。`experimental.authInterrupts`
+ *     が未設定なので、呼ぶと設定エラーとして throw し、error.tsx の汎用画面
+ *     (障害に見える) になる。有効にしても同じ仕組みで 200 になるはず (未実測)
  *
  * loading.tsx が Suspense 境界を作るため、throw がシェルごと落とさずに
  * 境界で受け止められる。したがって URL 直アクセス (実際の障害経路) を
@@ -22,20 +24,26 @@ import { StalledLoadingHint } from "@/components/stalled-loading-hint";
  *
  * トレードオフ (承知の上。#190 で比べ直して、このまま行くと決めた):
  *   - 失敗時も HTTP 200 を返すため、監視やクローラからは成功に見える。
- *     検知は console.error 頼みになるので `npm run check:migrations` の
- *     CI 自動化など別系統の検知が要る
- *   - 配下のページで `notFound()` / `forbidden()` を使っても 404 / 403 は
- *     返らない。ステータスが要る判定は middleware で行うこと
- *     (admin/layout.tsx もこの境界の外だが、そこでの挙動は未実測)
+ *     error.tsx の `console.error` は**利用者のブラウザ**に出るだけで、
+ *     運用側には届かない。サーバ側で追えるのは Vercel の関数ログだけ
+ *     (layout の失敗は `reportIncident` がエラー ID 付きで残す)。
+ *     `npm run check:migrations` の CI 自動化など別系統の検知が要る
+ *   - 配下のページで `notFound()` を使っても 404 は返らない。**配下の
+ *     ページからはステータスを決められない**ので、404 / 403 が要るルートは
+ *     このセグメントの外に置くか、200 を受け入れる
+ *     (layout は境界の外だが、throw せず SystemUnavailable を描画する作り
+ *     なので、ステータスを返す場所には使えない。下の ⚠️ を参照)
  *   - 「エラー画面を出す」と「5xx / 404 を返す」は、このセグメント構成では
  *     両立しない。ステータスで死活を見たいなら、画面ではなく専用の
- *     エンドポイントを見る
+ *     エンドポイントを見る (#275。まだ無い)
  *   - 正常時もページ遷移で一瞬スケルトンが出る (従来は前の画面が残った)
  *
- * ⚠️ layout.tsx が throw する場合はこの仕組みでも救えず 500 のまま
- * (同セグメントの error.tsx は layout の外側を守れないため)。
- * AdminLayout は requireRole() → getProfile() で DB を引くので、
- * DB 全断では引き続き全画面 500 になる。
+ * ⚠️ layout.tsx が throw する場合はこの仕組みでも救えず 500 になる
+ * (同セグメントの error.tsx は layout の外側を守れないため。#187 で実測)。
+ * そこで AdminLayout は requireRole() を `resolveOrIncident` で包み、失敗しても
+ * throw せず SystemUnavailable を描画する (#188)。**DB 全断でも 500 にはならず
+ * SystemUnavailable の「画面を表示できませんでした。」になる** (ステータスは 200 のはず。未実測)。
+ * つまり**ステータスコードの監視では DB 全断も検知できない** (#275)。
  *
  * admin ページは KPI カード + 表/パネルという構成が多いので、
  * それに寄せた汎用スケルトンにしている (11 ページ共用)。

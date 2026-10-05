@@ -13,8 +13,10 @@ import { StalledLoadingHint } from "@/components/stalled-loading-hint";
  * 書き忘れて穴が開くことがない。
  *
  * ⚠️ TutorLayout の requireRole() → getProfile() は drizzle で profiles を
- * 引くため、DB 全断 (Supabase Free tier の自動 pause 等) では layout 自体が
- * throw し、この仕組みでも救えず 7 画面すべて 500 になる。
+ * 引くので、DB 全断 (Supabase Free tier の自動 pause 等) では失敗する。
+ * layout の throw はこの仕組みでは救えないため、`resolveOrIncident` で包んで
+ * throw させず SystemUnavailable を描画している (#188)。**DB 全断でも 500 には
+ * ならない** (ステータスは 200 のはず。未実測)。詳細は admin/loading.tsx
  *
  * 講師ページは「ネイビー hero + カード列」で統一されている (#130/#131) ので
  * スケルトンも同じ形にし、実データ描画時のガタつきを抑える。
