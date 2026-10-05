@@ -41,8 +41,8 @@ export default async function AdminRequestsPage({
   await requireRole("admin");
   const sp = await searchParams;
 
-  const { tab, ...filters } = parseRequestsSearchParams(sp);
-  const { period, type, state } = filters;
+  const view = parseRequestsSearchParams(sp);
+  const { tab, period, type, state } = view;
 
   const [pendingAbsences, pendingSwaps, log] = await Promise.all([
     getPendingAbsenceRequests(),
@@ -56,8 +56,8 @@ export default async function AdminRequestsPage({
   const pendingCount = pendingAbsences.length + pendingSwaps.length;
   const today = jstToday();
   // 未対応 ⇄ 記録 を行き来してもフィルタを捨てない (両方のリンクに載せる)
-  const pendingHref = requestsHref({ tab: "pending", ...filters });
-  const logHref = requestsHref({ tab: "log", ...filters });
+  const pendingHref = requestsHref({ ...view, tab: "pending" });
+  const logHref = requestsHref({ ...view, tab: "log" });
 
   return (
     <div className="space-y-6">

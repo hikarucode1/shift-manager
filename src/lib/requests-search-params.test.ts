@@ -34,6 +34,20 @@ describe("parseRequestsSearchParams", () => {
   });
 });
 
+describe("requestsHref", () => {
+  it("既定値は URL に載せない (何も変えていなければ素の /admin/requests)", () => {
+    expect(
+      requestsHref({ tab: "pending", period: "1m", type: "all", state: "all" }),
+    ).toBe("/admin/requests");
+    expect(
+      requestsHref({ tab: "log", period: "1m", type: "all", state: "all" }),
+    ).toBe("/admin/requests?tab=log");
+    expect(
+      requestsHref({ tab: "pending", period: "3m", type: "all", state: "all" }),
+    ).toBe("/admin/requests?period=3m");
+  });
+});
+
 describe("requestsHref と parseRequestsSearchParams の往復", () => {
   // ⚠️ 片方だけ変えると、タブを行き来したときにフィルタが黙って既定に戻る。
   // 未対応タブのリンクも含める (#282 レビュー: 以前は素の /admin/requests で

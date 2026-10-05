@@ -9,6 +9,12 @@ import { isIndeterminate, toFailedResult } from "@/lib/action-failure";
 import { swapCancelNotice } from "@/lib/swap-cancel-notice";
 import { requestsLogHref } from "@/lib/requests-search-params";
 import {
+  LOG_PERIOD_LABELS,
+  LOG_PERIODS,
+  LOG_STATE_LABELS,
+  LOG_STATES,
+  LOG_TYPE_LABELS,
+  LOG_TYPES,
   requestsHref,
   type LogPeriodFilter,
   type LogStateFilter,
@@ -50,11 +56,8 @@ export function RequestLogPanel({
     { type: "ok" | "error"; text: string } | null
   >(null);
 
-  function setFilter<K extends keyof RequestsFilters>(
-    key: K,
-    value: RequestsFilters[K],
-  ) {
-    const next = { tab: "log" as const, period, type, state, [key]: value };
+  function setFilter(patch: Partial<RequestsFilters>) {
+    const next = { tab: "log" as const, period, type, state, ...patch };
     startTransition(() => router.replace(requestsHref(next)));
   }
 
@@ -99,35 +102,25 @@ export function RequestLogPanel({
           id="log-period"
           label="期間"
           value={period}
-          onChange={(v) => setFilter("period", v)}
-          options={[
-            ["1m", "直近1ヶ月"],
-            ["3m", "直近3ヶ月"],
-            ["all", "すべて"],
-          ]}
+          onChange={(v) => setFilter({ period: v })}
+          options={LOG_PERIODS.map((v) => [v, LOG_PERIOD_LABELS[v]])}
         />
         <Select
           id="log-type"
           label="種別"
           value={type}
-          onChange={(v) => setFilter("type", v)}
-          options={[
-            ["all", "すべて"],
-            ["absence", "欠勤"],
-            ["swap", "交代・代講"],
-          ]}
+          onChange={(v) => setFilter({ type: v })}
+          options={LOG_TYPES.map((v) => [v, LOG_TYPE_LABELS[v]])}
         />
         <Select
           id="log-state"
           label="状態"
           value={state}
-          onChange={(v) => setFilter("state", v)}
-          options={[
-            ["all", "すべて"],
-            ["approved", "承認済み"],
-            ["cancelled", "取り消し済み"],
-            ["rejected", "却下"],
-          ]}
+          onChange={(v) => setFilter({ state: v })}
+          options={(["all", ...LOG_STATES] as const).map((v) => [
+            v,
+            LOG_STATE_LABELS[v],
+          ])}
         />
       </div>
 

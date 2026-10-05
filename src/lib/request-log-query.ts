@@ -15,6 +15,7 @@ import {
   type RequestLogEntry,
 } from "@/lib/request-log";
 import {
+  LOG_PERIOD_MONTHS,
   LOG_STATES,
   type LogPeriodFilter,
   type LogStateFilter,
@@ -45,7 +46,7 @@ const JST_OFFSET_MS = 9 * 60 * 60 * 1000;
  */
 export function sinceOf(period: LogPeriodFilter, now: Date): Date | null {
   if (period === "all") return null;
-  const months = period === "1m" ? 1 : 3;
+  const months = LOG_PERIOD_MONTHS[period];
   // ⚠️ **暦は JST で数える** (#279)。`getDate` / `setMonth` は実行環境の TZ を
   // 使うので、本番 (Vercel = UTC) では JST 0:00〜9:00 に前日の暦で引いてしまい、
   // 窓が 1 日ずれる (JST 3/31 08:00 の 1 ヶ月前が 2/28 でなく 3/1 になる)。
