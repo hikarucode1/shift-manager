@@ -6,7 +6,7 @@ on:
     # default activity types は [opened, synchronize, reopened] のみで、
     # PR の base ブランチ切替時 (= edited) では発火しない。base 切替後にも
     # CI を回したいので edited を明示追加 (#90)。本文タイトル編集の誤発火は
-    # 許容 (CI は typecheck/lint/build/RLS で 2 分程度)。
+    # 許容 (CI は typecheck/lint/test/build/RLS で 2 分程度)。
     types: [opened, synchronize, reopened, edited]
   push:
     branches: [main]
@@ -18,8 +18,14 @@ concurrency:
 
 jobs:
   verify:
+    # ⚠️ 名前は変えない。main のブランチ保護が required check としてこの名前を
+    # 参照しており、変えると全 PR がマージできなくなる (test を足した #284 でも据え置き)
     name: typecheck / lint / build
     runs-on: ubuntu-latest
+    # テストが何かを開いたまま終わらない (mock し忘れた DB クライアント、タイマー
+    # など) と、既定では 6 時間待たされ、その間 PR がマージできない。普段は
+    # 2 分程度なので、余裕を見て打ち切る
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4
 
@@ -30,19 +36,40 @@ jobs:
           cache: npm
 
       - name: Install dependencies
+        id: install
         run: npm ci
 
+      # ⚠️ install より後のステップは、前のステップが落ちても走らせる。
+      # 1 回の CI で全部の失敗を出すため (テストが落ちてビルドの失敗が隠れる、
+      # を防ぐ)。install 自体が落ちたら後ろは意味が無いので止める
       - name: Typecheck
+        if: ${{ !cancelled() && steps.install.outcome == 'success' }}
         run: npm run typecheck
 
       - name: Lint
+        if: ${{ !cancelled() && steps.install.outcome == 'success' }}
         run: npm run lint
 
+      - name: Test
+        if: ${{ !cancelled() && steps.install.outcome == 'success' }}
+        # DB には接続しない (DB を使うテストは `@/db/client` を vi.mock で差し替える)。
+        # CI に .env.local は無いので、DATABASE_URL が未設定でも DB には届かない。
+        # それでも「テストは DB に接続しない」という前提をここで明示するため、
+        # 届かないポートのダミーを置く (Build のダミーとは目的が違う: あちらは
+        # モジュール読み込み時に値が要るだけ)。
+        # TZ の固定は vitest.config.ts 側で行う (#279 / #282)。ここで重ねて指定すると
+        # 定義が 2 か所になるので置かない
+        env:
+          DATABASE_URL: postgresql://user:pass@127.0.0.1:9/postgres
+        run: npm test
+
       - name: RLS guard (static, no DB)
+        if: ${{ !cancelled() && steps.install.outcome == 'success' }}
         # 新規 public テーブルに RLS+REVOKE が無ければ落とす (#38)
         run: npm run check:rls
 
       - name: Build
+        if: ${{ !cancelled() && steps.install.outcome == 'success' }}
         # DB/Supabase へは接続しない (全ページ動的)。
         # モジュール読み込み時の eager 参照対策にダミー値を渡すだけ。
         env:
