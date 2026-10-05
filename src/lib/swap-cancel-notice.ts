@@ -10,6 +10,8 @@ import {
  * - 同じコマに元講師の募集が残っていれば、閉じるか承認するかを促す (#283)。
  *   記録 (#215) は募集を閉じないので、記録を取り消すと担当が戻って募集が
  *   再び承認できる状態になる
+ * - 代講者が同じコマに出した募集が残っていれば、閉じるよう促す (#287)。
+ *   担当が元講師に戻ったので、その募集は承認できない
  *
  * ⚠️ **講師に知らせたとは書かない。** 講師への訂正は best-effort (失敗しても
  * 取り消しは成功扱い) で、代講者 B には送らない。教室長に伝えるのは、
@@ -20,16 +22,20 @@ import {
  * にずれる
  */
 
-/** 取り消したコマに元講師の pending 募集が残っているか (#283) */
+/**
+ * 取り消したコマに残っている pending 募集 1 件。元講師の募集 (#283) と
+ * 代講者の募集 (#287) があり、両方残ることもある
+ */
 export type PendingSwapAfterCancel = {
+  /** 募集を出した講師 */
   requesterName: string;
   isProxy: boolean;
   approval: PendingSwapApproval;
-} | null;
+};
 
 export function swapCancelNotice(res: {
   expiredAbsences: number;
-  pendingSwap: PendingSwapAfterCancel;
+  pendingSwaps: PendingSwapAfterCancel[];
 }): string {
   const parts = ["取り消しました。"];
   if (res.expiredAbsences > 0) {
@@ -37,8 +43,7 @@ export function swapCancelNotice(res: {
       "このコマの欠勤申請が交代成立時に自動失効しています。必要なら「代理で欠勤を登録する」から登録し直してください。",
     );
   }
-  const p = res.pendingSwap;
-  if (p) {
+  for (const p of res.pendingSwaps) {
     parts.push(
       p.approval.approvable
         ? `このコマには ${p.requesterName} さんの交代申請が残っていて、担当が戻ったため再び承認できます。「未対応」タブで承認するか、${closeAction(p.isProxy)}`
