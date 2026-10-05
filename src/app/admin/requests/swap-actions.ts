@@ -37,6 +37,15 @@ type DecideResult =
   | { ok: true; expiredAbsences: number }
   | { ok: false; error: string };
 
+/**
+ * 承認済み代講を取り消したあと、同じコマに元講師の pending 募集が残って
+ * いるか (#283)。`approvable` は過去日でないか (承認側のガードと同じ)
+ */
+type PendingSwapAfterCancel = {
+  requesterName: string;
+  approvable: boolean;
+} | null;
+
 /** 承認処理中の「ユーザーに見せてよい」業務エラー (DB エラー等と区別) */
 class SwapBizError extends Error {}
 
@@ -473,7 +482,8 @@ const CancelApprovedInput = z.object({
 export async function cancelApprovedSwap(
   input: unknown,
 ): Promise<
-  { ok: true; expiredAbsences: number } | { ok: false; error: string }
+  | { ok: true; expiredAbsences: number; pendingSwap: PendingSwapAfterCancel }
+  | { ok: false; error: string }
 > {
   const { profile } = await requireRole("admin");
   const parsed = CancelApprovedInput.safeParse(input);
@@ -582,6 +592,25 @@ export async function cancelApprovedSwap(
         throw new SwapBizError("既に他の操作で確定済みです。");
       }
 
+      // ⚠️ **元講師の pending 募集が残っていないか** (#283)。記録 (#215) は
+      // 同じコマの募集を閉じない (#253 の案 B) ので、記録を取り消して担当が
+      // A に戻ると、その募集は再び承認できる状態になる (`pendingSwapApproval`
+      // の requesterAssigned が true に戻る)。記録のときに「承認できなく
+      // なりました」と伝えた相手に、ここで訂正を出す。
+      // `swap_requests_active_uniq` (0006) で pending は 1 件まで
+      const pendingRows = await tx
+        .select({ id: swapRequests.id })
+        .from(swapRequests)
+        .where(
+          and(
+            eq(swapRequests.requesterId, req.requesterId),
+            eq(swapRequests.date, req.date),
+            eq(swapRequests.slotNumber, req.slotNumber),
+            eq(swapRequests.status, "pending"),
+          ),
+        )
+        .limit(1);
+
       // 承認時に自動失効させた欠勤申請の件数を数えるだけ (戻さない)
       const expired = await tx
         .select({ id: absenceRequests.id })
@@ -598,6 +627,7 @@ export async function cancelApprovedSwap(
 
       return {
         expiredAbsences: expired.length,
+        pendingSwapId: pendingRows[0]?.id ?? null,
         requesterId: req.requesterId,
         applicantId: req.approvedApplicantId,
         requesterName: nameOf(req.requesterId),
@@ -634,6 +664,10 @@ export async function cancelApprovedSwap(
     // その募集が黙って承認できる状態に戻る。そちらの応募者は「承認できなく
     // なりました」を受け取ったまま
     const cancelSlotLabel = await slotLabelSafe(info.slotNumber);
+    // ⚠️ 承認できるかは `decideSwapRequest` の過去日ガードと揃える。過去の
+    // コマは承認できないので、「また承認できる」と伝えると嘘になる (#283)
+    const revivable =
+      info.pendingSwapId !== null && info.date >= jstToday();
     await Promise.all([
       notify([info.requesterId], {
         type: "swap_result",
@@ -652,11 +686,53 @@ export async function cancelApprovedSwap(
         // 「応募した募集の結果」ができたので、そちらへ着地させる
         href: "/tutor/open-swaps",
       }),
+      ...(revivable
+        ? [
+            notify([info.requesterId], {
+              type: "swap_result" as const,
+              title: "交代・代講の募集がまた承認できる状態に戻りました",
+              body: `対象: ${info.date} ${cancelSlotLabel} ／ 代講の記録が取り消されたため、募集は再び承認を待っています。`,
+              href: "/tutor/swaps",
+            }),
+          ]
+        : []),
     ]);
+
+    // ⚠️ 応募者の取得は失敗を握り潰さないので、上の通知を出し切ってから
+    // try/catch で囲む (#238 / #253 と同じ順序)。ここで投げると、コミット
+    // 済みなのに外側の catch が「取り消しに失敗しました」を返してしまう。
+    //
+    // ⚠️ **代講者 B は除く。** 送る相手は、記録のときに「承認できなく
+    // なりました」を送った相手と揃える。`recordSubstitution` は代講者を
+    // 除いている (B には「引き受けた代講が取り消されました」が上で届く)
+    if (revivable && info.pendingSwapId !== null) {
+      try {
+        const applicants = (
+          await getActiveApplicantIds(info.pendingSwapId)
+        ).filter((pid) => pid !== info.applicantId);
+        if (applicants.length > 0) {
+          await notify(applicants, {
+            type: "swap_result",
+            title: "応募していた代講の募集がまた有効になりました",
+            body: `対象: ${info.date} ${cancelSlotLabel} ／ 代講の記録が取り消されたため、募集は再び承認を待っています。`,
+            href: "/tutor/open-swaps",
+          });
+        }
+      } catch (e) {
+        console.error("cancelApprovedSwap notify revived swap failed", e);
+      }
+    }
 
     revalidateAll();
     revalidatePath("/admin/weekly");
-    return { ok: true, expiredAbsences: info.expiredAbsences };
+    return {
+      ok: true,
+      expiredAbsences: info.expiredAbsences,
+      pendingSwap:
+        info.pendingSwapId === null
+          ? null
+          : { requesterName: info.requesterName, approvable: revivable },
+    };
   } catch (e) {
     if (e instanceof SwapBizError) return { ok: false, error: e.message };
     console.error("cancelApprovedSwap failed", e);
