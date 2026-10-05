@@ -48,7 +48,8 @@ describe("sinceOf", () => {
 
   // ⚠️ 上はどれも JST 19:00 で、UTC と JST の暦が一致する。#279 のずれは
   // JST 0:00〜9:00 (UTC ではまだ前日) にしか出ないので、その時間帯で固定する。
-  // 実行環境の TZ に依存しないことは `TZ=UTC` / `TZ=Asia/Tokyo` の両方で確認する
+  // テストは vitest.config.ts で UTC (本番と同じ) に固定している。シェルの TZ は
+  // 効かない。固定が外れたら src/test/timezone.test.ts が落ちる
   describe("暦は JST で数える (#279)", () => {
     it("JST 3/31 08:00 の 1 ヶ月前は JST 2/28 08:00 (UTC だと 3/30 なので 3/1 にずれていた)", () => {
       expect(sinceOf("1m", new Date("2026-03-30T23:00:00Z"))!.toISOString()).toBe(

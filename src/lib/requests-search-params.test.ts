@@ -1,9 +1,10 @@
 import { describe, expect, it } from "vitest";
 import {
   LOG_PERIODS,
-  LOG_STATES,
+  LOG_STATE_FILTERS,
   LOG_TYPES,
   parseRequestsSearchParams,
+  REQUESTS_TABS,
   requestsHref,
 } from "@/lib/requests-search-params";
 
@@ -52,10 +53,10 @@ describe("requestsHref と parseRequestsSearchParams の往復", () => {
   // ⚠️ 片方だけ変えると、タブを行き来したときにフィルタが黙って既定に戻る。
   // 未対応タブのリンクも含める (#282 レビュー: 以前は素の /admin/requests で
   // 記録 → 未対応 → 記録 でフィルタが消えていた)
-  const all = (["pending", "log"] as const).flatMap((tab) =>
+  const all = REQUESTS_TABS.flatMap((tab) =>
     LOG_PERIODS.flatMap((period) =>
       LOG_TYPES.flatMap((type) =>
-        [...LOG_STATES, "all" as const].map((state) => ({
+        LOG_STATE_FILTERS.map((state) => ({
           tab,
           period,
           type,

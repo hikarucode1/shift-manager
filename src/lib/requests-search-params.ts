@@ -13,11 +13,14 @@ export const LOG_PERIODS = ["1m", "3m", "all"] as const;
 export const LOG_TYPES = ["all", "absence", "swap"] as const;
 /** 台帳に出す状態。`pending` は未対応タブの担当なので含めない */
 export const LOG_STATES = ["approved", "cancelled", "rejected"] as const;
+/** 状態フィルタの候補 (「すべて」を含む)。選択肢・正規化・テストはこれを使う */
+export const LOG_STATE_FILTERS = ["all", ...LOG_STATES] as const;
+export const REQUESTS_TABS = ["pending", "log"] as const;
 
 /** 既定は直近 1 ヶ月。飽和 (#224) は件数上限ではなく期間で抑える */
 export type LogPeriodFilter = (typeof LOG_PERIODS)[number];
 export type LogTypeFilter = (typeof LOG_TYPES)[number];
-export type LogStateFilter = (typeof LOG_STATES)[number] | "all";
+export type LogStateFilter = (typeof LOG_STATE_FILTERS)[number];
 
 /** 期間の月数。`all` は下限なし */
 export const LOG_PERIOD_MONTHS: Record<Exclude<LogPeriodFilter, "all">, number> =
@@ -42,7 +45,7 @@ export const LOG_STATE_LABELS: Record<LogStateFilter, string> = {
 
 const DEFAULT_FILTERS = { period: "1m", type: "all", state: "all" } as const;
 
-export type RequestsTab = "pending" | "log";
+export type RequestsTab = (typeof REQUESTS_TABS)[number];
 
 export type RequestsFilters = {
   period: LogPeriodFilter;
@@ -73,10 +76,10 @@ export function parseRequestsSearchParams(sp: {
   state?: string;
 }): RequestsView {
   return {
-    tab: sp.tab === "log" ? "log" : "pending",
+    tab: oneOf(REQUESTS_TABS, sp.tab, "pending"),
     period: oneOf(LOG_PERIODS, sp.period, DEFAULT_FILTERS.period),
     type: oneOf(LOG_TYPES, sp.type, DEFAULT_FILTERS.type),
-    state: oneOf(LOG_STATES, sp.state, DEFAULT_FILTERS.state as LogStateFilter),
+    state: oneOf(LOG_STATE_FILTERS, sp.state, DEFAULT_FILTERS.state),
   };
 }
 

@@ -7,12 +7,11 @@ import type { RequestLogEntry } from "@/lib/request-log";
 import type { RequestLog } from "@/lib/request-log-query";
 import { isIndeterminate, toFailedResult } from "@/lib/action-failure";
 import { swapCancelNotice } from "@/lib/swap-cancel-notice";
-import { requestsLogHref } from "@/lib/requests-search-params";
 import {
   LOG_PERIOD_LABELS,
   LOG_PERIODS,
   LOG_STATE_LABELS,
-  LOG_STATES,
+  LOG_STATE_FILTERS,
   LOG_TYPE_LABELS,
   LOG_TYPES,
   requestsHref,
@@ -117,10 +116,7 @@ export function RequestLogPanel({
           label="状態"
           value={state}
           onChange={(v) => setFilter({ state: v })}
-          options={(["all", ...LOG_STATES] as const).map((v) => [
-            v,
-            LOG_STATE_LABELS[v],
-          ])}
+          options={LOG_STATE_FILTERS.map((v) => [v, LOG_STATE_LABELS[v]])}
         />
       </div>
 
