@@ -2,7 +2,7 @@
 
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
-import { and, eq, sql } from "drizzle-orm";
+import { and, eq, not } from "drizzle-orm";
 import { requireRole } from "@/lib/auth";
 import { notify } from "@/lib/notifications";
 import { db } from "@/db/client";
@@ -12,6 +12,7 @@ import { isUniqueViolation } from "@/lib/db-errors";
 import { getSlotMeta } from "@/lib/slot-meta";
 import { isValidIsoDate, weekdayOf } from "@/lib/week";
 import { ABSENCE_CLOSED_UNASSIGNED_NOTE } from "@/lib/pending-absence-actions";
+import { absenceTutorAssigned } from "@/lib/absences";
 
 type ActionResult = { ok: true } | { ok: false; error: string };
 
@@ -51,8 +52,14 @@ const CancelApprovedAbsenceInput = z.object({
  *      対象なので、`pending` に戻すと講師の出し直しを塞いだままになる
  *   `cancelled` にすれば両方とも解ける。
  *
- * ⚠️ `cancelled` には 3 経路から到達する。#225 以降は**どの経路かは判別できる**:
+ * ⚠️ `cancelled` には 4 経路から到達する。#225 以降は**どの経路かは判別できる**:
  *   - この関数:            `decided_by` あり / `decided_at` あり
+ *   - 不要として閉じる (#289, `closeUnassignedAbsence`):
+ *                          `decided_by` あり / `decided_at` あり
+ *                          (+ `decision_note = ABSENCE_CLOSED_UNASSIGNED_NOTE`)。
+ *                          **pending から来る** (承認を経ていない)。台帳では
+ *                          この関数と同じ「取り消し」に出し、コメント欄の理由で
+ *                          見分ける (新しい種類は作っていない)
  *   - 交代成立の自動失効:   `decided_by` **null** / `decided_at` あり
  *                          (+ `decision_note = ABSENCE_AUTO_EXPIRED_NOTE`)
  *   - 講師の自己取り下げ:   どちらも null
@@ -239,9 +246,9 @@ const CloseUnassignedInput = z.object({
  * が届くので、中立に閉じる操作を別に用意する。カードの出し分けは
  * `pendingAbsenceActions`。
  *
- * ⚠️ **今も担当なら閉じない。** 担当かどうかは UPDATE の WHERE に入れて、
- * 確認と書き込みを 1 つの文にする (間に担当が戻る窓を作らない)。条件は
- * `isTutorBusyAt` と同じ (`weekly_shifts` に (講師, 日, コマ) の行があるか)。
+ * ⚠️ **今も担当なら閉じない。** 担当かどうか (`absenceTutorAssigned`) は
+ * UPDATE の WHERE に入れて、確認と書き込みを 1 つの文にする (間に担当が戻る
+ * 窓を作らない)。
  *
  * 状態は `cancelled`、理由は `ABSENCE_CLOSED_UNASSIGNED_NOTE`。台帳では教室長の
  * 「取り消し」として出て、コメント欄に理由が出る。`decided_by` は閉じた教室長
@@ -273,12 +280,7 @@ export async function closeUnassignedAbsence(
       and(
         eq(absenceRequests.id, id),
         eq(absenceRequests.status, "pending"),
-        sql`not exists (
-          select 1 from ${weeklyShifts}
-          where ${weeklyShifts.tutorId} = ${absenceRequests.tutorId}
-            and ${weeklyShifts.date} = ${absenceRequests.date}
-            and ${weeklyShifts.slotNumber} = ${absenceRequests.slotNumber}
-        )`,
+        not(absenceTutorAssigned()),
       ),
     )
     .returning({
@@ -304,13 +306,21 @@ export async function closeUnassignedAbsence(
   }
 
   const { tutorId, date, slotNumber } = updated[0];
-  const meta = await getSlotMeta();
-  const slotLabel = meta.get(slotNumber)?.label ?? `${slotNumber}限`;
+  // ⚠️ コマ名の取得は失敗しても投げない。行はもう pending ではないので、
+  // ここで action ごと落ちると押し直せず、講師に通知が届かないまま残る
+  // (swap-actions.ts の `slotLabelSafe` と同じ理由)
+  let slotLabel = `${slotNumber}限`;
+  try {
+    slotLabel = (await getSlotMeta()).get(slotNumber)?.label ?? slotLabel;
+  } catch (e) {
+    console.error("closeUnassignedAbsence slot label failed", e);
+  }
   const { label } = weekdayOf(date);
-  // ⚠️ 「却下」と言わない。中立に、担当でなくなったことだけを伝える
+  // ⚠️ 「却下」と言わない。中立に、担当でなくなったことだけを伝える。
+  // コマごと無くなった (CSV で休日) 場合もあるので、カードの案内と揃える
   await notify([tutorId], {
     type: "absence_result",
-    title: "欠勤申請は不要になりました（担当が変わったため）",
+    title: "欠勤申請は不要になりました（担当が変わったか、コマが無くなったため）",
     body: `対象日: ${date}（${label}）${slotLabel} ／ このコマは今はあなたの担当ではありません。`,
     href: "/tutor/absences",
   });

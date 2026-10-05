@@ -1,5 +1,15 @@
 import "server-only";
-import { and, asc, between, desc, eq, gte, inArray, sql } from "drizzle-orm";
+import {
+  and,
+  asc,
+  between,
+  desc,
+  eq,
+  gte,
+  inArray,
+  sql,
+  type SQL,
+} from "drizzle-orm";
 import { db } from "@/db/client";
 import { absenceRequests, profiles, weeklyShifts } from "@/db/schema";
 import { ABSENCE_AUTO_EXPIRED_NOTE } from "@/lib/absence-expiry";
@@ -56,12 +66,30 @@ export type PendingAbsence = AbsenceRequestRow & {
   isEnded: boolean;
   /**
    * 申請した講師が今もそのコマの担当か (#289)。カードの出し分け
-   * (`pendingAbsenceActions`) に使う。条件は `isTutorBusyAt` と、
-   * `closeUnassignedAbsence` の WHERE と同じ (`weekly_shifts` に
-   * (講師, 日, コマ) の行があるか)
+   * (`pendingAbsenceActions`) に使う。条件は `absenceTutorAssigned`
    */
   tutorAssigned: boolean;
 };
+
+/**
+ * 欠勤申請の講師が、今もその (日, コマ) の担当か (#289)。`absence_requests` の
+ * 行に対して評価する SQL の断片。
+ *
+ * ⚠️ **一覧 (`getPendingAbsenceRequests`)・不要として閉じる
+ * (`closeUnassignedAbsence`)・承認 / 却下 (`decideAbsenceRequest`) の 3 か所が
+ * これを使う。** カードとサーバの判定がずれないよう、書き写さないこと。
+ * 条件は `isTutorBusyAt` (swaps.ts) と同じ (`weekly_shifts` に (講師, 日, コマ)
+ * の行があるか)。join ではなく exists にするのは、`weekly_shifts` が
+ * (upload, 講師, 日, コマ) で一意なので行が重複しうるため
+ */
+export function absenceTutorAssigned(): SQL<boolean> {
+  return sql<boolean>`exists (
+    select 1 from ${weeklyShifts}
+    where ${weeklyShifts.tutorId} = ${absenceRequests.tutorId}
+      and ${weeklyShifts.date} = ${absenceRequests.date}
+      and ${weeklyShifts.slotNumber} = ${absenceRequests.slotNumber}
+  )`;
+}
 
 function slotLabelOf(
   meta: Awaited<ReturnType<typeof getSlotMeta>>,
@@ -181,14 +209,7 @@ export async function getPendingAbsenceRequests(): Promise<PendingAbsence[]> {
       decidedAt: absenceRequests.decidedAt,
       createdBy: absenceRequests.createdBy,
       createdAt: absenceRequests.createdAt,
-      // ⚠️ join ではなく exists にする。weekly_shifts は (upload, 講師, 日, コマ)
-      // で一意なので、join すると行が重複しうる
-      tutorAssigned: sql<boolean>`exists (
-        select 1 from ${weeklyShifts}
-        where ${weeklyShifts.tutorId} = ${absenceRequests.tutorId}
-          and ${weeklyShifts.date} = ${absenceRequests.date}
-          and ${weeklyShifts.slotNumber} = ${absenceRequests.slotNumber}
-      )`,
+      tutorAssigned: absenceTutorAssigned(),
     })
     .from(absenceRequests)
     .innerJoin(profiles, eq(profiles.id, absenceRequests.tutorId))

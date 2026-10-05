@@ -132,7 +132,9 @@ export function RequestsPanel({ pending }: { pending: PendingAbsence[] }) {
                   </div>
                 </div>
 
-                {rejectId === p.id ? (
+                {/* 却下が出せないカード (担当でない, #289) では入力欄も出さない。
+                    入力中に担当が変わって読み直された場合も、ここで閉じる */}
+                {rejectId === p.id && actions.canReject ? (
                   <div className="space-y-2">
                     <textarea
                       value={rejectNote}
@@ -160,6 +162,9 @@ export function RequestsPanel({ pending }: { pending: PendingAbsence[] }) {
                               setRejectId(null);
                               setRejectNote("");
                             },
+                            // 担当でないと弾かれたら、読み直して「不要として
+                            // 閉じる」に切り替える (#289)
+                            true,
                           )
                         }
                       >
