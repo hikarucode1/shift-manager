@@ -28,6 +28,15 @@ import {
 
 type ActionResult = { ok: true } | { ok: false; error: string };
 
+/**
+ * 承認で自動失効させた欠勤の件数を画面に返す (#278)。記録 (`recordSubstitution`)
+ * と取り消し (`cancelApprovedSwap`) は返しているのに、承認だけ返していなかった。
+ * 却下は失効させないので常に 0
+ */
+type DecideResult =
+  | { ok: true; expiredAbsences: number }
+  | { ok: false; error: string };
+
 /** 承認処理中の「ユーザーに見せてよい」業務エラー (DB エラー等と区別) */
 class SwapBizError extends Error {}
 
@@ -79,7 +88,7 @@ const DecideInput = z.discriminatedUnion("decision", [
  */
 export async function decideSwapRequest(
   input: unknown,
-): Promise<ActionResult> {
+): Promise<DecideResult> {
   const { profile } = await requireRole("admin");
 
   const parsed = DecideInput.safeParse(input);
@@ -143,7 +152,7 @@ export async function decideSwapRequest(
       console.error("decideSwapRequest notify applicants failed", e);
     }
     revalidateAll();
-    return { ok: true };
+    return { ok: true, expiredAbsences: 0 };
   }
 
   // ---- 承認 ----
@@ -387,7 +396,7 @@ export async function decideSwapRequest(
         href: "/tutor",
       }),
       // ⚠️ **失効させた欠勤を本人に伝える (#250)**。教室長には
-      // `expiredAbsences` を返して画面に出しているのに、本人には無音だった。
+      // `expiredAbsences` を返して画面に出している (#278) のに、本人には無音だった。
       // 「欠勤が承認されました」の通知だけが残り、取り消された通知が無いので、
       // 本人は休めるつもりのまま記録だけが消える。型は absence_result で、
       // href は /tutor/absences (status で絞らず件数制限も無いので必ず着地する)
@@ -429,7 +438,7 @@ export async function decideSwapRequest(
   }
 
   revalidateAll();
-  return { ok: true };
+  return { ok: true, expiredAbsences: approvedInfo?.expiredAbsences ?? 0 };
 }
 
 const CancelApprovedInput = z.object({

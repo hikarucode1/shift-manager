@@ -1,11 +1,12 @@
 "use client";
 
-import { useEffect, useState, useTransition } from "react";
+import { useEffect, useRef, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
-import { AlertCircle, CheckCircle2 } from "lucide-react";
+import { AlertCircle, CheckCircle2, X } from "lucide-react";
 import { isIndeterminate, toFailedResult } from "@/lib/action-failure";
 import type { AdminSwapRequest } from "@/lib/swaps";
 import { pendingSwapApproval } from "@/lib/pending-swap-approval";
+import { approvalNotice } from "@/lib/approval-notice";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { shortDate } from "@/lib/week";
@@ -22,6 +23,16 @@ const approval = (r: AdminSwapRequest) =>
     isProxy: r.isProxy,
   });
 
+type Notice = {
+  type: "ok" | "error";
+  text: string;
+  /**
+   * 自動で消さない。見落とすと困る知らせ (#278 の欠勤失効) にだけ使う。
+   * 閉じるボタンを出し、画面外にあればスクロールして見せる
+   */
+  sticky?: boolean;
+};
+
 export function SwapRequestsPanel({
   pending,
 }: {
@@ -29,10 +40,8 @@ export function SwapRequestsPanel({
 }) {
   const router = useRouter();
   const [isPending, startTransition] = useTransition();
-  const [notice, setNotice] = useState<{
-    type: "ok" | "error";
-    text: string;
-  } | null>(null);
+  const [notice, setNotice] = useState<Notice | null>(null);
+  const noticeRef = useRef<HTMLParagraphElement>(null);
   const [rejectId, setRejectId] = useState<string | null>(null);
   const [rejectNote, setRejectNote] = useState("");
   // #231: 代理募集 (教室長が作ったもの) は「却下」ではなく「取り下げ」。
@@ -41,20 +50,32 @@ export function SwapRequestsPanel({
 
   useEffect(() => {
     if (!notice) return;
+    if (notice.sticky) {
+      // ⚠️ 知らせはパネル先頭に出るが、押した承認ボタンは下のカードにある。
+      // 未対応が多いと残しても画面外で見えない (#280 レビュー)
+      noticeRef.current?.scrollIntoView({ block: "nearest", behavior: "smooth" });
+      return;
+    }
     const t = setTimeout(() => setNotice(null), 4000);
     return () => clearTimeout(t);
   }, [notice]);
 
-  function run(
-    fn: () => Promise<{ ok: boolean; error?: string }>,
-    okMsg: string,
+  function run<R extends { ok: boolean; error?: string }>(
+    fn: () => Promise<R>,
+    // 結果で文言を変えたいとき (#278) は関数で渡す。成功時にしか呼ばない
+    okMsg: string | ((res: Extract<R, { ok: true }>) => Omit<Notice, "type">),
     onOk?: () => void,
   ) {
     setNotice(null);
     startTransition(async () => {
       const res = await fn().catch(toFailedResult);
       if (res.ok) {
-        setNotice({ type: "ok", text: okMsg });
+        setNotice({
+          type: "ok",
+          ...(typeof okMsg === "string"
+            ? { text: okMsg }
+            : okMsg(res as Extract<R, { ok: true }>)),
+        });
         onOk?.();
         router.refresh();
       } else {
@@ -71,6 +92,7 @@ export function SwapRequestsPanel({
     <div className="space-y-4">
       {notice && (
         <p
+          ref={noticeRef}
           role="status"
           className={cn(
             "flex items-center gap-1 text-sm",
@@ -78,11 +100,21 @@ export function SwapRequestsPanel({
           )}
         >
           {notice.type === "error" ? (
-            <AlertCircle className="size-4" />
+            <AlertCircle className="size-4 shrink-0" />
           ) : (
-            <CheckCircle2 className="size-4" />
+            <CheckCircle2 className="size-4 shrink-0" />
           )}
-          {notice.text}
+          <span className="min-w-0 flex-1">{notice.text}</span>
+          {notice.sticky && (
+            <button
+              type="button"
+              aria-label="閉じる"
+              onClick={() => setNotice(null)}
+              className="shrink-0 rounded p-1 hover:bg-muted"
+            >
+              <X className="size-4" />
+            </button>
+          )}
         </p>
       )}
 
@@ -233,7 +265,11 @@ export function SwapRequestsPanel({
                                       id: r.id,
                                       applicationId: a.applicationId,
                                     }),
-                                  `${a.applicantName} を代講者として承認しました。`,
+                                  (res) =>
+                                    approvalNotice(
+                                      a.applicantName,
+                                      res.expiredAbsences,
+                                    ),
                                 )
                               }
                             >
