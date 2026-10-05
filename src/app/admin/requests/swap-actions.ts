@@ -646,10 +646,10 @@ export async function cancelApprovedSwap(
     // C の /tutor/open-swaps は「決まった代講が取り消されました」に変わる
     // (`application-outcome.ts`)。
     //
-    // ⚠️ **記録 (kind=recorded) の取り消しは別の穴がある** (#283)。記録しても
-    // 同じコマの A の pending 募集は閉じないので、取り消して担当が A に戻ると
-    // その募集が黙って承認できる状態に戻る。そちらの応募者は「承認できなく
-    // なりました」を受け取ったまま
+    // ⚠️ **C とは別に、記録 (kind=recorded) の取り消しでは訂正を送る** (#283)。
+    // 記録しても同じコマの A の pending 募集は閉じないので、取り消して担当が
+    // A に戻るとその募集は再び承認できる。記録のときに「承認できなく
+    // なりました」を送った A と応募者に、下で訂正を送る
     const cancelSlotLabel = await slotLabelSafe(info.slotNumber);
     // ⚠️ 承認できるかは承認ボタンと同じ述語で決める (#283)。過去のコマは
     // 承認できないので、「また承認できる」と伝えると嘘になる。担当は直前の
