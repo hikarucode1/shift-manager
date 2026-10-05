@@ -248,6 +248,8 @@ export async function getPendingAbsenceRequests(): Promise<PendingAbsence[]> {
     // pending が自動失効していることは無いが、判定は各取得関数で素直に計算する
     autoExpired:
       r.decisionNote === ABSENCE_AUTO_EXPIRED_NOTE && r.decidedBy === null,
+    // pending が閉じていることは無いが、autoExpired と同じく判定は各取得関数で
+    // 素直に計算する (型を共有しているため)
     closedUnassigned:
       r.status === "cancelled" &&
       r.decisionNote === ABSENCE_CLOSED_UNASSIGNED_NOTE &&

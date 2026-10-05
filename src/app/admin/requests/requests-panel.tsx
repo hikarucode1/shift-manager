@@ -25,6 +25,18 @@ export function RequestsPanel({ pending }: { pending: PendingAbsence[] }) {
   const [rejectId, setRejectId] = useState<string | null>(null);
   const [rejectNote, setRejectNote] = useState("");
 
+  // 却下の入力中のカードが、読み直しで却下を出せなくなったら (担当でない,
+  // #289)、入力内容を捨てる。どの操作の読み直しでも効くよう、描画のたびに
+  // 確かめる (React の「前の描画の情報で state を直す」パターン。effect で
+  // やると lint の set-state-in-effect に当たる)。残すと、あとで担当に戻った
+  // とき古い入力欄が出る
+  const rejectCard =
+    rejectId === null ? undefined : pending.find((p) => p.id === rejectId);
+  if (rejectCard && !pendingAbsenceActions(rejectCard).canReject) {
+    setRejectId(null);
+    setRejectNote("");
+  }
+
   useEffect(() => {
     if (!notice) return;
     const t = setTimeout(() => setNotice(null), 4000);
@@ -32,12 +44,10 @@ export function RequestsPanel({ pending }: { pending: PendingAbsence[] }) {
   }, [notice]);
 
   function run(
-    fn: () => Promise<{ ok: boolean; error?: string; code?: string }>,
+    fn: () => Promise<{ ok: boolean; error?: string }>,
     okMsg: string,
     opts: {
       onOk?: () => void;
-      /** 失敗したとき。`code` で理由を見分ける (文言の一致に頼らない) */
-      onError?: (code: string | undefined) => void;
       /**
        * 失敗したときも画面を読み直すか。サーバで「今は担当ではない」と弾かれた
        * とき (#289)、カードを開いたまま担当が変わっていたので、読み直して
@@ -59,7 +69,6 @@ export function RequestsPanel({ pending }: { pending: PendingAbsence[] }) {
         // サーバーの真実を取りに行く (返り値の { ok: false } は確実に
         // 書いていないので触らない)。
         if (isIndeterminate(res) || opts.refreshOnError) router.refresh();
-        opts.onError?.("code" in res ? res.code : undefined);
       }
     });
   }
@@ -169,17 +178,10 @@ export function RequestsPanel({ pending }: { pending: PendingAbsence[] }) {
                                 setRejectNote("");
                               },
                               // 担当でないと弾かれたら、読み直して「不要として
-                              // 閉じる」に切り替える (#289)
+                              // 閉じる」に切り替える (#289)。入力内容は、読み
+                              // 直した描画で却下を出せなくなったときに捨てる
+                              // (上の rejectCard)。通信エラーなどでは残る (#202)
                               refreshOnError: true,
-                              // 入力を消すのは「担当でない」で弾かれたときだけ。
-                              // 残すと、あとで担当に戻ったとき古い入力欄が出る。
-                              // 通信エラーなどでは消さない (押し直せるように, #202)
-                              onError: (code) => {
-                                if (code === "unassigned") {
-                                  setRejectId(null);
-                                  setRejectNote("");
-                                }
-                              },
                             },
                           )
                         }

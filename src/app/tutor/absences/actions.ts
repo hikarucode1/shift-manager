@@ -13,17 +13,7 @@ import { hasSlotEnded } from "@/lib/swaps";
 import { absenceTutorAssigned } from "@/lib/absences";
 import { pendingAbsenceActions } from "@/lib/pending-absence-actions";
 
-type ActionResult =
-  | { ok: true }
-  | {
-      ok: false;
-      error: string;
-      /**
-       * 失敗の種類 (#289)。`unassigned` = 担当でないので弾いた。カードが
-       * 却下の入力内容を消すかの判断に使う (文言の一致に頼らない)
-       */
-      code?: "unassigned";
-    };
+type ActionResult = { ok: true } | { ok: false; error: string };
 
 const CreateInput = z.object({
   date: z.string().refine(isValidIsoDate, "日付が不正です。"),
@@ -312,17 +302,13 @@ export async function decideAbsenceRequest(
       .from(absenceRequests)
       .where(eq(absenceRequests.id, id))
       .limit(1);
-    return requireAssigned && row?.status === "pending"
-      ? {
-          ok: false,
-          error: `このコマは今は担当ではないので${decision === "approved" ? "承認" : "却下"}できません。「不要として閉じる」を使ってください。`,
-          // カードが入力内容を消すかの判断に使う (文言の一致に頼らない)
-          code: "unassigned",
-        }
-      : {
-          ok: false,
-          error: "処理できませんでした（既に対応済みの可能性があります）。",
-        };
+    return {
+      ok: false,
+      error:
+        requireAssigned && row?.status === "pending"
+          ? `このコマは今は担当ではないので${decision === "approved" ? "承認" : "却下"}できません。「不要として閉じる」を使ってください。`
+          : "処理できませんでした（既に対応済みの可能性があります）。",
+    };
   }
 
   await notify([updated[0].tutorId], {

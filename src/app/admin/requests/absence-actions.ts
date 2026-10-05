@@ -9,7 +9,7 @@ import { db } from "@/db/client";
 import { absenceRequests, weeklyShifts } from "@/db/schema";
 import { findPendingSwap } from "@/lib/swaps";
 import { isUniqueViolation } from "@/lib/db-errors";
-import { getSlotMeta, slotLabelSafe } from "@/lib/slot-meta";
+import { slotLabelSafe } from "@/lib/slot-meta";
 import { isValidIsoDate, weekdayOf } from "@/lib/week";
 import { ABSENCE_CLOSED_UNASSIGNED_NOTE } from "@/lib/pending-absence-actions";
 import { absenceTutorAssigned } from "@/lib/absences";
@@ -224,10 +224,9 @@ export async function createAbsenceOnBehalf(
 
   // ⚠️ 本人が申請していないので、記録したことは通知でしか本人に届かない。
   // 「聞いた内容と違う」に気づける唯一の経路
-  // ⚠️ `${slotNumber}限` と直書きしない。slot_definitions.label は自由文で
-  // admin が変更できるため、直書きすると通知だけ他の画面とズレる
-  const meta = await getSlotMeta();
-  const slotLabel = meta.get(slotNumber)?.label ?? `${slotNumber}限`;
+  // ⚠️ 登録はもうコミット済み。コマ名の取得で投げると通知が届かず、押し直しは
+  // 一意制約で「既に記録があります」になる (`slotLabelSafe`)
+  const slotLabel = await slotLabelSafe(slotNumber);
   const { label } = weekdayOf(date);
   await notify([tutorId], {
     type: "absence_result",
