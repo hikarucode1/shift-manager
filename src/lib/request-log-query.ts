@@ -16,12 +16,15 @@ import {
 } from "@/lib/request-log";
 import { jstToday, weekdayOf } from "@/lib/week";
 
-/** 台帳に出す状態。`pending` は未対応タブの担当なので含めない */
-export const LOG_STATES = ["approved", "cancelled", "rejected"] as const;
-export type LogStateFilter = (typeof LOG_STATES)[number] | "all";
-export type LogTypeFilter = "all" | "absence" | "swap";
-/** 既定は直近 1 ヶ月。飽和 (#224) は件数上限ではなく期間で抑える */
-export type LogPeriodFilter = "1m" | "3m" | "all";
+import {
+  LOG_STATES,
+  type LogPeriodFilter,
+  type LogStateFilter,
+  type LogTypeFilter,
+} from "@/lib/requests-search-params";
+
+// 候補値の定義は requests-search-params.ts (クライアントからも読むため)
+export type { LogPeriodFilter, LogStateFilter, LogTypeFilter };
 
 export type RequestLog = {
   rows: RequestLogEntry[];

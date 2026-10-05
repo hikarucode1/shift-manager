@@ -5,6 +5,9 @@ export default defineConfig({
   test: {
     include: ["src/**/*.test.ts", "src/**/*.test.tsx"],
     environment: "node",
+    // ⚠️ 本番 (Vercel) と同じ UTC に固定する (#279)。開発機は JST なので、
+    // 固定しないと「JST の暦で数えているか」のテストが古い実装でも通ってしまう
+    env: { TZ: "UTC" },
   },
   resolve: {
     alias: {

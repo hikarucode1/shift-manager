@@ -4,15 +4,17 @@ import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { AlertCircle, Info } from "lucide-react";
 import type { RequestLogEntry } from "@/lib/request-log";
-import type {
-  LogPeriodFilter,
-  LogStateFilter,
-  LogTypeFilter,
-  RequestLog,
-} from "@/lib/request-log-query";
+import type { RequestLog } from "@/lib/request-log-query";
 import { isIndeterminate, toFailedResult } from "@/lib/action-failure";
 import { swapCancelNotice } from "@/lib/swap-cancel-notice";
 import { requestsLogHref } from "@/lib/requests-search-params";
+import {
+  requestsHref,
+  type LogPeriodFilter,
+  type LogStateFilter,
+  type LogTypeFilter,
+  type RequestsFilters,
+} from "@/lib/requests-search-params";
 import { fmtDateTimeJst } from "@/lib/datetime";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -48,13 +50,12 @@ export function RequestLogPanel({
     { type: "ok" | "error"; text: string } | null
   >(null);
 
-  // 値は Select の options から来るので型は呼び出し側で合っている。不正値が
-  // 来ても page 側の `parseRequestsSearchParams` が既定に落とす
-  function setFilter(key: "period" | "type" | "state", value: string) {
-    const next = { period, type, state, [key]: value } as Parameters<
-      typeof requestsLogHref
-    >[0];
-    startTransition(() => router.replace(requestsLogHref(next)));
+  function setFilter<K extends keyof RequestsFilters>(
+    key: K,
+    value: RequestsFilters[K],
+  ) {
+    const next = { tab: "log" as const, period, type, state, [key]: value };
+    startTransition(() => router.replace(requestsHref(next)));
   }
 
   function submit(entry: RequestLogEntry) {
@@ -278,7 +279,8 @@ export function RequestLogPanel({
   );
 }
 
-function Select({
+// 値の型は options から決まる。間違った候補値を書くと型エラーになる
+function Select<V extends string>({
   id,
   label,
   value,
@@ -287,9 +289,9 @@ function Select({
 }: {
   id: string;
   label: string;
-  value: string;
-  onChange: (v: string) => void;
-  options: [string, string][];
+  value: V;
+  onChange: (v: V) => void;
+  options: [V, string][];
 }) {
   return (
     <span className="flex items-center gap-1">
@@ -299,7 +301,8 @@ function Select({
       <select
         id={id}
         value={value}
-        onChange={(e) => onChange(e.target.value)}
+        // <select> は options に書いた値しか返さない
+        onChange={(e) => onChange(e.target.value as V)}
         className="rounded-md border bg-background px-2 py-1 text-sm"
       >
         {options.map(([v, l]) => (

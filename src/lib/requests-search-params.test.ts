@@ -1,7 +1,10 @@
 import { describe, expect, it } from "vitest";
 import {
+  LOG_PERIODS,
+  LOG_STATES,
+  LOG_TYPES,
   parseRequestsSearchParams,
-  requestsLogHref,
+  requestsHref,
 } from "@/lib/requests-search-params";
 
 /** href の query を page が受け取る形に戻す */
@@ -31,16 +34,24 @@ describe("parseRequestsSearchParams", () => {
   });
 });
 
-describe("requestsLogHref と parseRequestsSearchParams の往復", () => {
-  // ⚠️ 片方だけ変えると、タブを行き来したときにフィルタが黙って既定に戻る
-  const periods = ["1m", "3m", "all"] as const;
-  const types = ["all", "absence", "swap"] as const;
-  const states = ["all", "approved", "cancelled", "rejected"] as const;
-  const all = periods.flatMap((period) =>
-    types.flatMap((type) => states.map((state) => ({ period, type, state }))),
+describe("requestsHref と parseRequestsSearchParams の往復", () => {
+  // ⚠️ 片方だけ変えると、タブを行き来したときにフィルタが黙って既定に戻る。
+  // 未対応タブのリンクも含める (#282 レビュー: 以前は素の /admin/requests で
+  // 記録 → 未対応 → 記録 でフィルタが消えていた)
+  const all = (["pending", "log"] as const).flatMap((tab) =>
+    LOG_PERIODS.flatMap((period) =>
+      LOG_TYPES.flatMap((type) =>
+        [...LOG_STATES, "all" as const].map((state) => ({
+          tab,
+          period,
+          type,
+          state,
+        })),
+      ),
+    ),
   );
 
-  it.each(all)("$period / $type / $state が記録タブで戻る", (view) => {
-    expect(parseHref(requestsLogHref(view))).toEqual({ tab: "log", ...view });
+  it.each(all)("$tab / $period / $type / $state が戻る", (view) => {
+    expect(parseHref(requestsHref(view))).toEqual(view);
   });
 });

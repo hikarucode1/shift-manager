@@ -5,7 +5,7 @@ import { getPendingSwapRequests } from "@/lib/swaps";
 import { getRequestLog } from "@/lib/request-log-query";
 import {
   parseRequestsSearchParams,
-  requestsLogHref,
+  requestsHref,
 } from "@/lib/requests-search-params";
 import { jstToday } from "@/lib/week";
 import { Badge } from "@/components/ui/badge";
@@ -41,7 +41,8 @@ export default async function AdminRequestsPage({
   await requireRole("admin");
   const sp = await searchParams;
 
-  const { tab, period, type, state } = parseRequestsSearchParams(sp);
+  const { tab, ...filters } = parseRequestsSearchParams(sp);
+  const { period, type, state } = filters;
 
   const [pendingAbsences, pendingSwaps, log] = await Promise.all([
     getPendingAbsenceRequests(),
@@ -54,8 +55,9 @@ export default async function AdminRequestsPage({
 
   const pendingCount = pendingAbsences.length + pendingSwaps.length;
   const today = jstToday();
-  // 未対応 ⇄ 記録 を行き来してもフィルタを捨てない
-  const logHref = requestsLogHref({ period, type, state });
+  // 未対応 ⇄ 記録 を行き来してもフィルタを捨てない (両方のリンクに載せる)
+  const pendingHref = requestsHref({ tab: "pending", ...filters });
+  const logHref = requestsHref({ tab: "log", ...filters });
 
   return (
     <div className="space-y-6">
@@ -78,7 +80,7 @@ export default async function AdminRequestsPage({
           リンクとして正しく公開する (nav + aria-current) */}
       <nav aria-label="表示の切り替え" className="flex gap-1 border-b">
         <TabLink
-          href="/admin/requests"
+          href={pendingHref}
           active={tab === "pending"}
           label="未対応"
           count={pendingCount}
