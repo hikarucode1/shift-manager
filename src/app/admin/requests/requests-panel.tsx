@@ -32,31 +32,34 @@ export function RequestsPanel({ pending }: { pending: PendingAbsence[] }) {
   }, [notice]);
 
   function run(
-    fn: () => Promise<{ ok: boolean; error?: string }>,
+    fn: () => Promise<{ ok: boolean; error?: string; code?: string }>,
     okMsg: string,
-    onOk?: () => void,
-    /**
-     * 失敗したときも画面を読み直すか。承認がサーバで「今は担当ではない」と
-     * 弾かれたとき (#289)、カードを開いたまま担当が変わっていたので、読み
-     * 直して「不要として閉じる」の出し分けに切り替える
-     */
-    refreshOnError = false,
-    onError?: () => void,
+    opts: {
+      onOk?: () => void;
+      /** 失敗したとき。`code` で理由を見分ける (文言の一致に頼らない) */
+      onError?: (code: string | undefined) => void;
+      /**
+       * 失敗したときも画面を読み直すか。サーバで「今は担当ではない」と弾かれた
+       * とき (#289)、カードを開いたまま担当が変わっていたので、読み直して
+       * 「不要として閉じる」の出し分けに切り替える
+       */
+      refreshOnError?: boolean;
+    } = {},
   ) {
     setNotice(null);
     startTransition(async () => {
       const res = await fn().catch(toFailedResult);
       if (res.ok) {
         setNotice({ type: "ok", text: okMsg });
-        onOk?.();
+        opts.onOk?.();
         router.refresh();
       } else {
         setNotice({ type: "error", text: res.error ?? "失敗しました。" });
         // #202: reject 由来は「書いたか不明」。画面を古いまま放置せず
         // サーバーの真実を取りに行く (返り値の { ok: false } は確実に
         // 書いていないので触らない)。
-        if (isIndeterminate(res) || refreshOnError) router.refresh();
-        onError?.();
+        if (isIndeterminate(res) || opts.refreshOnError) router.refresh();
+        opts.onError?.("code" in res ? res.code : undefined);
       }
     });
   }
@@ -160,17 +163,23 @@ export function RequestsPanel({ pending }: { pending: PendingAbsence[] }) {
                                 decisionNote: rejectNote.trim(),
                               }),
                             "却下しました。",
-                            () => {
-                              setRejectId(null);
-                              setRejectNote("");
-                            },
-                            // 担当でないと弾かれたら、読み直して「不要として
-                            // 閉じる」に切り替える (#289)。入力内容も消す —
-                            // 残すと、あとで担当に戻ったとき古い入力欄が出る
-                            true,
-                            () => {
-                              setRejectId(null);
-                              setRejectNote("");
+                            {
+                              onOk: () => {
+                                setRejectId(null);
+                                setRejectNote("");
+                              },
+                              // 担当でないと弾かれたら、読み直して「不要として
+                              // 閉じる」に切り替える (#289)
+                              refreshOnError: true,
+                              // 入力を消すのは「担当でない」で弾かれたときだけ。
+                              // 残すと、あとで担当に戻ったとき古い入力欄が出る。
+                              // 通信エラーなどでは消さない (押し直せるように, #202)
+                              onError: (code) => {
+                                if (code === "unassigned") {
+                                  setRejectId(null);
+                                  setRejectNote("");
+                                }
+                              },
                             },
                           )
                         }
@@ -203,8 +212,7 @@ export function RequestsPanel({ pending }: { pending: PendingAbsence[] }) {
                                 decision: "approved",
                               }),
                             "承認しました。",
-                            undefined,
-                            true,
+                            { refreshOnError: true },
                           )
                         }
                       >
@@ -233,9 +241,8 @@ export function RequestsPanel({ pending }: { pending: PendingAbsence[] }) {
                           run(
                             () => closeUnassignedAbsence({ id: p.id }),
                             "不要として閉じました。講師に通知が届きます。",
-                            undefined,
                             // 今も担当で弾かれたら、読み直して承認 / 却下に戻す
-                            true,
+                            { refreshOnError: true },
                           )
                         }
                       >

@@ -235,9 +235,9 @@ export function toAbsenceLogEntry(i: AbsenceLogInput): RequestLogEntry {
             i.autoExpired && i.actorName === null
             ? "auto-expired"
             : // 「不要として閉じる」(#289) は承認を経ていないので、承認済みを
-              // 取り消した「取り消し」と分ける。note は自由文と衝突しうる
-              // (cancelApprovedAbsence の理由欄) が、そちらは承認済みから来る
-              // ので取り消しボタンの有無などに影響しない。ラベルの誤りで済む
+              // 取り消した「取り消し」と分ける。note の定型文は
+              // cancelApprovedAbsence の理由欄で弾いてあるので、自由文と
+              // 衝突しない
               i.closedUnassigned && i.actorName !== null
               ? "withdrawn-by-admin"
               : i.actorName !== null

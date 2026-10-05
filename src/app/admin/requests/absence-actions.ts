@@ -23,7 +23,13 @@ const CancelApprovedAbsenceInput = z.object({
     .string()
     .trim()
     .min(1, "取り消し理由を入力してください。")
-    .max(500, "取り消し理由は 500 文字以内で入力してください。"),
+    .max(500, "取り消し理由は 500 文字以内で入力してください。")
+    // ⚠️ 「不要として閉じる」(#289) の定型文は使わせない。台帳と講師の履歴は
+    // この文言で「承認前に閉じた」と判定するので、承認済みの取り消しに同じ
+    // 文言が入ると「承認された」事実が記録上消える (PR #290 のレビュー)
+    .refine((r) => r !== ABSENCE_CLOSED_UNASSIGNED_NOTE, {
+      message: `取り消し理由に「${ABSENCE_CLOSED_UNASSIGNED_NOTE}」は使えません。別の言い方で書いてください。`,
+    }),
 });
 
 /**
@@ -58,8 +64,9 @@ const CancelApprovedAbsenceInput = z.object({
  *                          `decided_by` あり / `decided_at` あり
  *                          (+ `decision_note = ABSENCE_CLOSED_UNASSIGNED_NOTE`)。
  *                          **pending から来る** (承認を経ていない)。台帳では
- *                          この関数と同じ「取り消し」に出し、コメント欄の理由で
- *                          見分ける (新しい種類は作っていない)
+ *                          「教室長が取り下げ」(承認前に閉じた) に出す。
+ *                          この関数の理由欄ではこの定型文を弾くので、
+ *                          文言で取り違えることはない
  *   - 交代成立の自動失効:   `decided_by` **null** / `decided_at` あり
  *                          (+ `decision_note = ABSENCE_AUTO_EXPIRED_NOTE`)
  *   - 講師の自己取り下げ:   どちらも null
@@ -251,9 +258,10 @@ const CloseUnassignedInput = z.object({
  * 消えない (exists は weekly_shifts をロックしないので、CSV の取り込みと同時に
  * 走るとすり抜けうる)。
  *
- * 状態は `cancelled`、理由は `ABSENCE_CLOSED_UNASSIGNED_NOTE`。台帳では教室長の
- * 「取り消し」として出て、コメント欄に理由が出る。`decided_by` は閉じた教室長
- * (自動失効と違い、教室長の判断なので null にしない)
+ * 状態は `cancelled`、理由は `ABSENCE_CLOSED_UNASSIGNED_NOTE`。台帳では
+ * 「教室長が取り下げ」(承認前に閉じた)、講師の履歴では灰色の説明として出る。
+ * `decided_by` は閉じた教室長 (自動失効と違い、教室長の判断なので null に
+ * しない)
  */
 export async function closeUnassignedAbsence(
   input: unknown,

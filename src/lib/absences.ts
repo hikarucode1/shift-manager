@@ -48,8 +48,9 @@ export type AbsenceRequestRow = {
   /**
    * 教室長が「不要として閉じる」(#289) で閉じたか。自動失効と同じく、
    * `decisionNote` を赤字の「教室長より」で出さないために要る — 担当でなく
-   * なったことの説明で、叱っているのではない。判定は note と `decided_by`
-   * (閉じた教室長が入る) の AND
+   * なったことの説明で、叱っているのではない。判定は状態 (cancelled)・note・
+   * `decided_by` (閉じた教室長が入る) の AND。note は `cancelApprovedAbsence` の
+   * 理由欄で使えないよう弾いてある (`ABSENCE_CLOSED_UNASSIGNED_NOTE` 参照)
    */
   closedUnassigned: boolean;
   decidedAt: string | null;
@@ -189,7 +190,9 @@ export async function getTutorAbsenceRequests(
     autoExpired:
       r.decisionNote === ABSENCE_AUTO_EXPIRED_NOTE && r.decidedBy === null,
     closedUnassigned:
-      r.decisionNote === ABSENCE_CLOSED_UNASSIGNED_NOTE && r.decidedBy !== null,
+      r.status === "cancelled" &&
+      r.decisionNote === ABSENCE_CLOSED_UNASSIGNED_NOTE &&
+      r.decidedBy !== null,
     date: r.date,
     slotNumber: r.slotNumber,
     slotLabel: slotLabelOf(meta, r.slotNumber).label,
@@ -246,7 +249,9 @@ export async function getPendingAbsenceRequests(): Promise<PendingAbsence[]> {
     autoExpired:
       r.decisionNote === ABSENCE_AUTO_EXPIRED_NOTE && r.decidedBy === null,
     closedUnassigned:
-      r.decisionNote === ABSENCE_CLOSED_UNASSIGNED_NOTE && r.decidedBy !== null,
+      r.status === "cancelled" &&
+      r.decisionNote === ABSENCE_CLOSED_UNASSIGNED_NOTE &&
+      r.decidedBy !== null,
     isEnded: isSlotPast(r.date, slotLabelOf(meta, r.slotNumber).end),
     tutorAssigned: r.tutorAssigned,
   }));

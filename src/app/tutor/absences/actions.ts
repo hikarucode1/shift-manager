@@ -13,7 +13,17 @@ import { hasSlotEnded } from "@/lib/swaps";
 import { absenceTutorAssigned } from "@/lib/absences";
 import { pendingAbsenceActions } from "@/lib/pending-absence-actions";
 
-type ActionResult = { ok: true } | { ok: false; error: string };
+type ActionResult =
+  | { ok: true }
+  | {
+      ok: false;
+      error: string;
+      /**
+       * 失敗の種類 (#289)。`unassigned` = 担当でないので弾いた。カードが
+       * 却下の入力内容を消すかの判断に使う (文言の一致に頼らない)
+       */
+      code?: "unassigned";
+    };
 
 const CreateInput = z.object({
   date: z.string().refine(isValidIsoDate, "日付が不正です。"),
@@ -246,32 +256,32 @@ export async function decideAbsenceRequest(
   // 要るときは UPDATE の WHERE に入れて、確認と書き込みを 1 つの文にする。
   // ⚠️ 窓は**狭まるが消えない**。exists は weekly_shifts をロックしないので、
   // CSV の取り込み (日付ごとに消して入れ直す) と同時に走ると、すり抜けうる
-  const [target] = await db
-    .select({
-      date: absenceRequests.date,
-      slotNumber: absenceRequests.slotNumber,
-    })
-    .from(absenceRequests)
-    .where(
-      and(eq(absenceRequests.id, id), eq(absenceRequests.status, "pending")),
-    )
-    .limit(1);
-  if (!target) {
-    return {
-      ok: false,
-      error: "処理できませんでした（既に対応済みの可能性があります）。",
-    };
+  // 却下は「コマが終わったか」に関係なく、常に担当が要る (担当でない講師に
+  // 「却下されました」を送らない)。承認だけ、終わったかで変わるので、その
+  // ときだけ対象を読んで `pendingAbsenceActions` (カードと共有) に聞く
+  let requireAssigned = true;
+  if (decision === "approved") {
+    const [target] = await db
+      .select({
+        date: absenceRequests.date,
+        slotNumber: absenceRequests.slotNumber,
+      })
+      .from(absenceRequests)
+      .where(
+        and(eq(absenceRequests.id, id), eq(absenceRequests.status, "pending")),
+      )
+      .limit(1);
+    if (!target) {
+      return {
+        ok: false,
+        error: "処理できませんでした（既に対応済みの可能性があります）。",
+      };
+    }
+    requireAssigned = !pendingAbsenceActions({
+      tutorAssigned: false,
+      isEnded: await hasSlotEnded(target.date, target.slotNumber),
+    }).canApprove;
   }
-  // 却下は「コマが終わったか」に関係なく担当が要るので、問い合わせを省く。
-  // 承認だけ、終わったかで変わる。どちらも `pendingAbsenceActions` (カードと
-  // 共有) を「担当でない」前提で引いて決める
-  const ifUnassigned = (isEnded: boolean) =>
-    pendingAbsenceActions({ tutorAssigned: false, isEnded });
-  const requireAssigned =
-    decision === "approved"
-      ? !ifUnassigned(await hasSlotEnded(target.date, target.slotNumber))
-          .canApprove
-      : !ifUnassigned(false).canReject;
 
   const updated = await db
     .update(absenceRequests)
@@ -302,13 +312,17 @@ export async function decideAbsenceRequest(
       .from(absenceRequests)
       .where(eq(absenceRequests.id, id))
       .limit(1);
-    return {
-      ok: false,
-      error:
-        requireAssigned && row?.status === "pending"
-          ? `このコマは今は担当ではないので${decision === "approved" ? "承認" : "却下"}できません。「不要として閉じる」を使ってください。`
-          : "処理できませんでした（既に対応済みの可能性があります）。",
-    };
+    return requireAssigned && row?.status === "pending"
+      ? {
+          ok: false,
+          error: `このコマは今は担当ではないので${decision === "approved" ? "承認" : "却下"}できません。「不要として閉じる」を使ってください。`,
+          // カードが入力内容を消すかの判断に使う (文言の一致に頼らない)
+          code: "unassigned",
+        }
+      : {
+          ok: false,
+          error: "処理できませんでした（既に対応済みの可能性があります）。",
+        };
   }
 
   await notify([updated[0].tutorId], {
