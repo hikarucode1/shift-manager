@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { pendingSwapApproval } from "@/lib/pending-swap-approval";
-import { swapCancelNotice } from "@/lib/swap-cancel-notice";
+import { substituteCancelNotice, swapCancelNotice } from "@/lib/swap-cancel-notice";
 
 /**
  * 取り消し側と同じ判定で作る。元講師 (山田) の募集は担当に戻ったので
@@ -111,5 +111,32 @@ describe("swapCancelNotice", () => {
       "佐藤 さんの交代申請が「未対応」タブに残っています。このコマは担当が変わったため承認できません。取り下げてください。",
     );
     expect(text.indexOf("山田")).toBeLessThan(text.indexOf("佐藤"));
+  });
+});
+
+describe("substituteCancelNotice (#287 / #288)", () => {
+  it("代講者の名前で募集が出ていなければ、何も足さず従来の行き先", () => {
+    expect(substituteCancelNotice(null)).toEqual({
+      bodySuffix: "",
+      href: "/tutor/open-swaps",
+    });
+  });
+
+  it("自分で出した募集なら、取り下げられる /tutor/swaps へ", () => {
+    const n = substituteCancelNotice({ isProxy: false });
+    expect(n.href).toBe("/tutor/swaps");
+    expect(n.bodySuffix).toContain("あなたの名前で出ている交代・代講の募集は承認できません");
+  });
+
+  it("代理募集は代講者に取り下げられないので、従来の行き先のまま (#231)", () => {
+    const n = substituteCancelNotice({ isProxy: true });
+    expect(n.href).toBe("/tutor/open-swaps");
+    expect(n.bodySuffix).not.toBe("");
+  });
+
+  it("「あなたが出した」とは書かない (代理募集のこともある)", () => {
+    expect(substituteCancelNotice({ isProxy: true }).bodySuffix).not.toContain(
+      "あなたが出した",
+    );
   });
 });

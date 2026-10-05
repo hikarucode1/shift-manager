@@ -53,3 +53,27 @@ export function swapCancelNotice(res: {
   }
   return parts.join("");
 }
+
+/**
+ * 代講を取り消したとき、代講者 B への通知に足す一文と行き先 (#287 / #288)。
+ *
+ * - B の名前で募集が出ていなければ、何も足さず従来どおり `/tutor/open-swaps`
+ *   (#245 の「応募した募集の結果」。/tutor は担当が戻った直後で出ない)
+ * - 出ていれば「承認できません」を足す。「このコマの募集」と書くと、B が
+ *   元講師の募集に応募している場合にその応募まで無効と読めるので、「あなたの
+ *   名前で出ている」と限定する。教室長の代理募集 (#231) もあるので「あなたが
+ *   出した」とは書かない
+ * - 行き先は、B が自分で取り下げられる募集なら `/tutor/swaps`。代理募集は
+ *   B には取り下げられない (`cancelSwapRequest` が createdBy で弾く) ので
+ *   従来どおり `/tutor/open-swaps`
+ */
+export function substituteCancelNotice(
+  substituteSwap: { isProxy: boolean } | null,
+): { bodySuffix: string; href: "/tutor/swaps" | "/tutor/open-swaps" } {
+  if (!substituteSwap) return { bodySuffix: "", href: "/tutor/open-swaps" };
+  return {
+    bodySuffix:
+      " ／ このコマの担当ではなくなったため、あなたの名前で出ている交代・代講の募集は承認できません。",
+    href: substituteSwap.isProxy ? "/tutor/open-swaps" : "/tutor/swaps",
+  };
+}
