@@ -42,7 +42,8 @@ type DecideResult =
   | { ok: false; error: string };
 
 /**
- * 募集の「今いる応募者」に通知する。`exceptId` (代講者) は除く。
+ * 募集の「今いる応募者」に通知する。`exceptId` を渡せばその講師は除く
+ * (記録・記録の取り消しでは代講者。本人には別の通知が届くため)。
  *
  * ⚠️ 記録 (#253) の「承認できなくなりました」と、記録の取り消し (#283) の
  * 「また有効になりました」は**同じ相手**に届かなければならない。除く相手と
@@ -55,13 +56,13 @@ type DecideResult =
  */
 async function notifyActiveApplicants(
   swapId: string,
-  exceptId: string,
+  exceptId: string | null,
   input: NotificationInput,
   logLabel: string,
 ): Promise<void> {
   try {
     const ids = (await getActiveApplicantIds(swapId)).filter(
-      (id) => id !== exceptId,
+      (id) => exceptId === null || id !== exceptId,
     );
     if (ids.length > 0) await notify(ids, input);
   } catch (e) {
@@ -76,11 +77,13 @@ async function notifyActiveApplicants(
 function noLongerApprovableForApplicants(
   date: string,
   slotLabel: string,
+  /** 募集を出した講師。同じコマに 2 つの募集があると、どちらの話か分からなくなる (#288) */
+  ownerName: string,
 ): NotificationInput {
   return {
     type: "swap_result",
     title: "応募していた代講の募集は承認できなくなりました",
-    body: `対象: ${date} ${slotLabel} ／ このコマは別の形で対応されました。`,
+    body: `対象: ${date} ${slotLabel} (${ownerName}さんの募集) ／ このコマは別の形で対応されました。`,
     href: "/tutor/open-swaps",
   };
 }
@@ -717,29 +720,25 @@ export async function cancelApprovedSwap(
     // requesterAssigned は true。isEnded は見出しにしか効かないので false
     const isPastDate = info.date < jstToday();
     const ps = info.pendingSwap;
-    const requesterEntry = ps && {
-      requesterName: info.requesterName,
-      isProxy: ps.isProxy,
+    const entryFor = (
+      swap: { isProxy: boolean },
+      requesterName: string,
+      requesterAssigned: boolean,
+    ) => ({
+      requesterName,
+      isProxy: swap.isProxy,
       approval: pendingSwapApproval({
         isPastDate,
-        requesterAssigned: true,
+        requesterAssigned,
         isEnded: false,
-        isProxy: ps.isProxy,
+        isProxy: swap.isProxy,
       }),
-    };
+    });
+    const requesterEntry = ps && entryFor(ps, info.requesterName, true);
     // B の募集は、担当が A に戻ったので必ず承認できない (#287)。理由と
     // 閉じ方は同じ判定から作る (過去のコマなら過去日の理由が先に出る)
     const sps = info.substitutePendingSwap;
-    const substituteEntry = sps && {
-      requesterName: info.applicantName,
-      isProxy: sps.isProxy,
-      approval: pendingSwapApproval({
-        isPastDate,
-        requesterAssigned: false,
-        isEnded: false,
-        isProxy: sps.isProxy,
-      }),
-    };
+    const substituteEntry = sps && entryFor(sps, info.applicantName, false);
     // ⚠️ **通知の直前に、まだ pending かを確かめ直す** (#286 レビュー)。
     // コミット後に別の教室長が却下すると、却下された募集に「また有効に
     // なりました」が届いてしまう。窓は消えないが、ここまで狭まる
@@ -776,51 +775,68 @@ export async function cancelApprovedSwap(
         title: "引き受けた代講が取り消されました",
         // B の募集が承認できなくなったことも、別の通知にせずここに足す
         // (同じ出来事なので。A 側の #286 と同じ)。教室長の代理募集 (#231) の
-        // こともあるので「あなたが出した」とは書かない
+        // こともあるので「あなたが出した」とは書かない。「このコマの募集」と
+        // 書くと、B が A の募集に応募している場合にその応募まで無効と読める
+        // ので、「あなたの名前で出ている」と限定する (#288 レビュー)
         body: `対象: ${info.date} ${cancelSlotLabel} (${info.requesterName}さんの代講) ／ 理由: ${reason}${
           sps
-            ? " ／ このコマの担当ではなくなったため、このコマの交代・代講の募集は承認できません。"
+            ? " ／ このコマの担当ではなくなったため、あなたの名前で出ている交代・代講の募集は承認できません。"
             : ""
         }`,
         // ⚠️ /tutor には出ない (weekly_shift は元講師に戻った直後)。#245 で
         // 「応募した募集の結果」ができたので、そちらへ着地させる。
-        // ⚠️ ただし B の募集が残っているときは /tutor/swaps (#288 レビュー)。
-        // B が自分の募集を見て取り下げる画面はそちらで、open-swaps には
-        // 自分の募集は出ない
-        href: sps ? "/tutor/swaps" : "/tutor/open-swaps",
+        // ⚠️ ただし B 自身が出した募集が残っているときは /tutor/swaps
+        // (#288 レビュー)。B が自分の募集を取り下げる画面はそちらにある。
+        // 代理募集は B には取り下げられない (`cancelSwapRequest` が createdBy で
+        // 弾く) ので、従来どおり open-swaps に着地させる
+        href: sps && !sps.isProxy ? "/tutor/swaps" : "/tutor/open-swaps",
       }),
     ]);
 
     // 2 つの募集の応募者への通知は互いに関係しないので並べて送る
-    // (`notifyActiveApplicants` はどちらも失敗を自分で受け止める)
-    await Promise.all([
+    // (`notifyActiveApplicants` はどちらも失敗を自分で受け止める)。
+    // ⚠️ 両方に応募している講師には 2 通届くので、本文に**誰の募集か**を
+    // 入れて見分けられるようにする (#288 レビュー)
+    const applicantNotices: Promise<void>[] = [];
+    if (revivedSwapId !== null) {
       // ⚠️ **代講者 B は除く。** 記録のときに「承認できなくなりました」を
       // 送った相手と揃える (B には「引き受けた代講が取り消されました」が上で届く)
-      revivedSwapId !== null &&
+      applicantNotices.push(
         notifyActiveApplicants(
           revivedSwapId,
           info.applicantId,
           {
             type: "swap_result",
             title: "応募していた代講の募集がまた有効になりました",
-            body: `対象: ${info.date} ${cancelSlotLabel} ／ 代講の記録が取り消されたため、募集は再び承認を待っています。`,
+            body: `対象: ${info.date} ${cancelSlotLabel} (${info.requesterName}さんの募集) ／ 代講の記録が取り消されたため、募集は再び承認を待っています。`,
             href: "/tutor/open-swaps",
           },
           "cancelApprovedSwap notify revived swap failed",
         ),
+      );
+    }
+    if (sps) {
       // ⚠️ B の募集の応募者には、記録 (#253) と同じ文言で伝える (#287)。
-      // **A は除く** — B の募集に A が応募していても、担当に戻ったことは A 自身の
-      // 通知で伝わる。過去のコマでも送る (記録と同じ。「承認できなく
-      // なりました」は過去でも嘘にならない)。送る直前の確かめ直しはしない —
-      // その間に却下されていても、この文言は嘘にならない
-      sps &&
+      // **A も含める** — B の募集に A が応募していると、A の画面には承認
+      // できない募集が「応募済み」のまま残る。誰の募集かを本文に入れたので、
+      // 担当に戻った A が読んでも混乱しない (#288 レビュー)。
+      // 過去のコマでも送る (記録と同じ。「承認できなくなりました」は過去でも
+      // 嘘にならない)。送る直前の確かめ直しはしない — その間に却下されて
+      // いても、この文言は嘘にならない
+      applicantNotices.push(
         notifyActiveApplicants(
           sps.id,
-          info.requesterId,
-          noLongerApprovableForApplicants(info.date, cancelSlotLabel),
+          null,
+          noLongerApprovableForApplicants(
+            info.date,
+            cancelSlotLabel,
+            info.applicantName,
+          ),
           "cancelApprovedSwap notify substitute swap failed",
         ),
-    ]);
+      );
+    }
+    await Promise.all(applicantNotices);
 
     revalidateAll();
     revalidatePath("/admin/weekly");
@@ -1048,6 +1064,9 @@ export async function recordSubstitution(
   let expiredAbsences = 0;
   /** 未処理の交代申請 (記録後は承認できなくなる)。tx 内で読む — 下記参照 */
   let pendingSwapId: string | null = null;
+  // 残っている募集の持ち主 (= 記録した担当者) の名前。応募者への通知で
+  // どの募集の話かを示す (#288)
+  let ownerNameForNotice = "不明";
   try {
     await db.transaction(async (tx) => {
       const sub = await tx
@@ -1100,6 +1119,7 @@ export async function recordSubstitution(
         .where(eq(profiles.id, tutorId))
         .limit(1);
       const ownerName = owner[0]?.name ?? "不明";
+      ownerNameForNotice = ownerName;
 
       const inserted = await tx
         .insert(swapRequests)
@@ -1273,7 +1293,7 @@ export async function recordSubstitution(
     await notifyActiveApplicants(
       pendingSwapId,
       substituteId,
-      noLongerApprovableForApplicants(date, slotLabel),
+      noLongerApprovableForApplicants(date, slotLabel, ownerNameForNotice),
       "recordSubstitution notify pending swap failed",
     );
   }
