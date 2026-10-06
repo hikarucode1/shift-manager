@@ -5,39 +5,23 @@ import { StalledLoadingHint } from "@/components/stalled-loading-hint";
  *
  * ⚠️ これは「見栄え」のためのファイルではない。本命は初回 SSR の 500 回避。
  *
- * Next 16.2.4 で実測した挙動 (#192 / #190)。境界の内側 (配下の page と
- * 入れ子の layout) で起きたとき:
- *   - error.tsx のみ            → Server Component の throw は HTTP 500 +
- *                                 `__next_error__`。error.tsx は描画されない
- *   - error.tsx + loading.tsx   → 同じ throw が HTTP 200 + この fallback の
- *                                 HTML になり、RSC ストリームにエラーチャンクが
- *                                 乗って hydration 後に error.tsx が描画される
- *   - `notFound()` も同じ。loading.tsx が無ければ 404、あれば 200 + noindex
- *   - `redirect()` も同じ。loading.tsx が無ければ 307、あれば 200 (HTML の
- *     meta refresh で移る)
- *   境界の外にある AdminLayout の `redirect()` は 307 のまま (#192)
+ * loading.tsx が Suspense 境界を作るため、配下の throw がシェルごと落とさずに
+ * 境界で受け止められ、error.tsx に落ちる (#186)。URL 直アクセス (実際の障害
+ * 経路) を救うにはこの 1 枚が必須で、error.tsx とセットで意味を持つ。
  *
- * loading.tsx が Suspense 境界を作るため、throw がシェルごと落とさずに
- * 境界で受け止められる。したがって URL 直アクセス (実際の障害経路) を
- * 救うにはこの 1 枚が必須で、error.tsx とセットで意味を持つ。
+ * ⚠️ **その代わり、境界の内側 (配下の page と入れ子の layout) では、失敗しても
+ * HTTP 200 を返し、`notFound()` の 404 や `redirect()` の 307 も返らない。**
+ * 正常時もページ遷移で一瞬スケルトンが出る。#190 で比べ直して、承知のうえで
+ * 残すと決めた (外すと #186 の 500 が戻る)。
  *
- * ⚠️ **その代わり、境界の内側では、失敗しても HTTP 200 を返し、404 / 307 も
- * 返らない** (返したいときの選択肢は runbook)。#190 で比べ直して、このまま
- * 行くと決めた。正常時もページ遷移で一瞬スケルトンが出る (外すと #186 の 500
- * が戻る)。
- *   - **死活は画面で見ないこと**。障害でも 200 になる (認証 API の停止では
- *     /login へ 307 になる形もある)。死活は専用のエンドポイントで見る (#275)
- *   - **`forbidden()` は今は使えない** (loading.tsx とは関係なく、
- *     `authInterrupts` が未設定でただの Error になる)。特に AdminLayout の
- *     権限確認から呼ぶと `resolveOrIncident` に握り潰され、権限が無いだけの
- *     人に障害画面が出る
- *   - 障害の種類ごとの見え方、ステータスが要るときの選択肢は
- *     docs/runbooks/loading-status.md (変わりやすいので、ここに書かない)
- *
- * ⚠️ **境界の外にある AdminLayout** の throw は、この仕組みでも救えず 500 に
- * なる (#187)。AdminLayout で DB を引くなら `resolveOrIncident` で包むこと
- * (#188。`shell-guard.ts`)。入れ子の layout は境界の内側なので、throw は
- * error.tsx が受け止める。
+ * 守ること (理由と実測の記録は docs/runbooks/loading-status.md):
+ *   - **死活は画面で見ない**。障害でも 200 になる形と、/login へ 307 になる形が
+ *     ある。専用のエンドポイントで見る (#275)
+ *   - **`forbidden()` / `unauthorized()` を呼ばない**。`authInterrupts` が未設定で
+ *     ただの Error になり、AdminLayout から呼ぶと権限が無いだけの人に障害画面が
+ *     出る (#295)
+ *   - **AdminLayout で DB を引くなら `resolveOrIncident` で包む** (#188。
+ *     `shell-guard.ts`)。AdminLayout は境界の外なので、throw すると 500 になる
  *
  * admin ページは KPI カード + 表/パネルという構成が多いので、
  * それに寄せた汎用スケルトンにしている (11 ページ共用)。

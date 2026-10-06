@@ -23,7 +23,7 @@
 
 - **セグメント自身の layout** (AdminLayout / TutorLayout) は、そのセグメントの loading.tsx の境界の**外**にある
   - layout の throw は loading.tsx でも救えず **500** (#187)。そのため各 layout は `resolveOrIncident` で包み、失敗しても throw せず SystemUnavailable を描画する (#188, `src/lib/shell-guard.ts`)。#192 の実測: DB 全断を再現すると、修正前は `/tutor` `/admin` とも 500、修正後は 200 + SystemUnavailable
-  - layout の `redirect()` は **307** を返す。#192 の実測: admin ロールで `/tutor` を開くと、TutorLayout の `redirect()` で 307 → `/admin`。`resolveOrIncident` は `unstable_rethrow` で `redirect()` / `notFound()` を握り潰さない (`src/lib/shell-guard.test.ts` で固定)
+  - layout の `redirect()` は **307** を返す。#192 で実測したのは TutorLayout (admin ロールで `/tutor` を開くと 307 → `/admin`)。AdminLayout も同じ作り (`resolveOrIncident` の中の `requireRole`) なので同じはずだが、実測はしていない。`resolveOrIncident` は `unstable_rethrow` で `redirect()` / `notFound()` を握り潰さない (`src/lib/shell-guard.test.ts` で固定)
 - **入れ子の layout** はセグメントの境界の**内側**。#192 の実験 (親に error.tsx + loading.tsx、子の layout が throw) では 200 で、親の境界が描画された。今のリポジトリに入れ子の layout は無い (layout.tsx は `src/app/`、`src/app/admin/`、`src/app/tutor/` の 3 つだけ)
 
 ## 2. 実測していない (コードから読んだ) こと
@@ -44,10 +44,12 @@
 | 障害 | middleware | 利用者に見えるもの |
 |---|---|---|
 | **DB だけの障害** (DATABASE_URL の誤り・プール枯渇・schema 不整合) | 素通し | layout の `requireRole` が失敗 → **200 + SystemUnavailable** (#192 で実測した形) |
-| **認証 API に届かない**: fetch の失敗、auth-js の `NETWORK_ERROR_CODES` (`[502,503,504,520,521,522,523,524,530]`)、JSON でない応答、`UNAVAILABLE_STATUS` (500 / 429) | 「ログアウト」とみなさず素通し (#193) | **200 + SystemUnavailable** |
-| **認証 API がそれ以外の `AuthApiError` を返す** (401 / 403 / 404 / 540 / 505 など) | 「ログアウト」と区別できない | **/login へ 307** (`src/components/system-unavailable.tsx` の「到達不能と判定できない残りの形」) |
+| **認証 API に届かない**: fetch の失敗、auth-js の `NETWORK_ERROR_CODES` (`[502,503,504,520,521,522,523,524,530]`)、**本文が JSON でない応答 (ステータスは問わない)**、JSON の本文で `UNAVAILABLE_STATUS` (500 / 429) | 「ログアウト」とみなさず素通し (#193) | **200 + SystemUnavailable** |
+| **認証 API が JSON の本文で、それ以外のステータスを返す** (401 / 403 / 404 / 540 / 505 など) | 「ログアウト」と区別できない | **/login へ 307** (`src/components/system-unavailable.tsx` の「到達不能と判定できない残りの形」) |
 
-- ⚠️ **Supabase Free tier の自動 pause がどちらの行に入るかは分かっていない** (#294)。GoTrue が動いていて自分の DB に届かない形なら 500 で 2 行目 (200 + SystemUnavailable)。Supabase のゲートウェイが 540 を返す形なら 3 行目 (/login へ 307) で、#193 が直そうとした形が残る
+判定の順は auth-js の `handleError` (`node_modules/@supabase/auth-js/dist/main/lib/fetch.js`): fetch の失敗 → `NETWORK_ERROR_CODES` → 本文を JSON として読めるか → JSON ならステータスで `AuthApiError`。**同じステータスでも、本文の形式で行が変わる。**
+
+- ⚠️ **Supabase Free tier の自動 pause がどちらの行に入るかは分かっていない** (#294)。GoTrue が動いていて自分の DB に届かない形 (JSON の 500) や、ゲートウェイが 540 を JSON でない本文で返す形なら 2 行目 (200 + SystemUnavailable)。ゲートウェイが **540 を JSON の本文で**返す形なら 3 行目 (/login へ 307) で、#193 が直そうとした形が残る
 - SystemUnavailable の文言「画面を表示できませんでした。」は、error.tsx (page の失敗) と `/` `/login` でも出る。**文言では、どの層の失敗か区別できない**
 - **画面を叩いてステータスや文言を見る監視では、障害を区別できない**。200 になる障害は正常と区別できず、307 になる障害もある。死活は画面ではなく専用のエンドポイントで見る。#275 は今のところ DB の確認 (`select 1` → 503) が対象で、認証 API まで見るかは未定。認証 API の停止 (3 行目) は、#275 が DB だけを見る形だと検知できない
 - migration の未適用は `.github/workflows/check-migrations.yml` (#204 / #206。main への push と毎日の cron) が見ている
@@ -59,10 +61,11 @@
 - **ルートグループで境界の外に出す**: `loading.tsx` / `error.tsx` を `admin/(guarded)/` に移し、ステータスが要るルートを `admin/(plain)/` に置く。URL と AdminLayout (ヘッダ・ナビ) は変わらない。個別の項目の 404 (存在しない講師の詳細など) はこれ。ただし:
   - リポジトリに `not-found.tsx` が 1 つも無い。`admin/(plain)/not-found.tsx` を置かないと、Next 既定の 404 がルートの直下に出る
   - (plain) 側には error.tsx と loading.tsx が無いので、DB 障害でページが throw すると**素の 500** に戻る (#186 で直した状態)。ステータスを返すことの裏返しで、承知のうえで選ぶ
-- **AdminLayout で `notFound()` / `redirect()`** (`authInterrupts` を有効にすれば `forbidden()` も): 境界の外なので効く (`redirect()` は #192 で実測済み)。ただし AdminLayout は子の `[id]` を受け取れないので、**セグメント全体で決まる判断 (認可など) に限る**
+- **AdminLayout で `notFound()` / `redirect()`** (`authInterrupts` を有効にすれば `forbidden()` も): 境界の外なので効くはず (layout の `redirect()` が 307 になることは TutorLayout で実測済み)。ただし AdminLayout は子の `[id]` を受け取れないので、**セグメント全体で決まる判断 (認可など) に限る**
+- **middleware で返す** (`src/middleware.ts` → `updateSession`): `NextResponse` にステータスを付けて返せるので、`authInterrupts` と関係なく 403 も返せる。ただし middleware は毎リクエスト走るので、DB を引く判定には向かない
 - **200 を受け入れる**
 
-403 は、上のどれを選んでも `authInterrupts` を有効にしない限り返せない (2 節)。
+`forbidden()` で 403 を返すには `authInterrupts` を有効にする必要がある (2 節)。今は誤って呼ばないよう #295 で仕組みを検討している。
 
 ## 5. ほかのコスト
 
