@@ -6,7 +6,10 @@ import { z } from "zod";
 import { and, arrayContains, eq, inArray, isNull, ne } from "drizzle-orm";
 import { requireRole } from "@/lib/auth";
 import { notify } from "@/lib/notifications";
-import { ABSENCE_AUTO_EXPIRED_NOTE } from "@/lib/absence-expiry";
+import {
+  ABSENCE_AUTO_EXPIRED_NOTE,
+  ABSENCE_EXPIRED_UNASSIGNED_NOTE,
+} from "@/lib/absence-expiry";
 import {
   findPendingSwap,
   getActiveApplicantIds,
@@ -22,6 +25,7 @@ import {
   planCancelNotices,
   type RecheckResult,
   type PendingSwapAfterCancel,
+  type SubstituteExpiredAfterCancel,
 } from "@/lib/swap-cancel-notice";
 import { substitutionNote } from "@/lib/substitution-note";
 import { isValidIsoDate, jstToday, weekdayOf } from "@/lib/week";
@@ -499,6 +503,7 @@ export async function cancelApprovedSwap(
   | {
       ok: true;
       expiredAbsences: number;
+      substituteExpired: SubstituteExpiredAfterCancel;
       pendingSwaps: PendingSwapAfterCancel[];
     }
   | { ok: false; error: string }
@@ -593,6 +598,34 @@ export async function cancelApprovedSwap(
         );
       }
 
+      // ⚠️ **代講者 B はこのコマを失うので、B が同じコマに出していた欠勤を
+      // 自動失効させる** (#291)。元講師が交代成立でコマを失うときと同じ規則
+      // (「担当を失ったら、そのコマの欠勤は失効」)。残すと、承認済みの欠勤が
+      // (講師, 日付, コマ) の組で生き残り、B があとで (記録・承認・CSV のどの
+      // 経路でも) 担当に戻ったとき、週次表に欠勤マークが付き、新しい欠勤も一意
+      // 制約で出せない。担当になる時点で消す案は、B の本当の欠勤を黙って消し
+      // うるので採らなかった (PR #298 のレビュー)。
+      // 印は `ABSENCE_EXPIRED_UNASSIGNED_NOTE` (交代成立の印とは分ける)、
+      // `decided_by` は null (誰の判断でもない。#225)
+      const substituteExpired = await tx
+        .update(absenceRequests)
+        .set({
+          status: "cancelled",
+          decidedBy: null,
+          decidedAt: new Date(),
+          decisionNote: ABSENCE_EXPIRED_UNASSIGNED_NOTE,
+          updatedAt: new Date(),
+        })
+        .where(
+          and(
+            eq(absenceRequests.tutorId, req.approvedApplicantId),
+            eq(absenceRequests.date, req.date),
+            eq(absenceRequests.slotNumber, req.slotNumber),
+            inArray(absenceRequests.status, ["pending", "approved"]),
+          ),
+        )
+        .returning({ id: absenceRequests.id });
+
       // status='approved' を条件に「奪う」更新。同時操作は rowcount 0 で弾く
       const claimed = await tx
         .update(swapRequests)
@@ -648,6 +681,7 @@ export async function cancelApprovedSwap(
 
       return {
         expiredAbsences: expired.length,
+        substituteExpiredAbsences: substituteExpired.length,
         pendingSwap,
         substitutePendingSwap,
         requesterId: req.requesterId,
@@ -819,9 +853,29 @@ export async function cancelApprovedSwap(
 
     revalidateAll();
     revalidatePath("/admin/weekly");
+    // ⚠️ B の欠勤を失効させたことを B に伝える (#291)。元講師の失効 (#250) と
+    // 同じく欠勤の通知にして、欠勤の画面に着地させる (代講の通知の一文だと、
+    // 欠勤が承認されたと思ったまま記録だけが消える)
+    if (info.substituteExpiredAbsences > 0) {
+      await notify([info.applicantId], {
+        type: "absence_result",
+        title: "欠勤申請が失効しました（担当でなくなったため）",
+        body: `対象日: ${info.date}（${weekdayOf(info.date).label}）${cancelSlotLabel} ／ 代講が取り消され、このコマの担当ではなくなりました`,
+        href: "/tutor/absences",
+      });
+    }
+
     return {
       ok: true,
       expiredAbsences: info.expiredAbsences,
+      // 代講者の失効は、元講師の失効と分けて誰の分か分かる形で返す (#291)
+      substituteExpired:
+        info.substituteExpiredAbsences > 0
+          ? {
+              name: info.applicantName,
+              count: info.substituteExpiredAbsences,
+            }
+          : null,
       // A の募集 (#283) と B の募集 (#287) は両方残りうるので、別々に返す
       pendingSwaps: plan.pendingSwaps,
     };

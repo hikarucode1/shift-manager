@@ -38,14 +38,32 @@ export type PendingSwapAfterCancel = {
   approval: PendingSwapApproval;
 };
 
+/**
+ * 代講を取り消したとき、代講者がそのコマに出していた欠勤を自動失効させたか
+ * (#291)。元講師の失効 (`expiredAbsences`) と分け、誰の分か分かる形で持つ
+ */
+export type SubstituteExpiredAfterCancel = {
+  name: string;
+  count: number;
+} | null;
+
 export function swapCancelNotice(res: {
   expiredAbsences: number;
+  /** 省略時は無し */
+  substituteExpired?: SubstituteExpiredAfterCancel;
   pendingSwaps: PendingSwapAfterCancel[];
 }): string {
   const parts = ["取り消しました。"];
   if (res.expiredAbsences > 0) {
     parts.push(
       "このコマの欠勤申請が交代成立時に自動失効しています。必要なら「代理で欠勤を登録する」から登録し直してください。",
+    );
+  }
+  // ⚠️ 代講者の失効は「登録し直して」と案内しない。代講者はもうこのコマの
+  // 担当ではないので、登録し直す欠勤ではない (#291)
+  if (res.substituteExpired) {
+    parts.push(
+      `代講者の ${res.substituteExpired.name} さんがこのコマに出していた欠勤申請は、担当でなくなったため失効させました。`,
     );
   }
   for (const p of res.pendingSwaps) {

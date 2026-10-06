@@ -125,6 +125,31 @@ describe("swapCancelNotice (planCancelNotices 経由)", () => {
   });
 });
 
+describe("swapCancelNotice の代講者の失効 (#291)", () => {
+  it("代講者の欠勤を失効させたら、誰の分かを出し、登録し直しは案内しない", () => {
+    const text = swapCancelNotice({
+      expiredAbsences: 0,
+      substituteExpired: { name: "佐藤", count: 1 },
+      pendingSwaps: [],
+    });
+    expect(text).toBe(
+      "取り消しました。代講者の 佐藤 さんがこのコマに出していた欠勤申請は、担当でなくなったため失効させました。",
+    );
+    expect(text).not.toContain("登録し直して");
+  });
+
+  it("元講師の失効と両方あれば、元講師 → 代講者の順に出す", () => {
+    const text = swapCancelNotice({
+      expiredAbsences: 1,
+      substituteExpired: { name: "佐藤", count: 1 },
+      pendingSwaps: [],
+    });
+    expect(text.indexOf("交代成立時に自動失効")).toBeLessThan(
+      text.indexOf("代講者の 佐藤 さん"),
+    );
+  });
+});
+
 describe("planCancelNotices の送り先 (#283 / #287 / #288)", () => {
   it("どちらの募集も無ければ何もしない", () => {
     expect(plan({})).toEqual({

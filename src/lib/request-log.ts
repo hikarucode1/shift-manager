@@ -43,7 +43,9 @@ export type RequestLogEvent =
   /** 講師が自分で取り下げた */
   | "cancelled-by-tutor"
   /** 交代成立により欠勤が自動失効した (欠勤のみ) */
-  | "auto-expired";
+  | "auto-expired"
+  /** 代講の取り消しで担当でなくなり、欠勤が自動失効した (欠勤のみ。#291) */
+  | "auto-expired-unassigned";
 
 export type RequestLogEntry = {
   id: string;
@@ -113,6 +115,7 @@ export const EVENT_LABEL: Record<RequestLogEvent, string> = {
   "withdrawn-by-admin": "教室長が取り下げ",
   "cancelled-by-tutor": "講師が取り下げ",
   "auto-expired": "失効（交代成立による）",
+  "auto-expired-unassigned": "失効（担当でなくなったため）",
 };
 
 export type LogStatus = "pending" | "approved" | "rejected" | "cancelled";
@@ -149,6 +152,8 @@ export type AbsenceLogInput = CommonInput & {
   autoExpired: boolean;
   /** `decision_note` が「不要として閉じる」(#289) のマーカーと一致するか */
   closedUnassigned: boolean;
+  /** `decision_note` が「担当でなくなったため自動失効」(#291) のマーカーと一致するか */
+  expiredUnassigned: boolean;
 };
 
 export type SwapLogInput = CommonInput & {
@@ -234,7 +239,11 @@ export function toAbsenceLogEntry(i: AbsenceLogInput): RequestLogEntry {
             // 「失効」に化ける。自動失効は必ず actorName が無いので AND で縛る
             i.autoExpired && i.actorName === null
             ? "auto-expired"
-            : // 「不要として閉じる」(#289) は承認を経ていないので、承認済みを
+            : // 代講の取り消しで担当でなくなった失効 (#291)。自動失効と同じく
+              // actorName が無いことと AND で縛る
+              i.expiredUnassigned && i.actorName === null
+              ? "auto-expired-unassigned"
+              : // 「不要として閉じる」(#289) は承認を経ていないので、承認済みを
               // 取り消した「取り消し」と分ける。note の定型文は
               // cancelApprovedAbsence の理由欄で弾いてあるので、自由文と
               // 衝突しない

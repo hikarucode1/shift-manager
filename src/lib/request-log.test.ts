@@ -31,6 +31,7 @@ const absence = (o: Partial<AbsenceLogInput> = {}): AbsenceLogInput => ({
   isProxy: false,
   autoExpired: false,
   closedUnassigned: false,
+  expiredUnassigned: false,
   ...o,
 });
 
@@ -74,6 +75,14 @@ describe("toAbsenceLogEntry", () => {
     );
     expect(e.event).toBe("auto-expired");
     expect(e.eventLabel).toBe("失効（交代成立による）");
+  });
+
+  it("代講の取り消しで担当でなくなった失効 (#291) は、交代成立の失効と分ける", () => {
+    const e = toAbsenceLogEntry(
+      absence({ status: "cancelled", expiredUnassigned: true, actorName: null }),
+    );
+    expect(e.event).toBe("auto-expired-unassigned");
+    expect(e.eventLabel).toBe("失効（担当でなくなったため）");
   });
 
   it("教室長が取り消し理由に同じ文言を書いても失効に化けない", () => {
@@ -313,7 +322,7 @@ describe("adminInitiated", () => {
 });
 
 describe("eventLabel", () => {
-  it("9 種すべてを固定する", () => {
+  it("10 種すべてを固定する", () => {
     // 画面は eventLabel を並べるだけにする設計なので、ラベルは製品面そのもの。
     // 嘘が出やすいのは「取り消し」「失効」側なので全部固定する
     expect(EVENT_LABEL).toEqual({
@@ -326,6 +335,7 @@ describe("eventLabel", () => {
       "withdrawn-by-admin": "教室長が取り下げ",
       "cancelled-by-tutor": "講師が取り下げ",
       "auto-expired": "失効（交代成立による）",
+      "auto-expired-unassigned": "失効（担当でなくなったため）",
     });
   });
 });

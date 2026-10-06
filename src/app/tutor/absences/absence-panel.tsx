@@ -320,6 +320,12 @@ export function AbsencePanel({
                         <p className="mt-0.5 text-sm text-muted-foreground">
                           {h.decisionNote}（このコマは代講が入ったため、欠勤の記録は不要になりました）
                         </p>
+                      ) : h.expiredUnassigned ? (
+                        // ⚠️ 代講の取り消しで担当でなくなった失効 (#291) も、
+                        // 誰の判断でもないので赤字の「教室長より」にしない
+                        <p className="mt-0.5 text-sm text-muted-foreground">
+                          代講が取り消され、このコマの担当ではなくなったため、欠勤の記録は不要になりました
+                        </p>
                       ) : h.closedUnassigned ? (
                         // ⚠️ 「不要として閉じる」(#289) も赤字にしない。担当が
                         // 変わった (またはコマが無くなった) ことの説明で、
