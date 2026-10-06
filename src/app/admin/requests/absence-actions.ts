@@ -12,9 +12,25 @@ import { isUniqueViolation } from "@/lib/db-errors";
 import { slotLabelSafe } from "@/lib/slot-meta";
 import { isValidIsoDate, weekdayOf } from "@/lib/week";
 import { ABSENCE_CLOSED_UNASSIGNED_NOTE } from "@/lib/pending-absence-actions";
+import {
+  ABSENCE_AUTO_EXPIRED_NOTE,
+  ABSENCE_EXPIRED_UNASSIGNED_NOTE,
+} from "@/lib/absence-expiry";
 import { absenceTutorAssigned } from "@/lib/absences";
 
 type ActionResult = { ok: true } | { ok: false; error: string };
+
+/**
+ * 取り消し理由に使わせない文言 (システムが `decision_note` に書く印)。台帳と
+ * 講師の履歴は印で閉じ方を見分けるので、教室長が同じ文言を書くと、承認済みの
+ * 取り消しが「承認前に閉じた」「自動失効」に化ける。書く側で塞いでおけば、
+ * 読む側で `decided_by` の条件を書き忘れても壊れない (PR #298 のレビュー)
+ */
+const RESERVED_NOTES: readonly string[] = [
+  ABSENCE_CLOSED_UNASSIGNED_NOTE,
+  ABSENCE_AUTO_EXPIRED_NOTE,
+  ABSENCE_EXPIRED_UNASSIGNED_NOTE,
+];
 
 const CancelApprovedAbsenceInput = z.object({
   // zod 既定の英語メッセージ ("Invalid UUID") が画面に出るのを防ぐ
@@ -27,8 +43,8 @@ const CancelApprovedAbsenceInput = z.object({
     // ⚠️ 「不要として閉じる」(#289) の定型文は使わせない。台帳と講師の履歴は
     // この文言で「承認前に閉じた」と判定するので、承認済みの取り消しに同じ
     // 文言が入ると「承認された」事実が記録上消える (PR #290 のレビュー)
-    .refine((r) => r !== ABSENCE_CLOSED_UNASSIGNED_NOTE, {
-      message: `取り消し理由に「${ABSENCE_CLOSED_UNASSIGNED_NOTE}」は使えません。別の言い方で書いてください。`,
+    .refine((r) => !RESERVED_NOTES.includes(r), {
+      message: "その文言はシステムが使う印なので、取り消し理由には使えません。別の言い方で書いてください。",
     }),
 });
 

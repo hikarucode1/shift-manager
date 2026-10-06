@@ -31,6 +31,7 @@ import { substitutionNote } from "@/lib/substitution-note";
 import { isValidIsoDate, jstToday, weekdayOf } from "@/lib/week";
 import { isUniqueViolation } from "@/lib/db-errors";
 import { getSlotMeta, slotLabelSafe } from "@/lib/slot-meta";
+import { isSlotPast } from "@/lib/slot-time";
 import { db } from "@/db/client";
 import {
   absenceRequests,
@@ -555,6 +556,11 @@ export async function cancelApprovedSwap(
   const { id, reason } = parsed.data;
 
   try {
+    // 代講者の欠勤を失効させるかを「コマが終わったか」で決める (#291)。
+    // ⚠️ コマの終了時刻はトランザクションの**前**に読む。tx を握ったまま同じ
+    // プールへ 2 本目を要求しない (decideSwapRequest の過去日判定と同じ理由)。
+    // 中では時刻の比較 (isSlotPast) だけをする
+    const slotMeta = await getSlotMeta();
     const info = await db.transaction(async (tx) => {
       const reqRows = await tx
         .select({
@@ -642,13 +648,23 @@ export async function cancelApprovedSwap(
       // 制約で出せない。担当になる時点で消す案は、B の本当の欠勤を黙って消し
       // うるので採らなかった (PR #298 のレビュー)。
       // 印は `ABSENCE_EXPIRED_UNASSIGNED_NOTE` (交代成立の印とは分ける)
-      const substituteExpired = await expireActiveAbsences(
-        tx,
-        req.approvedApplicantId,
+      // ⚠️ **終わったコマでは失効させない** (PR #298 のレビュー)。終わった
+      // コマの欠勤は「実際に休んだ記録」(教室長が代理登録したものを含む) で、
+      // 失効にすると B が休んだ事実が台帳と履歴から消える。害 (担当に戻った
+      // ときの欠勤マーク・一意制約) が出るのは、これから先のコマだけ
+      const slotEnded = isSlotPast(
         req.date,
-        req.slotNumber,
-        ABSENCE_EXPIRED_UNASSIGNED_NOTE,
+        slotMeta.get(req.slotNumber)?.end ?? "",
       );
+      const substituteExpired = slotEnded
+        ? 0
+        : await expireActiveAbsences(
+            tx,
+            req.approvedApplicantId,
+            req.date,
+            req.slotNumber,
+            ABSENCE_EXPIRED_UNASSIGNED_NOTE,
+          );
 
       // status='approved' を条件に「奪う」更新。同時操作は rowcount 0 で弾く
       const claimed = await tx
@@ -700,6 +716,9 @@ export async function cancelApprovedSwap(
             eq(absenceRequests.slotNumber, req.slotNumber),
             eq(absenceRequests.status, "cancelled"),
             eq(absenceRequests.decisionNote, ABSENCE_AUTO_EXPIRED_NOTE),
+            // ⚠️ 文字列一致だけで自動失効と断定しない (absence-expiry.ts)。
+            // 自動失効は必ず decided_by が null
+            isNull(absenceRequests.decidedBy),
           ),
         );
 
