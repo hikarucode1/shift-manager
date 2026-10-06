@@ -13,7 +13,7 @@
 ## 1. 実測した挙動
 
 出典: PR #192 (2026-08-12〜13) の実測と、#190 での再確認 (2026-09-29、本番ビルド)。
-どちらも Next 16.2.4。
+どちらも Next 16.2.4。**Next を上げたら測り直す** (この節の挙動は Next の実装で決まる)。
 
 | 境界の内側で起きたこと | loading.tsx が無い | loading.tsx がある |
 |---|---|---|
@@ -37,21 +37,21 @@
   - **page から呼ぶと境界の内側なので 200 のまま** (`notFound()` と同じ)
 - AdminLayout の `notFound()` も、境界の外なので 404 になるはず
 
-## 3. 障害の種類ごとの見え方 (コードから読んだ。ステータスは未実測)
+## 3. 障害の種類ごとの見え方
 
-判定は `src/lib/auth-availability.ts` の `isAuthUnavailable`。
+どの層で失敗するかで、見え方が変わる。認証 API の判定は `src/lib/auth-availability.ts` の `isAuthUnavailable` (auth-js の `handleError`, `node_modules/@supabase/auth-js/dist/main/lib/fetch.js` が作るエラーを見る。**auth-js を上げたら、どの応答がどのエラーになるかを確かめ直す**)。
 
-| 障害 | middleware | 利用者に見えるもの |
-|---|---|---|
-| **DB だけの障害** (DATABASE_URL の誤り・プール枯渇・schema 不整合) | 素通し | layout の `requireRole` が失敗 → **200 + SystemUnavailable** (#192 で実測した形) |
-| **認証 API に届かない**: fetch の失敗、auth-js の `NETWORK_ERROR_CODES` (`[502,503,504,520,521,522,523,524,530]`)、**本文が JSON でない応答 (ステータスは問わない)**、JSON の本文で `UNAVAILABLE_STATUS` (500 / 429) | 「ログアウト」とみなさず素通し (#193) | **200 + SystemUnavailable** |
-| **認証 API が JSON の本文で、それ以外のステータスを返す** (401 / 403 / 404 / 540 / 505 など) | 「ログアウト」と区別できない | **/login へ 307** (`src/components/system-unavailable.tsx` の「到達不能と判定できない残りの形」) |
+| 障害 | middleware | 利用者に見えるもの | 実測 |
+|---|---|---|---|
+| **page だけの失敗**: layout の認可は通り、page のクエリが失敗する (schema の不整合の多く。2026-07-30 の migration 0029 未適用はこれ) | 素通し | **200 + loading のスケルトン**。hydration 後に error.tsx (エラー ID は Next の digest)。**JS が動かないとスケルトンのまま** (#189) | 200 は #192 / #190 で実測 |
+| **layout の認可が失敗する DB の障害**: DB の全断・DATABASE_URL の誤り・プール枯渇 | 素通し | layout の `requireRole` が失敗 → `resolveOrIncident` → **200 + SystemUnavailable** (エラー ID は `reportIncident`)。最初の HTML に載るので JS 不要 | #192 で実測 |
+| **認証 API に届かない**: fetch の失敗、auth-js が retryable とするステータス、**本文が JSON でない応答 (ステータスは問わない)**、JSON の本文で 500 / 429 (`UNAVAILABLE_STATUS`) | 「ログアウト」とみなさず素通し (#193) | **200 + SystemUnavailable** | 未実測 |
+| **認証 API が JSON の本文で、それ以外のステータスを返す** (401 / 403 / 404 / 540 など) | 「ログアウト」と区別できない | **/login へ 307** (`src/components/system-unavailable.tsx` の「到達不能と判定できない残りの形」) | 未実測 |
 
-判定の順は auth-js の `handleError` (`node_modules/@supabase/auth-js/dist/main/lib/fetch.js`): fetch の失敗 → `NETWORK_ERROR_CODES` → 本文を JSON として読めるか → JSON ならステータスで `AuthApiError`。**同じステータスでも、本文の形式で行が変わる。**
-
-- ⚠️ **Supabase Free tier の自動 pause がどちらの行に入るかは分かっていない** (#294)。GoTrue が動いていて自分の DB に届かない形 (JSON の 500) や、ゲートウェイが 540 を JSON でない本文で返す形なら 2 行目 (200 + SystemUnavailable)。ゲートウェイが **540 を JSON の本文で**返す形なら 3 行目 (/login へ 307) で、#193 が直そうとした形が残る
-- SystemUnavailable の文言「画面を表示できませんでした。」は、error.tsx (page の失敗) と `/` `/login` でも出る。**文言では、どの層の失敗か区別できない**
-- **画面を叩いてステータスや文言を見る監視では、障害を区別できない**。200 になる障害は正常と区別できず、307 になる障害もある。死活は画面ではなく専用のエンドポイントで見る。#275 は今のところ DB の確認 (`select 1` → 503) が対象で、認証 API まで見るかは未定。認証 API の停止 (3 行目) は、#275 が DB だけを見る形だと検知できない
+- ⚠️ **Supabase Free tier の自動 pause が 3 行目と 4 行目のどちらに入るかは分かっていない** (#294)。GoTrue が動いていて自分の DB に届かない形 (JSON の 500) や、ゲートウェイが 540 を JSON でない本文で返す形なら 3 行目 (200 + SystemUnavailable)。ゲートウェイが **540 を JSON の本文で**返す形なら 4 行目 (/login へ 307) で、#193 が直そうとした形が残る
+- ⚠️ **3・4 行目の挙動は、セッションの cookie があるリクエストだけ**。cookie が無いと、auth-js は認証 API を呼ばずに「未ログイン」を返すので、middleware は障害に関係なく /login へ 307 し、ログイン画面は正常に出る。**cookie なしで画面を叩く確認では、認証 API の障害は見えない**
+- SystemUnavailable の文言「画面を表示できませんでした。」は、error.tsx (page の失敗) と、`/` `/login` `/auth/confirm` `/auth/set-password` でも出る (`grep -rl SystemUnavailable src/app` で確認)。**文言では、どの層の失敗か区別できない**
+- **画面を叩いてステータスや文言を見る監視では、障害を区別できない**。200 になる障害は正常と区別できず、307 になる障害もあり、cookie の有無でも変わる。死活は画面ではなく専用のエンドポイントで見る。#275 は今のところ DB の確認 (`select 1` → 503) が対象で、認証 API まで見るかは未定。認証 API の停止は、#275 が DB だけを見る形だと検知できない
 - migration の未適用は `.github/workflows/check-migrations.yml` (#204 / #206。main への push と毎日の cron) が見ている
 
 ## 4. 配下でステータス (404 / 3xx / 403) が要るときの選択肢
@@ -69,8 +69,13 @@
 
 ## 5. ほかのコスト
 
-- **正常時もページ遷移で一瞬スケルトンが出る** (loading.tsx を置く前は、前の画面が残ったまま切り替わった)。これを嫌って loading.tsx を外すと、#186 で直した「URL 直アクセスで DB が落ちているとシェルごと 500」が戻る
+- **境界の内側のエラー表示は hydration 頼み** (#189)。page だけが失敗すると、最初の HTML はスケルトンで、error.tsx は hydration の後に出る。JS が動かない・hydration に失敗すると、スケルトンが延々と脈動したままになる。`StalledLoadingHint` (10 秒後に CSS で案内を出す) はこのためにある。layout の失敗 (SystemUnavailable) は最初の HTML に載るので JS 不要
+- **正常時もページ遷移で一瞬スケルトンが出る** (loading.tsx を置く前は、前の画面が残ったまま切り替わった)
 
 ## 6. 判断
 
-loading.tsx は残す (#190 で比べ直した結論)。URL 直アクセスで DB が落ちていても、シェルごと 500 にならず error.tsx に落ちることを優先する。境界の内側で失敗しても 200 を返すこと、404 / 307 が返らないこと、スケルトンが一瞬出ることは承知のうえ。
+loading.tsx は残す (#190 で比べ直した結論)。
+
+loading.tsx が守っているのは、**layout は成功して page だけが失敗する場合** (3 節の 1 行目)。これが無いと、page の throw で HTTP 500 + `__next_error__` になり、ヘッダとナビごと消えて他の画面へ移る手段が無くなる (#186。2026-07-30 の障害はこの形)。DB の全断のように layout の認可が失敗する場合は、loading.tsx ではなく layout の `resolveOrIncident` (#188) が受け持っている。
+
+その代わり、境界の内側で失敗しても 200 を返すこと、404 / 307 が返らないこと、エラー表示が hydration 頼みになること、スケルトンが一瞬出ることは承知のうえ。

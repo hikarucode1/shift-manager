@@ -4,8 +4,9 @@ import { StalledLoadingHint } from "@/components/stalled-loading-hint";
  * 講師画面セグメントの読み込み fallback (#186)。
  *
  * ⚠️ 見栄えのためではなく、初回 SSR の 500 回避が本命。その代わり失敗しても
- * HTTP 200 を返すことと、守ること (死活は画面で見ない・`forbidden()` を
- * 呼ばない・TutorLayout で DB を引くなら `resolveOrIncident` で包む) は
+ * HTTP 200 を返すことと、守ること (死活は画面で見ない・`forbidden()` /
+ * `unauthorized()` を呼ばない・TutorLayout で throw しうるものは
+ * `resolveOrIncident` で包む) は
  * admin/loading.tsx の docstring と docs/runbooks/loading-status.md を参照。
  *
  * #185 (#184) では /tutor/notifications だけをページ内 try/catch で救ったが、
