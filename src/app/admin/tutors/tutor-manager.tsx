@@ -84,6 +84,15 @@ export function TutorManager({
   const linkedCount = tutors.filter((t) => t.linked).length;
   const stubCount = tutors.length - linkedCount;
   const pendingCount = tutors.filter(isResendable).length;
+  // 「うち招待中」を選んだ後に読み込みが失敗したら、「すべての状態」に戻す。
+  // そのままだと全員が「招待中ではない」と判定され、一覧が空になる (#271)。
+  // 表示だけを変えると、選び直しても onChange が起きず、次に読み込めたとき
+  // 勝手に絞り込みが戻るので、state ごと直す。描画のたびに確かめる (React の
+  // 「前の描画の情報で state を直す」パターン。effect でやると lint の
+  // set-state-in-effect に当たる)
+  if (statusFilter === "pending" && !inviteStatusLoaded) {
+    setStatusFilter("all");
+  }
 
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase();
@@ -110,6 +119,12 @@ export function TutorManager({
     fn: () => Promise<{ ok: boolean; error?: string }>,
     okMsg: string,
     onSuccess?: () => void,
+    /**
+     * 成功したら画面を読み直すか。招待の再送とパスワード再設定メールは
+     * 講師の状態を何も変えないので false にする。読み直すと認証 API から
+     * ユーザーを全件読み直すことになる (#271)
+     */
+    refreshOnSuccess = true,
   ) {
     setNotice(null);
     startTransition(async () => {
@@ -117,7 +132,7 @@ export function TutorManager({
       if (res.ok) {
         setNotice({ type: "ok", text: okMsg });
         onSuccess?.();
-        router.refresh();
+        if (refreshOnSuccess) router.refresh();
       } else {
         // 失敗時は入力状態を保持し、エラーだけ表示
         setNotice({ type: "error", text: res.error ?? "失敗しました。" });
@@ -190,7 +205,11 @@ export function TutorManager({
         >
           <option value="all">すべての状態</option>
           <option value="linked">連携済 ({linkedCount})</option>
-          <option value="pending">うち招待中 ({pendingCount})</option>
+          {/* 招待の状態を読めなかったときは、件数を「0」と出さない。選ぶと空の
+              一覧になり、招待中の講師がいないように見える (#271) */}
+          <option value="pending" disabled={!inviteStatusLoaded}>
+            うち招待中 ({inviteStatusLoaded ? pendingCount : "不明"})
+          </option>
           <option value="unlinked">未連携 ({stubCount})</option>
         </select>
         <Button
@@ -446,6 +465,8 @@ export function TutorManager({
                                     run(
                                       () => resendInvite({ profileId: t.id }),
                                       "招待メールを再送しました。前に送ったリンクは使えなくなります。",
+                                      undefined,
+                                      false,
                                     )
                                   }
                                 >
@@ -471,6 +492,8 @@ export function TutorManager({
                                     run(
                                       () => sendPasswordReset({ profileId: t.id }),
                                       "パスワード再設定メールを送りました。",
+                                      undefined,
+                                      false,
                                     )
                                   }
                                 >

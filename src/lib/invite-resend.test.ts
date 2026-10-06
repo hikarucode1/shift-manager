@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import { createClient } from "@supabase/supabase-js";
 import {
   ALREADY_ACCEPTED,
+  collectAllPages,
   emailInUseMessage,
   inviteErrorMessage,
   inviteStatusOf,
@@ -242,5 +243,46 @@ describe("inviteErrorMessage", () => {
       msg: "Email address exists but is invalid: rate limit",
     });
     expect(inviteErrorMessage(error)).toMatch("メールアドレスを確認");
+  });
+});
+
+describe("collectAllPages (#271)", () => {
+  /** pages[i] が i+1 ページ目に返る中身。範囲外は空 */
+  const pager = (pages: number[][]) => {
+    const calls: number[] = [];
+    const fetchPage = async (page: number) => {
+      calls.push(page);
+      return pages[page - 1] ?? [];
+    };
+    return { fetchPage, calls };
+  };
+
+  it("空のページが返るまで読み進める (1 ページの件数が少なく抑えられていても)", async () => {
+    // 1000 件頼んだのに 2 件ずつしか返らない場合でも、取りこぼさない
+    const { fetchPage, calls } = pager([[1, 2], [3, 4], [5]]);
+    expect(await collectAllPages(fetchPage)).toEqual([1, 2, 3, 4, 5]);
+    expect(calls).toEqual([1, 2, 3, 4]);
+  });
+
+  it("1 ページで全部なら、空のページを 1 回読んで止まる", async () => {
+    const { fetchPage, calls } = pager([[1, 2, 3]]);
+    expect(await collectAllPages(fetchPage)).toEqual([1, 2, 3]);
+    expect(calls).toEqual([1, 2]);
+  });
+
+  it("途中で読み込みに失敗したら全体を null にする", async () => {
+    const fetchPage = async (page: number) => (page === 2 ? null : [page]);
+    expect(await collectAllPages(fetchPage)).toBeNull();
+  });
+
+  it("上限を超えたら null (一部だけを全部として返さない)", async () => {
+    const fetchPage = async (page: number) => [page];
+    expect(await collectAllPages(fetchPage, 3)).toBeNull();
+  });
+
+  it("ちょうど上限のページ数なら、終わりを確かめる空のページは上限に数えない", async () => {
+    const { fetchPage, calls } = pager([[1], [2], [3]]);
+    expect(await collectAllPages(fetchPage, 3)).toEqual([1, 2, 3]);
+    expect(calls).toEqual([1, 2, 3, 4]);
   });
 });

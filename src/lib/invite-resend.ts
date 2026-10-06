@@ -167,3 +167,36 @@ export function resetErrorMessage(error: unknown): string {
     "再設定メールを送れませんでした。",
   );
 }
+
+/**
+ * ページ送りの API を、空のページが返るまで読み進める (#271)。`fetchPage` が
+ * null を返したら (読み込み失敗) 全体を null にする。
+ *
+ * ⚠️ **「返ってきた件数 < 1 ページの件数」で終わりと判定しない。** GoTrue が
+ * 1 ページの件数を頼んだ数より小さく抑えると、1 ページ目で止まって残りの
+ * 講師が「状態不明」になる。空のページで止めれば、上限が小さく抑えられても
+ * 取りこぼさない (最後に 1 回余分に読む)。ただし読めるのは「1 ページの件数 ×
+ * `maxPages`」まで。
+ *
+ * ⚠️ **`listUsers` の `nextPage` / `lastPage` は使わない。** auth-js
+ * (`GoTrueAdminApi.listUsers`) は Link ヘッダのページ番号を先頭 1 文字だけ
+ * 読む (`substring(0, 1)`) ので、10 ページ目以降を誤る。
+ *
+ * `maxPages` ページ読んでも終わらなければ null (読み込み失敗と同じ扱い)。
+ * 一部だけ読んだ結果を「全部」として返すと、残りの講師が黙って「状態不明」に
+ * なるため。終わりを確かめる空のページは `maxPages` に数えない
+ */
+export async function collectAllPages<T>(
+  fetchPage: (page: number) => Promise<T[] | null>,
+  maxPages = 50,
+): Promise<T[] | null> {
+  const all: T[] = [];
+  for (let page = 1; page <= maxPages + 1; page++) {
+    const items = await fetchPage(page);
+    if (items === null) return null;
+    if (items.length === 0) return all;
+    if (page > maxPages) return null;
+    all.push(...items);
+  }
+  return null;
+}

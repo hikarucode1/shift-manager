@@ -333,7 +333,8 @@ export async function resendInvite(input: unknown): Promise<ActionResult> {
     };
   }
 
-  revalidatePath("/admin/tutors");
+  // revalidatePath は呼ばない。招待の状態は変わらず、呼ぶと画面が作り直されて
+  // 認証 API からユーザーを全件読み直すことになる (#271)
   return { ok: true };
 }
 
