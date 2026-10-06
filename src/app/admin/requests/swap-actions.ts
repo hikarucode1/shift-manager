@@ -9,6 +9,7 @@ import { notify } from "@/lib/notifications";
 import {
   ABSENCE_AUTO_EXPIRED_NOTE,
   ABSENCE_EXPIRED_UNASSIGNED_NOTE,
+  shouldExpireSubstituteAbsence,
 } from "@/lib/absence-expiry";
 import {
   findPendingSwap,
@@ -31,7 +32,6 @@ import { substitutionNote } from "@/lib/substitution-note";
 import { isValidIsoDate, jstToday, weekdayOf } from "@/lib/week";
 import { isUniqueViolation } from "@/lib/db-errors";
 import { getSlotMeta, slotLabelSafe } from "@/lib/slot-meta";
-import { isSlotPast } from "@/lib/slot-time";
 import { db } from "@/db/client";
 import {
   absenceRequests,
@@ -265,10 +265,14 @@ export async function decideSwapRequest(
       // まま 2 本目の接続を要求しない、という `client.ts` の max:3 の前提は
       // 守られる。
       //
-      // ⚠️ ロック順は `cancelApprovedSwap` (weekly_shifts → swap_requests)
-      // と逆になるが、**待ちの輪は閉じない** — 承認が触るのは pending の
-      // 募集、取り消しが触るのは approved の募集で別行であり、取り消し側は
-      // こちらの行を要求しない。
+      // ⚠️ ロック順は `cancelApprovedSwap` (weekly_shifts → absence_requests
+      // (代講者の欠勤, #291) → swap_requests) と逆になるが、**待ちの輪は
+      // 閉じない** — 承認が触るのは pending の募集、取り消しが触るのは
+      // approved の募集で別行であり、取り消し側はこちらの行を要求しない。
+      // ⚠️ absence_requests の行は承認 (元講師・代講者の欠勤) と取り消し
+      // (代講者の欠勤) の両方が触る。同じコマで両方が同時に走ることは、
+      // 上の swap_requests の別行どうしでは起きうるので、どちらも
+      // weekly_shifts → absence_requests の順を守ること
       const reqRows = await tx
         .select({
           requesterId: swapRequests.requesterId,
@@ -648,15 +652,12 @@ export async function cancelApprovedSwap(
       // 制約で出せない。担当になる時点で消す案は、B の本当の欠勤を黙って消し
       // うるので採らなかった (PR #298 のレビュー)。
       // 印は `ABSENCE_EXPIRED_UNASSIGNED_NOTE` (交代成立の印とは分ける)
-      // ⚠️ **終わったコマでは失効させない** (PR #298 のレビュー)。終わった
-      // コマの欠勤は「実際に休んだ記録」(教室長が代理登録したものを含む) で、
-      // 失効にすると B が休んだ事実が台帳と履歴から消える。害 (担当に戻った
-      // ときの欠勤マーク・一意制約) が出るのは、これから先のコマだけ
-      const slotEnded = isSlotPast(
+      // ⚠️ **終わったコマでは失効させない** (PR #298 のレビュー)。判断と、
+      // 元講師との違いは `shouldExpireSubstituteAbsence` (テスト済み)
+      const substituteExpired = !shouldExpireSubstituteAbsence(
         req.date,
-        slotMeta.get(req.slotNumber)?.end ?? "",
-      );
-      const substituteExpired = slotEnded
+        slotMeta.get(req.slotNumber)?.end,
+      )
         ? 0
         : await expireActiveAbsences(
             tx,
@@ -787,7 +788,12 @@ export async function cancelApprovedSwap(
     const sps = info.substitutePendingSwap;
     const [cancelSlotLabel, requesterRecheck, substituteRecheck] =
       await Promise.all([
-        slotLabelSafe(info.slotNumber),
+        // コマ名はトランザクションの前に読んだコマ定義を使い回す (取り消し 1 回で
+        // slot_definitions を 2 回引かない)。読めなかったときの既定表記は
+        // slotLabelSafe と同じ
+        Promise.resolve(
+          slotMeta.get(info.slotNumber)?.label ?? `${info.slotNumber}限`,
+        ),
         ps
           ? recheck(
               info.requesterId,
@@ -848,7 +854,7 @@ export async function cancelApprovedSwap(
         ? [
             notify([info.applicantId], {
               type: "absence_result" as const,
-              title: "欠勤申請が失効しました（担当でなくなったため）",
+              title: "欠勤が失効しました（担当でなくなったため）",
               body: `対象日: ${info.date}（${weekdayOf(info.date).label}）${cancelSlotLabel} ／ 代講が取り消され、このコマの担当ではなくなりました`,
               href: "/tutor/absences",
             }),

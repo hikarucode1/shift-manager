@@ -255,7 +255,7 @@ describe("フィールドの受け渡し", () => {
       cancellable: false,
       cancelLabel: "この代講を取り消す",
       cancelWarning:
-        "取り消すと、担当を 山田 さんに戻し、佐藤 さんの代講記録を消します。佐藤 さんがこのコマに欠勤申請を出していれば、それも失効します (終わったコマを除く)。実際に代講が入った場合は取り消さないでください。",
+        "取り消すと、担当を 山田 さんに戻し、佐藤 さんの代講記録を消します。佐藤 さんがこのコマに欠勤申請を出していれば、それも失効します。実際に代講が入った場合は取り消さないでください。",
       cancelHint: null,
     });
   });
@@ -334,6 +334,14 @@ describe("adminInitiated", () => {
 });
 
 describe("代講の取り消し前の注意 (#291)", () => {
+  it("終わったコマでは、代講者の欠勤が失効するとは言わない", () => {
+    const w = toSwapLogEntry(swap({ isEnded: true })).cancelWarning;
+    expect(w).not.toContain("失効");
+    expect(toSwapLogEntry(swap({ isEnded: false })).cancelWarning).toContain(
+      "それも失効します",
+    );
+  });
+
   it("代講者の名前が無い行では「代講者 さん」にしない", () => {
     const w = toSwapLogEntry(swap({ approvedApplicantName: null }))
       .cancelWarning;

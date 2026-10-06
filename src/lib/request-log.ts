@@ -273,13 +273,22 @@ export function toAbsenceLogEntry(i: AbsenceLogInput): RequestLogEntry {
 /** 交代・代講申請 1 行 → 台帳の行 */
 /**
  * 承認済みの代講を取り消す前の注意。#291: 代講者がそのコマ (まだ終わって
- * いないもの) に出していた欠勤も失効する (戻せない) ので、押す前に言う
+ * いないもの) に出していた欠勤も失効する (戻せない) ので、押す前に言う。
+ * ⚠️ 失効させる側の判断は `shouldExpireSubstituteAbsence`。ここは `isEnded`
+ * (`isSlotPast`。コマの終了時刻まで見る) で出し分ける。今日の終了時刻が
+ * 分からないコマだけは、ここが「終わっていない」と読んで「失効します」と出し、
+ * 実際には失効しない (記録を残す側のずれなので許容)
  */
 function swapCancelWarning(i: SwapLogInput): string {
   const sub = i.approvedApplicantName
     ? `${i.approvedApplicantName} さん`
     : "代講者";
-  return `取り消すと、担当を ${i.requesterName} さんに戻し、${sub}の代講記録を消します。${sub}がこのコマに欠勤申請を出していれば、それも失効します (終わったコマを除く)。実際に代講が入った場合は取り消さないでください。`;
+  // 終わったコマでは代講者の欠勤は失効しない (`shouldExpireSubstituteAbsence`)
+  // ので、その一文を出さない
+  const expiry = i.isEnded
+    ? ""
+    : `${sub}がこのコマに欠勤申請を出していれば、それも失効します。`;
+  return `取り消すと、担当を ${i.requesterName} さんに戻し、${sub}の代講記録を消します。${expiry}実際に代講が入った場合は取り消さないでください。`;
 }
 
 export function toSwapLogEntry(i: SwapLogInput): RequestLogEntry {
