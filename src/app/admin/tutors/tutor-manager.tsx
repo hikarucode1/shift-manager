@@ -84,24 +84,29 @@ export function TutorManager({
   const linkedCount = tutors.filter((t) => t.linked).length;
   const stubCount = tutors.length - linkedCount;
   const pendingCount = tutors.filter(isResendable).length;
-  // 「うち招待中」を選んだ後に読み込みが失敗したら、全員として扱う。
-  // そのままだと全員が「招待中ではない」と判定され、一覧が空になる (#271)
-  const effectiveFilter: StatusFilter =
-    statusFilter === "pending" && !inviteStatusLoaded ? "all" : statusFilter;
+  // 「うち招待中」を選んだ後に読み込みが失敗したら、「すべての状態」に戻す。
+  // そのままだと全員が「招待中ではない」と判定され、一覧が空になる (#271)。
+  // 表示だけを変えると、選び直しても onChange が起きず、次に読み込めたとき
+  // 勝手に絞り込みが戻るので、state ごと直す。描画のたびに確かめる (React の
+  // 「前の描画の情報で state を直す」パターン。effect でやると lint の
+  // set-state-in-effect に当たる)
+  if (statusFilter === "pending" && !inviteStatusLoaded) {
+    setStatusFilter("all");
+  }
 
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase();
     return tutors.filter((t) => {
-      if (effectiveFilter === "linked" && !t.linked) return false;
-      if (effectiveFilter === "pending" && !isResendable(t)) return false;
-      if (effectiveFilter === "unlinked" && t.linked) return false;
+      if (statusFilter === "linked" && !t.linked) return false;
+      if (statusFilter === "pending" && !isResendable(t)) return false;
+      if (statusFilter === "unlinked" && t.linked) return false;
       if (!q) return true;
       if (t.displayName.toLowerCase().includes(q)) return true;
       // 未連携行は UI 上メールを隠す (「ログイン未連携」表示) ため、
       // 隠れた実メールで誤ヒットしないよう連携済みのみメールを検索対象にする。
       return t.linked && t.email.toLowerCase().includes(q);
     });
-  }, [tutors, search, effectiveFilter]);
+  }, [tutors, search, statusFilter]);
 
   // 通知は数秒で自動的に消す
   useEffect(() => {
@@ -193,7 +198,7 @@ export function TutorManager({
           aria-label="氏名・メールで検索"
         />
         <select
-          value={effectiveFilter}
+          value={statusFilter}
           onChange={(e) => setStatusFilter(e.target.value as StatusFilter)}
           className="h-9 rounded-md border bg-background px-2.5 text-sm focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
           aria-label="状態で絞り込み"

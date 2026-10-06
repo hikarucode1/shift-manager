@@ -279,4 +279,10 @@ describe("collectAllPages (#271)", () => {
     const fetchPage = async (page: number) => [page];
     expect(await collectAllPages(fetchPage, 3)).toBeNull();
   });
+
+  it("ちょうど上限のページ数なら、終わりを確かめる空のページは上限に数えない", async () => {
+    const { fetchPage, calls } = pager([[1], [2], [3]]);
+    expect(await collectAllPages(fetchPage, 3)).toEqual([1, 2, 3]);
+    expect(calls).toEqual([1, 2, 3, 4]);
+  });
 });
