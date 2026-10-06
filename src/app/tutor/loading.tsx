@@ -3,8 +3,9 @@ import { StalledLoadingHint } from "@/components/stalled-loading-hint";
 /**
  * 講師画面セグメントの読み込み fallback (#186)。
  *
- * ⚠️ 見栄えのためではなく、初回 SSR の 500 回避が本命。詳細な実測結果と
- * トレードオフは admin/loading.tsx の docstring を参照。
+ * ⚠️ 見栄えのためではなく、初回 SSR の 500 回避が本命。実測した挙動と結論は
+ * admin/loading.tsx の docstring、トレードオフの詳しい分析は #190 を参照
+ * (失敗しても HTTP 200 を返す。障害の種類で見え方が違う)。
  *
  * #185 (#184) では /tutor/notifications だけをページ内 try/catch で救ったが、
  * 残る 6 画面は URL 直アクセスで DB が落ちていれば素の 500 のままだった。
@@ -12,9 +13,8 @@ import { StalledLoadingHint } from "@/components/stalled-loading-hint";
  * 各ページに try/catch を書き写す方式と違い、新規ページを足したときに
  * 書き忘れて穴が開くことがない。
  *
- * ⚠️ 失敗しても HTTP 200 を返すことと、障害の種類ごとの見え方は
- * admin/loading.tsx と #190 を参照。TutorLayout も `resolveOrIncident` で
- * 包んでいる (#188。`shell-guard.ts`)
+ * ⚠️ layout で DB を引くなら `resolveOrIncident` で包むこと (#188。
+ * `shell-guard.ts`)。layout の throw はこの仕組みでは救えず 500 になる
  *
  * 講師ページは「ネイビー hero + カード列」で統一されている (#130/#131) ので
  * スケルトンも同じ形にし、実データ描画時のガタつきを抑える。

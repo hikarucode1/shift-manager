@@ -17,15 +17,20 @@ import { StalledLoadingHint } from "@/components/stalled-loading-hint";
  * 境界で受け止められる。したがって URL 直アクセス (実際の障害経路) を
  * 救うにはこの 1 枚が必須で、error.tsx とセットで意味を持つ。
  *
- * ⚠️ **その代わり、失敗しても HTTP 200 を返す。配下の page からは 404 / 403
- * を返せない。** #190 で比べ直して、このまま行くと決めた。
+ * ⚠️ **その代わり、失敗しても HTTP 200 を返す。境界の内側 (配下の page と
+ * 入れ子の layout) で `notFound()` しても 404 にならない。** #190 で比べ
+ * 直して、このまま行くと決めた。403 は loading.tsx とは別の理由で今は返せない
+ * (`authInterrupts` が未設定なので `forbidden()` はただの Error になる)。
+ * 正常時もページ遷移で一瞬スケルトンが出る (これも承知のうえ。外すと #186
+ * の 500 が戻る)。
  * 障害の種類ごとの見え方 (200 になる障害と、/login へ 307 になる障害がある)、
  * ステータスが要るときの選択肢、`forbidden()` の扱いは、変わりやすいので
  * ここに書かず #190 に置いている:
  * https://github.com/hikarucode1/shift-manager/issues/190#issuecomment-6007855661
  *
  * ⚠️ layout.tsx が throw する場合はこの仕組みでも救えず 500 になる (#187)。
- * 各 layout は `resolveOrIncident` で包んでいる (#188。`shell-guard.ts`)。
+ * **layout で DB を引くなら `resolveOrIncident` で包むこと** (#188。
+ * `shell-guard.ts`)。入れ子の layout を足すときも同じ。
  *
  * admin ページは KPI カード + 表/パネルという構成が多いので、
  * それに寄せた汎用スケルトンにしている (11 ページ共用)。
