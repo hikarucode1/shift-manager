@@ -5,32 +5,35 @@ import { StalledLoadingHint } from "@/components/stalled-loading-hint";
  *
  * ⚠️ これは「見栄え」のためのファイルではない。本命は初回 SSR の 500 回避。
  *
- * Next 16.2.4 で実測した挙動 (2026-09-29、本番ビルド):
+ * Next 16.2.4 で実測した挙動 (本番ビルド。#192 / #190):
  *   - error.tsx のみ            → Server Component の throw は HTTP 500 +
  *                                 `__next_error__`。error.tsx は描画されない
  *   - error.tsx + loading.tsx   → 同じ throw が HTTP 200 + この fallback の
  *                                 HTML になり、RSC ストリームにエラーチャンクが
  *                                 乗って hydration 後に error.tsx が描画される
  *   - `notFound()` も同じ。loading.tsx が無ければ 404、あれば 200 + noindex
+ *   - `redirect()` も同じ。loading.tsx が無ければ 307、あれば 200 (リダイレクト
+ *     は hydration 後にクライアントが行う)
  *
  * loading.tsx が Suspense 境界を作るため、throw がシェルごと落とさずに
  * 境界で受け止められる。したがって URL 直アクセス (実際の障害経路) を
  * 救うにはこの 1 枚が必須で、error.tsx とセットで意味を持つ。
  *
- * ⚠️ **その代わり、失敗しても HTTP 200 を返す。境界の内側 (配下の page と
- * 入れ子の layout) で `notFound()` しても 404 にならない。** #190 で比べ
- * 直して、このまま行くと決めた。403 は loading.tsx とは別の理由で今は返せない
- * (`authInterrupts` が未設定なので `forbidden()` はただの Error になる)。
- * 正常時もページ遷移で一瞬スケルトンが出る (これも承知のうえ。外すと #186
- * の 500 が戻る)。
- * 障害の種類ごとの見え方 (200 になる障害と、/login へ 307 になる障害がある)、
- * ステータスが要るときの選択肢、`forbidden()` の扱いは、変わりやすいので
- * ここに書かず #190 に置いている:
- * https://github.com/hikarucode1/shift-manager/issues/190#issuecomment-6007855661
+ * ⚠️ **その代わり、境界の内側 (配下の page と入れ子の layout) では、失敗しても
+ * HTTP 200 を返し、404 / 3xx も返せない。** #190 で比べ直して、このまま行くと
+ * 決めた。正常時もページ遷移で一瞬スケルトンが出る (外すと #186 の 500 が戻る)。
+ *   - **死活は画面で見ないこと**。障害でも 200 になる (認証 API の停止では
+ *     /login へ 307 になる形もある)。死活は専用のエンドポイントで見る (#275)
+ *   - **`forbidden()` は今は使えない** (`authInterrupts` が未設定で、ただの Error
+ *     になる)。特に AdminLayout の権限確認から呼ぶと `resolveOrIncident` に
+ *     握り潰され、権限が無いだけの人に障害画面が出る
+ *   - 障害の種類ごとの見え方、ステータスが要るときの選択肢は
+ *     docs/runbooks/loading-status.md (変わりやすいので、ここに書かない)
  *
- * ⚠️ layout.tsx が throw する場合はこの仕組みでも救えず 500 になる (#187)。
- * **layout で DB を引くなら `resolveOrIncident` で包むこと** (#188。
- * `shell-guard.ts`)。入れ子の layout を足すときも同じ。
+ * ⚠️ **境界の外にある AdminLayout** の throw は、この仕組みでも救えず 500 に
+ * なる (#187)。AdminLayout で DB を引くなら `resolveOrIncident` で包むこと
+ * (#188。`shell-guard.ts`)。入れ子の layout は境界の内側なので、throw は
+ * error.tsx が受け止める。
  *
  * admin ページは KPI カード + 表/パネルという構成が多いので、
  * それに寄せた汎用スケルトンにしている (11 ページ共用)。
