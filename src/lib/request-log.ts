@@ -298,9 +298,13 @@ export function toSwapLogEntry(i: SwapLogInput): RequestLogEntry {
     i.isProxy || i.isRecorded,
     i.swapKind === "named" ? "指名交代" : "代講",
     "この代講を取り消す",
+    // #291: 代講者がそのコマに出していた欠勤も失効する (戻せない) ので、
+    // 押す前に言う
     `取り消すと、担当を ${i.requesterName} さんに戻し、${
       i.approvedApplicantName ?? "代講者"
-    } さんの代講記録を消します。実際に代講が入った場合は取り消さないでください。`,
+    } さんの代講記録を消します。${
+      i.approvedApplicantName ?? "代講者"
+    } さんがこのコマに欠勤申請を出していれば、それも失効します。実際に代講が入った場合は取り消さないでください。`,
     // 講師の再申請は hasSlotEnded で塞がるので、戻すには #215 の記録が要る
     i.isEnded
       ? "このコマは既に終了しているため、講師の再申請では戻せません。戻す場合は「代講を記録する」から記録し直してください。"

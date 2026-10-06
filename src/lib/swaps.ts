@@ -251,7 +251,7 @@ export async function getActiveTutorsExcept(
 }
 
 /** db 本体・transaction のどちらでも受けられる executor 型 */
-type Executor =
+export type Executor =
   | typeof db
   | Parameters<Parameters<typeof db.transaction>[0]>[0];
 

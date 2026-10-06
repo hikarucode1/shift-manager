@@ -38,19 +38,13 @@ export type PendingSwapAfterCancel = {
   approval: PendingSwapApproval;
 };
 
-/**
- * 代講を取り消したとき、代講者がそのコマに出していた欠勤を自動失効させたか
- * (#291)。元講師の失効 (`expiredAbsences`) と分け、誰の分か分かる形で持つ
- */
-export type SubstituteExpiredAfterCancel = {
-  name: string;
-  count: number;
-} | null;
-
 export function swapCancelNotice(res: {
   expiredAbsences: number;
-  /** 省略時は無し */
-  substituteExpired?: SubstituteExpiredAfterCancel;
+  /**
+   * 代講者のそのコマの欠勤を失効させたなら、その代講者の名前 (#291)。
+   * 一意制約で、失効するのは多くても 1 件
+   */
+  substituteExpiredName: string | null;
   pendingSwaps: PendingSwapAfterCancel[];
 }): string {
   const parts = ["取り消しました。"];
@@ -59,11 +53,12 @@ export function swapCancelNotice(res: {
       "このコマの欠勤申請が交代成立時に自動失効しています。必要なら「代理で欠勤を登録する」から登録し直してください。",
     );
   }
-  // ⚠️ 代講者の失効は「登録し直して」と案内しない。代講者はもうこのコマの
-  // 担当ではないので、登録し直す欠勤ではない (#291)
-  if (res.substituteExpired) {
+  // ⚠️ 代講者の失効は、ふだんは「登録し直して」と案内しない (代講者はもう
+  // このコマの担当ではないので、登録し直す欠勤ではない)。ただし失効は戻せない
+  // ので、取り消しが誤りだった場合の戻し方だけ書く (#291)
+  if (res.substituteExpiredName) {
     parts.push(
-      `代講者の ${res.substituteExpired.name} さんがこのコマに出していた欠勤申請は、担当でなくなったため失効させました。`,
+      `代講者の ${res.substituteExpiredName} さんがこのコマに出していた欠勤申請は、担当でなくなったため失効させました（取り消しが誤りで、${res.substituteExpiredName} さんが実際には休む場合は、記録し直したあと「代理で欠勤を登録する」から登録してください）。`,
     );
   }
   for (const p of res.pendingSwaps) {

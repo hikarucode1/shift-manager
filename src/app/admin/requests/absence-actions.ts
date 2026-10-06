@@ -58,7 +58,7 @@ const CancelApprovedAbsenceInput = z.object({
  *      対象なので、`pending` に戻すと講師の出し直しを塞いだままになる
  *   `cancelled` にすれば両方とも解ける。
  *
- * ⚠️ `cancelled` には 4 経路から到達する。#225 以降は**どの経路かは判別できる**:
+ * ⚠️ `cancelled` には 5 経路から到達する。#225 以降は**どの経路かは判別できる**:
  *   - この関数:            `decided_by` あり / `decided_at` あり
  *   - 不要として閉じる (#289, `closeUnassignedAbsence`):
  *                          `decided_by` あり / `decided_at` あり
@@ -68,7 +68,12 @@ const CancelApprovedAbsenceInput = z.object({
  *                          この関数の理由欄ではこの定型文を弾くので、
  *                          文言で取り違えることはない
  *   - 交代成立の自動失効:   `decided_by` **null** / `decided_at` あり
- *                          (+ `decision_note = ABSENCE_AUTO_EXPIRED_NOTE`)
+ *                          (+ `decision_note = ABSENCE_AUTO_EXPIRED_NOTE`)。
+ *                          元講師が交代の承認・代講の記録でコマを失ったとき
+ *   - 担当でなくなった自動失効 (#291):
+ *                          `decided_by` **null** / `decided_at` あり
+ *                          (+ `decision_note = ABSENCE_EXPIRED_UNASSIGNED_NOTE`)。
+ *                          代講者が代講の取り消しでコマを失ったとき
  *   - 講師の自己取り下げ:   どちらも null
  * ただし**「承認を経由したか」は依然として判別できない**。`decided_by` /
  * `decided_at` は最後の決定で上書きされ、承認時の値は残らないため。

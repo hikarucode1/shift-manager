@@ -16,6 +16,7 @@ import {
   getEligibleApplicantIds,
   hasSlotEnded,
   isTutorBusyAt,
+  type Executor,
 } from "@/lib/swaps";
 import type { NotificationInput } from "@/lib/notifications";
 import {
@@ -25,7 +26,6 @@ import {
   planCancelNotices,
   type RecheckResult,
   type PendingSwapAfterCancel,
-  type SubstituteExpiredAfterCancel,
 } from "@/lib/swap-cancel-notice";
 import { substitutionNote } from "@/lib/substitution-note";
 import { isValidIsoDate, jstToday, weekdayOf } from "@/lib/week";
@@ -79,6 +79,51 @@ async function notifyActiveApplicants(
   } catch (e) {
     console.error(logLabel, e);
   }
+}
+
+/**
+ * その講師の、その (日, コマ) の未処理の欠勤申請 (pending / approved) を自動
+ * 失効させ、件数を返す。**担当を失った講師**に使う (「担当を失ったら、その
+ * コマの欠勤は失効」):
+ *
+ * - 交代の承認・代講の記録で、元講師がコマを失う (#33)。印は
+ *   `ABSENCE_AUTO_EXPIRED_NOTE`
+ * - 代講の取り消しで、代講者がコマを失う (#291)。印は
+ *   `ABSENCE_EXPIRED_UNASSIGNED_NOTE`
+ *
+ * ⚠️ **`decided_by` を null にする** (#225)。触らないと、承認済みだった欠勤が
+ * 失効したとき「承認した教室長」がそのまま残り、画面に「取り消し: (その人の
+ * 名前)」と出る。実際に取り消したのはその人ではない。失効は誰の判断でもない
+ * ので、名前は消して時刻だけ残す
+ */
+async function expireActiveAbsences(
+  tx: Executor,
+  tutorId: string,
+  date: string,
+  slotNumber: number,
+  note:
+    | typeof ABSENCE_AUTO_EXPIRED_NOTE
+    | typeof ABSENCE_EXPIRED_UNASSIGNED_NOTE,
+): Promise<number> {
+  const expired = await tx
+    .update(absenceRequests)
+    .set({
+      status: "cancelled",
+      decidedBy: null,
+      decidedAt: new Date(),
+      decisionNote: note,
+      updatedAt: new Date(),
+    })
+    .where(
+      and(
+        eq(absenceRequests.tutorId, tutorId),
+        eq(absenceRequests.date, date),
+        eq(absenceRequests.slotNumber, slotNumber),
+        inArray(absenceRequests.status, ["pending", "approved"]),
+      ),
+    )
+    .returning({ id: absenceRequests.id });
+  return expired.length;
 }
 
 /** 承認処理中の「ユーザーに見せてよい」業務エラー (DB エラー等と区別) */
@@ -355,28 +400,13 @@ export async function decideSwapRequest(
       // 文言にしてあるのは、あるのが未決の申請でしかない場合があるため)。
       // 教室長には代理募集の選択肢に「欠勤申請あり（未承認）」と出して、
       // 先に承認/却下する機会を作ってある (#230)。
-      const expired = await tx
-        .update(absenceRequests)
-        .set({
-          status: "cancelled",
-          // ⚠️ **`decided_by` を null にする** (#225)。触らないと、承認済み
-          // だった欠勤が失効したとき「承認した教室長」がそのまま残り、画面に
-          // 「取り消し: (その人の名前)」と出る。実際に取り消したのはその人では
-          // ない。失効は誰の判断でもないので、名前は消して時刻だけ残す
-          decidedBy: null,
-          decidedAt: new Date(),
-          decisionNote: ABSENCE_AUTO_EXPIRED_NOTE,
-          updatedAt: new Date(),
-        })
-        .where(
-          and(
-            eq(absenceRequests.tutorId, req.requesterId),
-            eq(absenceRequests.date, req.date),
-            eq(absenceRequests.slotNumber, req.slotNumber),
-            inArray(absenceRequests.status, ["pending", "approved"]),
-          ),
-        )
-        .returning({ id: absenceRequests.id });
+      const expired = await expireActiveAbsences(
+        tx,
+        req.requesterId,
+        req.date,
+        req.slotNumber,
+        ABSENCE_AUTO_EXPIRED_NOTE,
+      );
 
       return {
         requesterId: req.requesterId,
@@ -385,7 +415,7 @@ export async function decideSwapRequest(
         applicantName: nameOf(applicantId),
         date: req.date,
         slotNumber: req.slotNumber,
-        expiredAbsences: expired.length,
+        expiredAbsences: expired,
       };
     });
   } catch (e) {
@@ -496,6 +526,11 @@ const CancelApprovedInput = z.object({
  * 代わりに戻り値で呼び出し側に伝え、画面で「代理で欠勤を登録する」(#217) を
  * 促す。**講師の再申請を促してはいけない** — `createAbsenceRequest` は過去日を
  * 弾くので、終了したコマでは実行不能な案内になる。
+ *
+ * ⚠️ 逆に、**代講者がこのコマに出していた欠勤は失効させる** (#291)。代講者は
+ * この取り消しでコマを失うので、元講師と同じ「担当を失ったら失効」の規則。
+ * 印は `ABSENCE_EXPIRED_UNASSIGNED_NOTE`。押す前の注意 (`request-log.ts` の
+ * cancelWarning) と、完了メッセージ (`swapCancelNotice`) で伝える
  */
 export async function cancelApprovedSwap(
   input: unknown,
@@ -503,7 +538,8 @@ export async function cancelApprovedSwap(
   | {
       ok: true;
       expiredAbsences: number;
-      substituteExpired: SubstituteExpiredAfterCancel;
+      /** 代講者のそのコマの欠勤を失効させたなら、その代講者の名前 (#291) */
+      substituteExpiredName: string | null;
       pendingSwaps: PendingSwapAfterCancel[];
     }
   | { ok: false; error: string }
@@ -605,26 +641,14 @@ export async function cancelApprovedSwap(
       // 経路でも) 担当に戻ったとき、週次表に欠勤マークが付き、新しい欠勤も一意
       // 制約で出せない。担当になる時点で消す案は、B の本当の欠勤を黙って消し
       // うるので採らなかった (PR #298 のレビュー)。
-      // 印は `ABSENCE_EXPIRED_UNASSIGNED_NOTE` (交代成立の印とは分ける)、
-      // `decided_by` は null (誰の判断でもない。#225)
-      const substituteExpired = await tx
-        .update(absenceRequests)
-        .set({
-          status: "cancelled",
-          decidedBy: null,
-          decidedAt: new Date(),
-          decisionNote: ABSENCE_EXPIRED_UNASSIGNED_NOTE,
-          updatedAt: new Date(),
-        })
-        .where(
-          and(
-            eq(absenceRequests.tutorId, req.approvedApplicantId),
-            eq(absenceRequests.date, req.date),
-            eq(absenceRequests.slotNumber, req.slotNumber),
-            inArray(absenceRequests.status, ["pending", "approved"]),
-          ),
-        )
-        .returning({ id: absenceRequests.id });
+      // 印は `ABSENCE_EXPIRED_UNASSIGNED_NOTE` (交代成立の印とは分ける)
+      const substituteExpired = await expireActiveAbsences(
+        tx,
+        req.approvedApplicantId,
+        req.date,
+        req.slotNumber,
+        ABSENCE_EXPIRED_UNASSIGNED_NOTE,
+      );
 
       // status='approved' を条件に「奪う」更新。同時操作は rowcount 0 で弾く
       const claimed = await tx
@@ -681,7 +705,7 @@ export async function cancelApprovedSwap(
 
       return {
         expiredAbsences: expired.length,
-        substituteExpiredAbsences: substituteExpired.length,
+        substituteExpiredAbsences: substituteExpired,
         pendingSwap,
         substitutePendingSwap,
         requesterId: req.requesterId,
@@ -798,6 +822,19 @@ export async function cancelApprovedSwap(
         // ここだけ。B の募集は教室長が閉じる (本文で「教室長が対応します」)
         href: "/tutor/open-swaps",
       }),
+      // ⚠️ B の欠勤を失効させたことを B に伝える (#291)。元講師の失効 (#250) と
+      // 同じく欠勤の通知にして、欠勤の画面に着地させる (代講の通知の一文だと、
+      // 欠勤が承認されたと思ったまま記録だけが消える)
+      ...(info.substituteExpiredAbsences > 0
+        ? [
+            notify([info.applicantId], {
+              type: "absence_result" as const,
+              title: "欠勤申請が失効しました（担当でなくなったため）",
+              body: `対象日: ${info.date}（${weekdayOf(info.date).label}）${cancelSlotLabel} ／ 代講が取り消され、このコマの担当ではなくなりました`,
+              href: "/tutor/absences",
+            }),
+          ]
+        : []),
     ]);
 
     // 2 つの募集の応募者への通知は互いに関係しないので並べて送る
@@ -853,29 +890,13 @@ export async function cancelApprovedSwap(
 
     revalidateAll();
     revalidatePath("/admin/weekly");
-    // ⚠️ B の欠勤を失効させたことを B に伝える (#291)。元講師の失効 (#250) と
-    // 同じく欠勤の通知にして、欠勤の画面に着地させる (代講の通知の一文だと、
-    // 欠勤が承認されたと思ったまま記録だけが消える)
-    if (info.substituteExpiredAbsences > 0) {
-      await notify([info.applicantId], {
-        type: "absence_result",
-        title: "欠勤申請が失効しました（担当でなくなったため）",
-        body: `対象日: ${info.date}（${weekdayOf(info.date).label}）${cancelSlotLabel} ／ 代講が取り消され、このコマの担当ではなくなりました`,
-        href: "/tutor/absences",
-      });
-    }
 
     return {
       ok: true,
       expiredAbsences: info.expiredAbsences,
       // 代講者の失効は、元講師の失効と分けて誰の分か分かる形で返す (#291)
-      substituteExpired:
-        info.substituteExpiredAbsences > 0
-          ? {
-              name: info.applicantName,
-              count: info.substituteExpiredAbsences,
-            }
-          : null,
+      substituteExpiredName:
+        info.substituteExpiredAbsences > 0 ? info.applicantName : null,
       // A の募集 (#283) と B の募集 (#287) は両方残りうるので、別々に返す
       pendingSwaps: plan.pendingSwaps,
     };
@@ -1191,32 +1212,17 @@ export async function recordSubstitution(
 
       // decideSwapRequest と同じ扱い。A は担当ではなくなるので、欠勤を
       // 残すと週次シフト表と食い違う
-      const expired = await tx
-        .update(absenceRequests)
-        .set({
-          status: "cancelled",
-          // ⚠️ **`decided_by` を null にする** (#225)。触らないと、承認済み
-          // だった欠勤が失効したとき「承認した教室長」がそのまま残り、画面に
-          // 「取り消し: (その人の名前)」と出る。実際に取り消したのはその人では
-          // ない。失効は誰の判断でもないので、名前は消して時刻だけ残す
-          decidedBy: null,
-          decidedAt: new Date(),
-          decisionNote: ABSENCE_AUTO_EXPIRED_NOTE,
-          updatedAt: new Date(),
-        })
-        .where(
-          and(
-            eq(absenceRequests.tutorId, tutorId),
-            eq(absenceRequests.date, date),
-            eq(absenceRequests.slotNumber, slotNumber),
-            inArray(absenceRequests.status, ["pending", "approved"]),
-          ),
-        )
-        .returning({ id: absenceRequests.id });
+      const expired = await expireActiveAbsences(
+        tx,
+        tutorId,
+        date,
+        slotNumber,
+        ABSENCE_AUTO_EXPIRED_NOTE,
+      );
       // ⚠️ 黙って失効させない。`cancelApprovedSwap` が expiredAbsences を返して
       // 画面に出しているのと揃える。#217 で登録した欠勤が消えたことに
       // 教室長が気づけないと、記録を取り消しても戻し忘れる
-      expiredAbsences = expired.length;
+      expiredAbsences = expired;
 
       // 未処理の交代申請が残っていないか (塞がないが、記録後は付け替え対象が
       // 変わって承認できなくなるので呼び出し側に伝える)。
