@@ -32,7 +32,11 @@ const plan = (o: {
 
 /** 教室長への文言。planCancelNotices の出力をそのまま通す (実際のつながり) */
 const adminText = (p: ReturnType<typeof plan>, expiredAbsences = 0) =>
-  swapCancelNotice({ expiredAbsences, pendingSwaps: p.pendingSwaps });
+  swapCancelNotice({
+    expiredAbsences,
+    substituteExpiredName: null,
+    pendingSwaps: p.pendingSwaps,
+  });
 
 describe("swapCancelNotice (planCancelNotices 経由)", () => {
   it("何も残っていなければ一文だけ", () => {
@@ -122,6 +126,34 @@ describe("swapCancelNotice (planCancelNotices 経由)", () => {
       }),
     );
     expect(text).not.toContain("通知");
+  });
+});
+
+describe("swapCancelNotice の代講者の失効 (#291)", () => {
+  it("代講者の欠勤を失効させたら、誰の分かを出し、戻し方は誤操作の場合だけ書く", () => {
+    const text = swapCancelNotice({
+      expiredAbsences: 0,
+      substituteExpiredName: "佐藤",
+      pendingSwaps: [],
+    });
+    expect(text).toBe(
+      "取り消しました。代講者の 佐藤 さんがこのコマに出していた欠勤申請は、担当でなくなったため失効させました（取り消しが誤りで、佐藤 さんが実際には休む場合は、記録し直したあと「代理で欠勤を登録する」から登録してください）。",
+    );
+    // ふだんの「登録し直して」(元講師向け) は出さない。戻し方は誤操作の場合だけ
+    expect(text).not.toContain(
+      "必要なら「代理で欠勤を登録する」から登録し直してください",
+    );
+  });
+
+  it("元講師の失効と両方あれば、元講師 → 代講者の順に出す", () => {
+    const text = swapCancelNotice({
+      expiredAbsences: 1,
+      substituteExpiredName: "佐藤",
+      pendingSwaps: [],
+    });
+    expect(text.indexOf("交代成立時に自動失効")).toBeLessThan(
+      text.indexOf("代講者の 佐藤 さん"),
+    );
   });
 });
 

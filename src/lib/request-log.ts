@@ -43,7 +43,9 @@ export type RequestLogEvent =
   /** 講師が自分で取り下げた */
   | "cancelled-by-tutor"
   /** 交代成立により欠勤が自動失効した (欠勤のみ) */
-  | "auto-expired";
+  | "auto-expired"
+  /** 代講の取り消しで担当でなくなり、欠勤が自動失効した (欠勤のみ。#291) */
+  | "auto-expired-unassigned";
 
 export type RequestLogEntry = {
   id: string;
@@ -113,6 +115,7 @@ export const EVENT_LABEL: Record<RequestLogEvent, string> = {
   "withdrawn-by-admin": "教室長が取り下げ",
   "cancelled-by-tutor": "講師が取り下げ",
   "auto-expired": "失効（交代成立による）",
+  "auto-expired-unassigned": "失効（担当でなくなったため）",
 };
 
 export type LogStatus = "pending" | "approved" | "rejected" | "cancelled";
@@ -149,6 +152,8 @@ export type AbsenceLogInput = CommonInput & {
   autoExpired: boolean;
   /** `decision_note` が「不要として閉じる」(#289) のマーカーと一致するか */
   closedUnassigned: boolean;
+  /** `decision_note` が「担当でなくなったため自動失効」(#291) のマーカーと一致するか */
+  expiredUnassigned: boolean;
 };
 
 export type SwapLogInput = CommonInput & {
@@ -234,7 +239,11 @@ export function toAbsenceLogEntry(i: AbsenceLogInput): RequestLogEntry {
             // 「失効」に化ける。自動失効は必ず actorName が無いので AND で縛る
             i.autoExpired && i.actorName === null
             ? "auto-expired"
-            : // 「不要として閉じる」(#289) は承認を経ていないので、承認済みを
+            : // 代講の取り消しで担当でなくなった失効 (#291)。自動失効と同じく
+              // actorName が無いことと AND で縛る
+              i.expiredUnassigned && i.actorName === null
+              ? "auto-expired-unassigned"
+              : // 「不要として閉じる」(#289) は承認を経ていないので、承認済みを
               // 取り消した「取り消し」と分ける。note の定型文は
               // cancelApprovedAbsence の理由欄で弾いてあるので、自由文と
               // 衝突しない
@@ -262,6 +271,26 @@ export function toAbsenceLogEntry(i: AbsenceLogInput): RequestLogEntry {
 }
 
 /** 交代・代講申請 1 行 → 台帳の行 */
+/**
+ * 承認済みの代講を取り消す前の注意。#291: 代講者がそのコマ (まだ終わって
+ * いないもの) に出していた欠勤も失効する (戻せない) ので、押す前に言う。
+ * ⚠️ 失効させる側の判断は `shouldExpireSubstituteAbsence`。ここは `isEnded`
+ * (`isSlotPast`。コマの終了時刻まで見る) で出し分ける。今日の終了時刻が
+ * 分からないコマだけは、ここが「終わっていない」と読んで「失効します」と出し、
+ * 実際には失効しない (記録を残す側のずれなので許容)
+ */
+function swapCancelWarning(i: SwapLogInput): string {
+  const sub = i.approvedApplicantName
+    ? `${i.approvedApplicantName} さん`
+    : "代講者";
+  // 終わったコマでは代講者の欠勤は失効しない (`shouldExpireSubstituteAbsence`)
+  // ので、その一文を出さない
+  const expiry = i.isEnded
+    ? ""
+    : `${sub}がこのコマに欠勤申請を出していれば、それも失効します。`;
+  return `取り消すと、担当を ${i.requesterName} さんに戻し、${sub}の代講記録を消します。${expiry}実際に代講が入った場合は取り消さないでください。`;
+}
+
 export function toSwapLogEntry(i: SwapLogInput): RequestLogEntry {
   const event: RequestLogEvent =
     i.status === "pending"
@@ -289,9 +318,7 @@ export function toSwapLogEntry(i: SwapLogInput): RequestLogEntry {
     i.isProxy || i.isRecorded,
     i.swapKind === "named" ? "指名交代" : "代講",
     "この代講を取り消す",
-    `取り消すと、担当を ${i.requesterName} さんに戻し、${
-      i.approvedApplicantName ?? "代講者"
-    } さんの代講記録を消します。実際に代講が入った場合は取り消さないでください。`,
+    swapCancelWarning(i),
     // 講師の再申請は hasSlotEnded で塞がるので、戻すには #215 の記録が要る
     i.isEnded
       ? "このコマは既に終了しているため、講師の再申請では戻せません。戻す場合は「代講を記録する」から記録し直してください。"

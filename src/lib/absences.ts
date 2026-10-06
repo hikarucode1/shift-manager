@@ -12,7 +12,10 @@ import {
 } from "drizzle-orm";
 import { db } from "@/db/client";
 import { absenceRequests, profiles, weeklyShifts } from "@/db/schema";
-import { ABSENCE_AUTO_EXPIRED_NOTE } from "@/lib/absence-expiry";
+import {
+  ABSENCE_AUTO_EXPIRED_NOTE,
+  ABSENCE_EXPIRED_UNASSIGNED_NOTE,
+} from "@/lib/absence-expiry";
 import { ABSENCE_CLOSED_UNASSIGNED_NOTE } from "@/lib/pending-absence-actions";
 import { getSlotMeta } from "@/lib/slot-meta";
 import { isSlotPast } from "@/lib/slot-time";
@@ -53,6 +56,11 @@ export type AbsenceRequestRow = {
    * 理由欄で使えないよう弾いてある (`ABSENCE_CLOSED_UNASSIGNED_NOTE` 参照)
    */
   closedUnassigned: boolean;
+  /**
+   * 代講の取り消しで担当でなくなり、自動失効したか (#291)。自動失効と同じく
+   * 誰の判断でもないので、`decisionNote` を「教室長より」で出さない
+   */
+  expiredUnassigned: boolean;
   decidedAt: string | null;
   createdAt: string;
   /**
@@ -193,6 +201,10 @@ export async function getTutorAbsenceRequests(
       r.status === "cancelled" &&
       r.decisionNote === ABSENCE_CLOSED_UNASSIGNED_NOTE &&
       r.decidedBy !== null,
+    expiredUnassigned:
+      r.status === "cancelled" &&
+      r.decisionNote === ABSENCE_EXPIRED_UNASSIGNED_NOTE &&
+      r.decidedBy === null,
     date: r.date,
     slotNumber: r.slotNumber,
     slotLabel: slotLabelOf(meta, r.slotNumber).label,
@@ -254,6 +266,10 @@ export async function getPendingAbsenceRequests(): Promise<PendingAbsence[]> {
       r.status === "cancelled" &&
       r.decisionNote === ABSENCE_CLOSED_UNASSIGNED_NOTE &&
       r.decidedBy !== null,
+    expiredUnassigned:
+      r.status === "cancelled" &&
+      r.decisionNote === ABSENCE_EXPIRED_UNASSIGNED_NOTE &&
+      r.decidedBy === null,
     isEnded: isSlotPast(r.date, slotLabelOf(meta, r.slotNumber).end),
     tutorAssigned: r.tutorAssigned,
   }));

@@ -31,6 +31,7 @@ const absence = (o: Partial<AbsenceLogInput> = {}): AbsenceLogInput => ({
   isProxy: false,
   autoExpired: false,
   closedUnassigned: false,
+  expiredUnassigned: false,
   ...o,
 });
 
@@ -74,6 +75,26 @@ describe("toAbsenceLogEntry", () => {
     );
     expect(e.event).toBe("auto-expired");
     expect(e.eventLabel).toBe("失効（交代成立による）");
+  });
+
+  it("代講の取り消しで担当でなくなった失効 (#291) は、交代成立の失効と分ける", () => {
+    const e = toAbsenceLogEntry(
+      absence({ status: "cancelled", expiredUnassigned: true, actorName: null }),
+    );
+    expect(e.event).toBe("auto-expired-unassigned");
+    expect(e.eventLabel).toBe("失効（担当でなくなったため）");
+  });
+
+  it("教室長が理由に「担当でなくなったため自動失効」と書いても、失効に化けない (#291)", () => {
+    // 自動失効は必ず actorName が無い。教室長の取り消しは actorName がある
+    const e = toAbsenceLogEntry(
+      absence({
+        status: "cancelled",
+        expiredUnassigned: true,
+        actorName: "教室長A",
+      }),
+    );
+    expect(e.event).toBe("cancelled-by-admin");
   });
 
   it("教室長が取り消し理由に同じ文言を書いても失効に化けない", () => {
@@ -234,7 +255,7 @@ describe("フィールドの受け渡し", () => {
       cancellable: false,
       cancelLabel: "この代講を取り消す",
       cancelWarning:
-        "取り消すと、担当を 山田 さんに戻し、佐藤 さんの代講記録を消します。実際に代講が入った場合は取り消さないでください。",
+        "取り消すと、担当を 山田 さんに戻し、佐藤 さんの代講記録を消します。佐藤 さんがこのコマに欠勤申請を出していれば、それも失効します。実際に代講が入った場合は取り消さないでください。",
       cancelHint: null,
     });
   });
@@ -312,8 +333,25 @@ describe("adminInitiated", () => {
   });
 });
 
+describe("代講の取り消し前の注意 (#291)", () => {
+  it("終わったコマでは、代講者の欠勤が失効するとは言わない", () => {
+    const w = toSwapLogEntry(swap({ isEnded: true })).cancelWarning;
+    expect(w).not.toContain("失効");
+    expect(toSwapLogEntry(swap({ isEnded: false })).cancelWarning).toContain(
+      "それも失効します",
+    );
+  });
+
+  it("代講者の名前が無い行では「代講者 さん」にしない", () => {
+    const w = toSwapLogEntry(swap({ approvedApplicantName: null }))
+      .cancelWarning;
+    expect(w).toContain("代講者の代講記録を消します");
+    expect(w).not.toContain("代講者 さん");
+  });
+});
+
 describe("eventLabel", () => {
-  it("9 種すべてを固定する", () => {
+  it("10 種すべてを固定する", () => {
     // 画面は eventLabel を並べるだけにする設計なので、ラベルは製品面そのもの。
     // 嘘が出やすいのは「取り消し」「失効」側なので全部固定する
     expect(EVENT_LABEL).toEqual({
@@ -326,6 +364,7 @@ describe("eventLabel", () => {
       "withdrawn-by-admin": "教室長が取り下げ",
       "cancelled-by-tutor": "講師が取り下げ",
       "auto-expired": "失効（交代成立による）",
+      "auto-expired-unassigned": "失効（担当でなくなったため）",
     });
   });
 });

@@ -3,7 +3,10 @@ import { and, asc, desc, eq, gte, inArray, sql } from "drizzle-orm";
 import { alias } from "drizzle-orm/pg-core";
 import { db } from "@/db/client";
 import { absenceRequests, profiles, swapRequests } from "@/db/schema";
-import { ABSENCE_AUTO_EXPIRED_NOTE } from "@/lib/absence-expiry";
+import {
+  ABSENCE_AUTO_EXPIRED_NOTE,
+  ABSENCE_EXPIRED_UNASSIGNED_NOTE,
+} from "@/lib/absence-expiry";
 import { ABSENCE_CLOSED_UNASSIGNED_NOTE } from "@/lib/pending-absence-actions";
 import { getSlotMeta } from "@/lib/slot-meta";
 import { isSlotPast } from "@/lib/slot-time";
@@ -185,6 +188,7 @@ export async function getRequestLog(opts: {
       isProxy: r.createdBy !== null && r.createdBy !== r.tutorId,
       autoExpired: r.note === ABSENCE_AUTO_EXPIRED_NOTE,
       closedUnassigned: r.note === ABSENCE_CLOSED_UNASSIGNED_NOTE,
+      expiredUnassigned: r.note === ABSENCE_EXPIRED_UNASSIGNED_NOTE,
     }),
   );
 
