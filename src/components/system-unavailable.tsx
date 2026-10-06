@@ -12,18 +12,24 @@ import { Card, CardContent } from "@/components/ui/card";
  * 同セグメントの error.tsx では捕捉されないので (#187 で実測)、そのままだと
  * 講師 7 画面 / 管理 11 画面すべてが素の 500 になりシェルごと消える。
  *
- * 各 layout と `/` `/login` が認可を try/catch し、失敗時にこれを返す。
+ * 各 layout と `/` `/login` `/auth/confirm` `/auth/set-password` が認可を
+ * try/catch し、失敗時にこれを返す。
  *
- * 効く範囲は **DB 単体の障害** (DATABASE_URL の誤り・プール枯渇・schema 不整合。
- * 2026-07-30 に実際に起きた類型) に加えて、**認証 API に到達できない場合** (#193)。
+ * 効く範囲は、**layout の認可 (profiles の読み出し) が失敗する DB の障害** (DB の
+ * 全断・DATABASE_URL の誤り・プール枯渇) に加えて、**認証 API に到達できない場合**
+ * (#193)。layout が成功して page のクエリだけが失敗する形 (2026-07-30 の
+ * migration 0029 未適用など、schema の不整合の多く) はここではなく error.tsx に
+ * 落ちる。
  * 後者は auth-js の getUser() が throw せず `{ user: null, error }` を返すせいで
  * 「ログアウト」と区別できず、middleware が layout より先に /login へ 307 して
  * いた。判別は `lib/auth-availability.ts` の `isAuthUnavailable` に集約してある。
  *
- * ⚠️ **到達不能と判定できない残りの形**: GoTrue が応答を返せていて、かつその
+ * ⚠️ **到達不能と判定できない残りの形**: 応答の本文が JSON で、かつその
  * ステータスが `NETWORK_ERROR_CODES` / 500 / 429 のいずれでもない場合
- * (例: ゲートウェイが 404 や 401 を返す形の停止)。この場合はいまも
- * 「ログアウト」として観測される。
+ * (例: ゲートウェイが JSON の本文で 404 や 401 や 540 を返す形の停止)。この場合は
+ * いまも「ログアウト」として観測される。本文が JSON でなければ、ステータスに
+ * 関係なく到達不能として扱われる (auth-js の `handleError` が `AuthUnknownError`
+ * にするため。`isAuthUnavailable` 参照)。Supabase の pause がどちらかは未実測 (#294)
  *
  * ⚠️ client component だが、これは reload ボタンのためだけ。本体は SSR されて
  * 最初の HTML に載るので、JS が動かない環境でもメッセージは表示される

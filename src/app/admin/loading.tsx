@@ -5,28 +5,26 @@ import { StalledLoadingHint } from "@/components/stalled-loading-hint";
  *
  * ⚠️ これは「見栄え」のためのファイルではない。本命は初回 SSR の 500 回避。
  *
- * Next 16.2.4 で実測した挙動:
- *   - error.tsx のみ            → Server Component の throw は HTTP 500 +
- *                                 `__next_error__`。error.tsx は描画されない
- *   - error.tsx + loading.tsx   → 同じ throw が HTTP 200 + この fallback の
- *                                 HTML になり、RSC ストリームにエラーチャンク
- *                                 (`E{"digest":...}`) が乗って hydration 後に
- *                                 error.tsx が描画される
+ * loading.tsx が Suspense 境界を作るため、page の throw がシェル (ヘッダ・ナビ)
+ * ごと落とさずに境界で受け止められ、hydration 後に error.tsx が出る (#186)。
+ * layout は成功して page だけが失敗する形 (2026-07-30 の migration 未適用など)
+ * を URL 直アクセスで救うにはこの 1 枚が必須で、error.tsx とセットで意味を持つ。
  *
- * loading.tsx が Suspense 境界を作るため、throw がシェルごと落とさずに
- * 境界で受け止められる。したがって URL 直アクセス (実際の障害経路) を
- * 救うにはこの 1 枚が必須で、error.tsx とセットで意味を持つ。
+ * ⚠️ **その代わり、境界の内側 (配下の page と入れ子の layout) では、失敗しても
+ * HTTP 200 を返し、`notFound()` の 404 や `redirect()` の 307 も返らない。**
+ * エラー表示は hydration 頼み (JS が動かないとスケルトンのまま。#189)。正常時も
+ * ページ遷移で一瞬スケルトンが出る。#190 で比べ直して、承知のうえで残すと
+ * 決めた (外すと #186 の 500 が戻る)。
  *
- * トレードオフ (承知の上):
- *   - 失敗時も HTTP 200 を返すため、監視やクローラからは成功に見える。
- *     検知は console.error 頼みになるので `npm run check:migrations` の
- *     CI 自動化など別系統の検知が要る
- *   - 正常時もページ遷移で一瞬スケルトンが出る (従来は前の画面が残った)
- *
- * ⚠️ layout.tsx が throw する場合はこの仕組みでも救えず 500 のまま
- * (同セグメントの error.tsx は layout の外側を守れないため)。
- * AdminLayout は requireRole() → getProfile() で DB を引くので、
- * DB 全断では引き続き全画面 500 になる。
+ * 守ること (理由と実測の記録は docs/runbooks/loading-status.md):
+ *   - **死活は画面で見ない**。障害でも 200 になる形と、/login へ 307 になる形が
+ *     ある。専用のエンドポイントで見る (#275)
+ *   - **`forbidden()` / `unauthorized()` を呼ばない**。`authInterrupts` が未設定で
+ *     ただの Error になり、AdminLayout から呼ぶと権限が無いだけの人に障害画面が
+ *     出る (#295)
+ *   - **AdminLayout で throw しうるもの (DB も認証 API も) は
+ *     `resolveOrIncident` で包む** (#188。`shell-guard.ts`)。AdminLayout は境界の
+ *     外なので、throw すると全画面 500 になる
  *
  * admin ページは KPI カード + 表/パネルという構成が多いので、
  * それに寄せた汎用スケルトンにしている (11 ページ共用)。

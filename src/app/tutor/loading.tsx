@@ -3,18 +3,17 @@ import { StalledLoadingHint } from "@/components/stalled-loading-hint";
 /**
  * 講師画面セグメントの読み込み fallback (#186)。
  *
- * ⚠️ 見栄えのためではなく、初回 SSR の 500 回避が本命。詳細な実測結果と
- * トレードオフは admin/loading.tsx の docstring を参照。
+ * ⚠️ 見栄えのためではなく、初回 SSR の 500 回避が本命。その代わり失敗しても
+ * HTTP 200 を返すことと、守ること (死活は画面で見ない・`forbidden()` /
+ * `unauthorized()` を呼ばない・TutorLayout で throw しうるものは
+ * `resolveOrIncident` で包む) は
+ * admin/loading.tsx の docstring と docs/runbooks/loading-status.md を参照。
  *
  * #185 (#184) では /tutor/notifications だけをページ内 try/catch で救ったが、
  * 残る 6 画面は URL 直アクセスで DB が落ちていれば素の 500 のままだった。
  * この 1 枚でセグメント配下すべての初回ロードが error.tsx に落ちる。
  * 各ページに try/catch を書き写す方式と違い、新規ページを足したときに
  * 書き忘れて穴が開くことがない。
- *
- * ⚠️ TutorLayout の requireRole() → getProfile() は drizzle で profiles を
- * 引くため、DB 全断 (Supabase Free tier の自動 pause 等) では layout 自体が
- * throw し、この仕組みでも救えず 7 画面すべて 500 になる。
  *
  * 講師ページは「ネイビー hero + カード列」で統一されている (#130/#131) ので
  * スケルトンも同じ形にし、実データ描画時のガタつきを抑える。
