@@ -65,7 +65,7 @@
 - **middleware で返す** (`src/middleware.ts` → `updateSession`): `NextResponse` にステータスを付けて返せるので、`authInterrupts` と関係なく 403 も返せる。ただし middleware は毎リクエスト走るので、DB を引く判定には向かない
 - **200 を受け入れる**
 
-`forbidden()` で 403 を返すには `authInterrupts` を有効にする必要がある (2 節)。今は誤って呼ばないよう #295 で仕組みを検討している。
+`forbidden()` で 403 を返すには `authInterrupts` を有効にする必要がある (2 節)。それまでは、誤って呼ばないよう `eslint.config.mjs` の `no-restricted-imports` で `next/navigation` の `forbidden` / `unauthorized` の import を禁止している (#295)。`authInterrupts` を有効にするときは、このルールも外す。
 
 ## 5. ほかのコスト
 
