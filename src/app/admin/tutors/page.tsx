@@ -4,7 +4,11 @@ import { db } from "@/db/client";
 import { profiles } from "@/db/schema";
 import { AdminTutorsNav } from "@/components/admin-section-nav";
 import { createAdminClient } from "@/lib/supabase/admin";
-import { inviteStatusOf, type InviteStatus } from "@/lib/invite-resend";
+import {
+  collectAllPages,
+  inviteStatusOf,
+  type InviteStatus,
+} from "@/lib/invite-resend";
 import { TutorManager } from "./tutor-manager";
 
 /**
@@ -14,22 +18,22 @@ import { TutorManager } from "./tutor-manager";
  * (再送ボタンは出し、可否は resendInvite がサーバーで判定する)。
  */
 async function loadInviteStatuses(): Promise<Map<string, InviteStatus> | null> {
-  const perPage = 1000;
-  const statuses = new Map<string, InviteStatus>();
   try {
     const supabase = createAdminClient();
-    for (let page = 1; ; page++) {
+    // 終わりの判定は collectAllPages (空のページで止める。#271)
+    const users = await collectAllPages(async (page) => {
       const { data, error } = await supabase.auth.admin.listUsers({
         page,
-        perPage,
+        perPage: 1000,
       });
       if (error) {
         console.error("AdminTutorsPage: listUsers failed:", error.message);
         return null;
       }
-      for (const u of data.users) statuses.set(u.id, inviteStatusOf(u));
-      if (data.users.length < perPage) return statuses;
-    }
+      return data.users;
+    });
+    if (users === null) return null;
+    return new Map(users.map((u) => [u.id, inviteStatusOf(u)]));
   } catch (e) {
     console.error("AdminTutorsPage: listUsers threw", e);
     return null;
@@ -38,6 +42,10 @@ async function loadInviteStatuses(): Promise<Map<string, InviteStatus> | null> {
 
 export default async function AdminTutorsPage() {
   const { profile } = await requireRole("admin");
+
+  // 認証 API の読み込みは DB と独立なので、最初に始めて DB のクエリと並べる
+  // (#271。以前は有効な教室長数のクエリを待ってから始めていた)
+  const inviteStatusesPromise = loadInviteStatuses();
 
   // 兼任者 (admin かつ tutor) が「最後の有効な教室長」のとき、講師一覧からの
   // 無効化を UI 側でも事前 disable するため、有効な教室長数を数える。
@@ -48,9 +56,6 @@ export default async function AdminTutorsPage() {
     .where(
       and(arrayContains(profiles.roles, ["admin"]), eq(profiles.isActive, true)),
     );
-
-  // 認証 API の読み込みは DB と独立なので並べて待つ
-  const inviteStatusesPromise = loadInviteStatuses();
 
   const tutors = await db
     .select({
