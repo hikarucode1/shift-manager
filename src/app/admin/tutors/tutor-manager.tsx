@@ -16,6 +16,12 @@ import { cn } from "@/lib/utils";
 import { avatarColor, avatarInitial } from "@/lib/avatar";
 import type { InviteStatus } from "@/lib/invite-resend";
 import {
+  isResendable,
+  isTutorVisible,
+  normalizeQuery,
+  type StatusFilter,
+} from "@/lib/tutor-list-filter";
+import {
   inviteTutor,
   renameTutor,
   resendInvite,
@@ -39,14 +45,6 @@ export type TutorRow = {
   inviteStatus: InviteStatus | null;
   createdAt: string;
 };
-
-type StatusFilter = "all" | "linked" | "pending" | "unlinked";
-
-// 「招待中」の絞り込みは再送の対象を探すためのもの。無効な講師には再送できない
-// (mailTargetRefusal) ので数えない。
-function isResendable(t: TutorRow) {
-  return t.isActive && t.inviteStatus === "pending";
-}
 
 // 列幅: 氏名 / メール / 状態 / 担当科目 / 操作
 const COLS = "grid-cols-[1.2fr_1.6fr_.9fr_1.3fr_.8fr]";
@@ -99,18 +97,11 @@ export function TutorManager({
   }
 
   const filtered = useMemo(() => {
-    const q = search.trim().toLowerCase();
-    return tutors.filter((t) => {
-      if (statusFilter === "linked" && !t.linked) return false;
-      if (statusFilter === "pending" && !isResendable(t)) return false;
-      if (statusFilter === "unlinked" && t.linked) return false;
-      if (!q) return true;
-      if (t.displayName.toLowerCase().includes(q)) return true;
-      // 未連携行は UI 上メールを隠す (「ログイン未連携」表示) ため、
-      // 隠れた実メールで誤ヒットしないよう連携済みのみメールを検索対象にする。
-      return t.linked && t.email.toLowerCase().includes(q);
-    });
-  }, [tutors, search, statusFilter]);
+    const query = normalizeQuery(search);
+    return tutors.filter((t) =>
+      isTutorVisible(t, { statusFilter, query, editingId }),
+    );
+  }, [tutors, search, statusFilter, editingId]);
 
   // 通知は数秒で自動的に消す
   useEffect(() => {
@@ -446,10 +437,14 @@ export function TutorManager({
                                         profileId: t.id,
                                       }),
                                     "招待メールを送信し、講師に紐付けました。",
-                                    () => {
-                                      setLinkEmail("");
-                                      setEditingId(null);
-                                    },
+                                    // 紐付けた行の編集だけを閉じる。待っている
+                                    // 間に別の行を開いていたら、そちらは閉じない
+                                    // (編集中だから残っている行が消えるため。
+                                    // #302)。入力欄は開くときに startEdit が空にする
+                                    () =>
+                                      setEditingId((cur) =>
+                                        cur === t.id ? null : cur,
+                                      ),
                                   )
                                 }
                               >
