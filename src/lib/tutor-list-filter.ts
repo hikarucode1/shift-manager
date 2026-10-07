@@ -57,22 +57,14 @@ export function matchesQuery(t: ListedTutor, query: string): boolean {
  * 行の状態が変わって絞り込みや検索から外れ、エラーが案内するボタンや入力欄
  * ごと消えるため。氏名を変えて検索から外れた場合も同じ。
  *
- * 教室長が自分で絞り込みや検索を変えて、編集中の行がそれに合わなくなるなら、
- * 画面側で編集を閉じる (`matchesView` で判定)。合わない行が一覧に居座らない
- * ようにするため。合っている間は閉じない (入力途中の内容を消さない)。
+ * 教室長が自分で状態の絞り込みを変えて、編集中の行がそれに合わなくなるなら、
+ * 画面側で編集を閉じる (`matchesStatus` で判定)。合わない行が一覧に居座らない
+ * ようにするため。検索欄では閉じない (日本語入力の変換前の値で閉じてしまう)。
  */
 export function isTutorVisible(
   t: ListedTutor,
   opts: { statusFilter: StatusFilter; query: string; editingId: string | null },
 ): boolean {
   if (t.id === opts.editingId) return true;
-  return matchesView(t, opts);
-}
-
-/** 絞り込みと検索の両方に当たるか (編集中かどうかは見ない) */
-export function matchesView(
-  t: ListedTutor,
-  view: { statusFilter: StatusFilter; query: string },
-): boolean {
-  return matchesStatus(t, view.statusFilter) && matchesQuery(t, view.query);
+  return matchesStatus(t, opts.statusFilter) && matchesQuery(t, opts.query);
 }

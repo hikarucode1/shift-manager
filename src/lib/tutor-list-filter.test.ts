@@ -4,7 +4,6 @@ import {
   isTutorVisible,
   matchesQuery,
   matchesStatus,
-  matchesView,
   normalizeQuery,
 } from "@/lib/tutor-list-filter";
 
@@ -115,22 +114,8 @@ describe("isTutorVisible (#302)", () => {
   });
 });
 
-describe("matchesView (#302: 見るものを変えたとき編集を閉じるか)", () => {
-  it("編集中の行がまだ当たるなら閉じない (1 文字打つたびに入力を消さない)", () => {
-    expect(
-      matchesView(linked, {
-        statusFilter: "all",
-        query: normalizeQuery(" 田 "),
-      }),
-    ).toBe(true);
-  });
-
-  it("当たらなくなるなら閉じる", () => {
-    expect(matchesView(linked, { statusFilter: "unlinked", query: "" })).toBe(
-      false,
-    );
-    expect(
-      matchesView(linked, { statusFilter: "all", query: normalizeQuery("山") }),
-    ).toBe(false);
+describe("normalizeQuery", () => {
+  it("前後の空白を除いて小文字にする", () => {
+    expect(normalizeQuery(" Tanaka@ ")).toBe("tanaka@");
   });
 });

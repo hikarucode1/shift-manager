@@ -18,7 +18,7 @@ import type { InviteStatus } from "@/lib/invite-resend";
 import {
   isResendable,
   isTutorVisible,
-  matchesView,
+  matchesStatus,
   normalizeQuery,
   type StatusFilter,
 } from "@/lib/tutor-list-filter";
@@ -159,27 +159,19 @@ export function TutorManager({
   }
 
   /**
-   * 検索・絞り込みを変える。編集中の行が新しい条件に合わなくなるなら編集を
+   * 状態の絞り込みを変える。編集中の行が新しい絞り込みに合わなくなるなら編集を
    * 閉じる。編集中の行は合わなくても残すので (#302)、開いたままだと合わない
-   * 行が居座る。合っている間は閉じない (入力途中の内容を消さない)
+   * 行が居座る。合っている間は閉じない (入力途中の内容を消さない)。
+   *
+   * ⚠️ 検索欄では閉じない。日本語入力では変換前の「やま」でも onChange が
+   * 呼ばれ、打ち間違いも途中で当たらなくなるので、1 文字目で閉じて入力途中の
+   * 内容を消してしまう。編集中の行は検索に当たらなくても残るので、閉じなくて
+   * よい
    */
-  function changeView(next: { search?: string; statusFilter?: StatusFilter }) {
-    const view = {
-      search: next.search ?? search,
-      statusFilter: next.statusFilter ?? statusFilter,
-    };
-    setSearch(view.search);
-    setStatusFilter(view.statusFilter);
+  function changeStatusFilter(next: StatusFilter) {
+    setStatusFilter(next);
     const editingRow = tutors.find((t) => t.id === editingId);
-    if (
-      editingRow &&
-      !matchesView(editingRow, {
-        statusFilter: view.statusFilter,
-        query: normalizeQuery(view.search),
-      })
-    ) {
-      setEditingId(null);
-    }
+    if (editingRow && !matchesStatus(editingRow, next)) setEditingId(null);
   }
 
   function startEdit(t: TutorRow) {
@@ -214,7 +206,7 @@ export function TutorManager({
       <div className="flex flex-wrap items-center gap-2">
         <Input
           value={search}
-          onChange={(e) => changeView({ search: e.target.value })}
+          onChange={(e) => setSearch(e.target.value)}
           placeholder="氏名・メールで検索"
           className="h-9 max-w-[280px]"
           aria-label="氏名・メールで検索"
@@ -222,7 +214,7 @@ export function TutorManager({
         <select
           value={statusFilter}
           onChange={(e) =>
-            changeView({ statusFilter: e.target.value as StatusFilter })
+            changeStatusFilter(e.target.value as StatusFilter)
           }
           className="h-9 rounded-md border bg-background px-2.5 text-sm focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
           aria-label="状態で絞り込み"
