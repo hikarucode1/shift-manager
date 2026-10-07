@@ -2,16 +2,14 @@ import { isSlotPast } from "@/lib/slot-time";
 import { jstToday } from "@/lib/week";
 
 /**
- * 交代成立で欠勤申請を自動失効させたときに `decision_note` へ残す印。
+ * 交代成立で欠勤申請を自動失効させたときに `decision_note` へ残す文言
+ * (交代の承認 / 代講の記録で、元講師がコマを失うとき)。台帳のコメント欄に出る。
+ * 代講の取り消しで代講者がコマを失うときは `ABSENCE_EXPIRED_UNASSIGNED_NOTE`
+ * (下)。
  *
- * ⚠️ **書く側 (交代の承認 / 代講の記録で、元講師がコマを失うとき) と読む側
- * (取り消し時の失効件数の集計・台帳の種類判定・講師の履歴) で共有する。**
- * 片方だけ変えると数えられなくなる。代講の取り消しで代講者がコマを失うときは
- * 別の印 `ABSENCE_EXPIRED_UNASSIGNED_NOTE` を使う (下)。
- *
- * ⚠️ この文字列一致だけで「自動失効」と断定しないこと。`cancelApprovedAbsence`
- * の理由欄は自由文なので、教室長が偶然同じ文言を書きうる。自動失効は必ず
- * `decided_by` が null になるので、**AND で判定する** (`request-log.ts` 参照)。
+ * ⚠️ **種類の判定には使わない。** 判定は `close_kind = 'auto_expired'` で行う
+ * (#292)。以前はこの文言と `decided_by` が null であることの AND で判定して
+ * いたが、教室長の取り消し理由が偶然一致すると分類が変わった。
  */
 export const ABSENCE_AUTO_EXPIRED_NOTE = "交代成立により自動失効";
 
@@ -25,7 +23,8 @@ export const ABSENCE_AUTO_EXPIRED_NOTE = "交代成立により自動失効";
  * 同じ印を使うと、代講者の失効まで「交代成立で失効した」と数えられ、表示も
  * 逆の意味になる (PR #298 のレビュー)。
  *
- * 判定は自動失効と同じく `decided_by` が null であることとの AND。
+ * 判定は `close_kind = 'expired_unassigned'` で行う (#292)。この文言は
+ * 台帳のコメント欄に出すだけ。
  */
 export const ABSENCE_EXPIRED_UNASSIGNED_NOTE = "担当でなくなったため自動失効";
 

@@ -3,11 +3,6 @@ import { and, asc, desc, eq, gte, inArray, sql } from "drizzle-orm";
 import { alias } from "drizzle-orm/pg-core";
 import { db } from "@/db/client";
 import { absenceRequests, profiles, swapRequests } from "@/db/schema";
-import {
-  ABSENCE_AUTO_EXPIRED_NOTE,
-  ABSENCE_EXPIRED_UNASSIGNED_NOTE,
-} from "@/lib/absence-expiry";
-import { ABSENCE_CLOSED_UNASSIGNED_NOTE } from "@/lib/pending-absence-actions";
 import { getSlotMeta } from "@/lib/slot-meta";
 import { isSlotPast } from "@/lib/slot-time";
 import {
@@ -113,6 +108,7 @@ export async function getRequestLog(opts: {
             slotNumber: absenceRequests.slotNumber,
             reason: absenceRequests.reason,
             note: absenceRequests.decisionNote,
+            closeKind: absenceRequests.closeKind,
             decidedAt: absenceRequests.decidedAt,
             updatedAt: absenceRequests.updatedAt,
           })
@@ -186,9 +182,7 @@ export async function getRequestLog(opts: {
       // ⚠️ null ガードを外さないこと。0034 は backfill 無しなので、それ以前の
       // 行は created_by = null (= 講師本人が作った行)
       isProxy: r.createdBy !== null && r.createdBy !== r.tutorId,
-      autoExpired: r.note === ABSENCE_AUTO_EXPIRED_NOTE,
-      closedUnassigned: r.note === ABSENCE_CLOSED_UNASSIGNED_NOTE,
-      expiredUnassigned: r.note === ABSENCE_EXPIRED_UNASSIGNED_NOTE,
+      closeKind: r.closeKind,
     }),
   );
 

@@ -151,7 +151,11 @@ export async function cancelAbsenceRequest(
 
   const updated = await db
     .update(absenceRequests)
-    .set({ status: "cancelled", updatedAt: new Date() })
+    .set({
+      status: "cancelled",
+      closeKind: "tutor_withdraw",
+      updatedAt: new Date(),
+    })
     .where(
       and(
         eq(absenceRequests.id, parsed.data.id),

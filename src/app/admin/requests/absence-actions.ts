@@ -21,10 +21,10 @@ import { absenceTutorAssigned } from "@/lib/absences";
 type ActionResult = { ok: true } | { ok: false; error: string };
 
 /**
- * 取り消し理由に使わせない文言 (システムが `decision_note` に書く印)。台帳と
- * 講師の履歴は印で閉じ方を見分けるので、教室長が同じ文言を書くと、承認済みの
- * 取り消しが「承認前に閉じた」「自動失効」に化ける。書く側で塞いでおけば、
- * 読む側で `decided_by` の条件を書き忘れても壊れない (PR #298 のレビュー)
+ * 取り消し理由に使わせない文言 (システムが `decision_note` に書く文言)。
+ * #292 以降、閉じ方の種類は `close_kind` で判定するので、同じ文言を書いても
+ * 分類は変わらない。それでも、台帳のコメント欄に「交代成立により自動失効」
+ * などと出ると紛らわしいので弾いておく
  */
 const RESERVED_NOTES: readonly string[] = [
   ABSENCE_CLOSED_UNASSIGNED_NOTE,
@@ -40,9 +40,7 @@ const CancelApprovedAbsenceInput = z.object({
     .trim()
     .min(1, "取り消し理由を入力してください。")
     .max(500, "取り消し理由は 500 文字以内で入力してください。")
-    // ⚠️ 「不要として閉じる」(#289) の定型文は使わせない。台帳と講師の履歴は
-    // この文言で「承認前に閉じた」と判定するので、承認済みの取り消しに同じ
-    // 文言が入ると「承認された」事実が記録上消える (PR #290 のレビュー)
+    // システムが書く文言は使わせない (RESERVED_NOTES)
     .refine((r) => !RESERVED_NOTES.includes(r), {
       message: "その文言はシステムが使う印なので、取り消し理由には使えません。別の言い方で書いてください。",
     }),
@@ -74,23 +72,19 @@ const CancelApprovedAbsenceInput = z.object({
  *      対象なので、`pending` に戻すと講師の出し直しを塞いだままになる
  *   `cancelled` にすれば両方とも解ける。
  *
- * ⚠️ `cancelled` には 5 経路から到達する。#225 以降は**どの経路かは判別できる**:
- *   - この関数:            `decided_by` あり / `decided_at` あり
+ * ⚠️ `cancelled` には 5 経路から到達する。どの経路かは `close_kind` (#292) で
+ * 判別する (`decision_note` の文言や `decided_by` の有無では判定しない):
+ *   - この関数:            `admin_cancel`。`decided_by` / `decided_at` あり
  *   - 不要として閉じる (#289, `closeUnassignedAbsence`):
- *                          `decided_by` あり / `decided_at` あり
- *                          (+ `decision_note = ABSENCE_CLOSED_UNASSIGNED_NOTE`)。
+ *                          `unassigned`。`decided_by` / `decided_at` あり。
  *                          **pending から来る** (承認を経ていない)。台帳では
- *                          「教室長が取り下げ」(承認前に閉じた) に出す。
- *                          この関数の理由欄ではこの定型文を弾くので、
- *                          文言で取り違えることはない
- *   - 交代成立の自動失効:   `decided_by` **null** / `decided_at` あり
- *                          (+ `decision_note = ABSENCE_AUTO_EXPIRED_NOTE`)。
+ *                          「教室長が取り下げ」(承認前に閉じた) に出す
+ *   - 交代成立の自動失効:   `auto_expired`。`decided_by` **null**。
  *                          元講師が交代の承認・代講の記録でコマを失ったとき
  *   - 担当でなくなった自動失効 (#291):
- *                          `decided_by` **null** / `decided_at` あり
- *                          (+ `decision_note = ABSENCE_EXPIRED_UNASSIGNED_NOTE`)。
+ *                          `expired_unassigned`。`decided_by` **null**。
  *                          代講者が代講の取り消しでコマを失ったとき
- *   - 講師の自己取り下げ:   どちらも null
+ *   - 講師の自己取り下げ:   `tutor_withdraw`。`decided_by` / `decided_at` とも null
  * ただし**「承認を経由したか」は依然として判別できない**。`decided_by` /
  * `decided_at` は最後の決定で上書きされ、承認時の値は残らないため。
  * 承認履歴が要るなら別テーブルが要る (現状そこまでの要求は無い)。
@@ -113,6 +107,7 @@ export async function cancelApprovedAbsence(
     .update(absenceRequests)
     .set({
       status: "cancelled",
+      closeKind: "admin_cancel",
       decidedBy: profile.id,
       decidedAt: new Date(),
       decisionNote: reason,
@@ -300,6 +295,7 @@ export async function closeUnassignedAbsence(
     .update(absenceRequests)
     .set({
       status: "cancelled",
+      closeKind: "unassigned",
       decidedBy: profile.id,
       decidedAt: new Date(),
       decisionNote: ABSENCE_CLOSED_UNASSIGNED_NOTE,

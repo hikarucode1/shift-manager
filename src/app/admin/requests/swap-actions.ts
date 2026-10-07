@@ -87,10 +87,10 @@ async function notifyActiveApplicants(
  * 失効させ、件数を返す。**担当を失った講師**に使う (「担当を失ったら、その
  * コマの欠勤は失効」):
  *
- * - 交代の承認・代講の記録で、元講師がコマを失う (#33)。印は
- *   `ABSENCE_AUTO_EXPIRED_NOTE`
- * - 代講の取り消しで、代講者がコマを失う (#291)。印は
- *   `ABSENCE_EXPIRED_UNASSIGNED_NOTE`
+ * - 交代の承認・代講の記録で、元講師がコマを失う (#33)。`close_kind` は
+ *   `auto_expired` (文言は `ABSENCE_AUTO_EXPIRED_NOTE`)
+ * - 代講の取り消しで、代講者がコマを失う (#291)。`close_kind` は
+ *   `expired_unassigned` (文言は `ABSENCE_EXPIRED_UNASSIGNED_NOTE`)
  *
  * ⚠️ **`decided_by` を null にする** (#225)。触らないと、承認済みだった欠勤が
  * 失効したとき「承認した教室長」がそのまま残り、画面に「取り消し: (その人の
@@ -102,17 +102,20 @@ async function expireActiveAbsences(
   tutorId: string,
   date: string,
   slotNumber: number,
-  note:
-    | typeof ABSENCE_AUTO_EXPIRED_NOTE
-    | typeof ABSENCE_EXPIRED_UNASSIGNED_NOTE,
+  closeKind: "auto_expired" | "expired_unassigned",
 ): Promise<number> {
   const expired = await tx
     .update(absenceRequests)
     .set({
       status: "cancelled",
+      // 種類は close_kind で判定する (#292)。note は台帳のコメント欄に出す文言
+      closeKind,
       decidedBy: null,
       decidedAt: new Date(),
-      decisionNote: note,
+      decisionNote:
+        closeKind === "auto_expired"
+          ? ABSENCE_AUTO_EXPIRED_NOTE
+          : ABSENCE_EXPIRED_UNASSIGNED_NOTE,
       updatedAt: new Date(),
     })
     .where(
@@ -410,7 +413,7 @@ export async function decideSwapRequest(
         req.requesterId,
         req.date,
         req.slotNumber,
-        ABSENCE_AUTO_EXPIRED_NOTE,
+        "auto_expired",
       );
 
       return {
@@ -534,7 +537,7 @@ const CancelApprovedInput = z.object({
  *
  * ⚠️ 逆に、**代講者がこのコマに出していた欠勤は失効させる** (#291)。代講者は
  * この取り消しでコマを失うので、元講師と同じ「担当を失ったら失効」の規則。
- * 印は `ABSENCE_EXPIRED_UNASSIGNED_NOTE`。押す前の注意 (`request-log.ts` の
+ * `close_kind` は `expired_unassigned`。押す前の注意 (`request-log.ts` の
  * cancelWarning) と、完了メッセージ (`swapCancelNotice`) で伝える
  */
 export async function cancelApprovedSwap(
@@ -651,7 +654,7 @@ export async function cancelApprovedSwap(
       // 経路でも) 担当に戻ったとき、週次表に欠勤マークが付き、新しい欠勤も一意
       // 制約で出せない。担当になる時点で消す案は、B の本当の欠勤を黙って消し
       // うるので採らなかった (PR #298 のレビュー)。
-      // 印は `ABSENCE_EXPIRED_UNASSIGNED_NOTE` (交代成立の印とは分ける)
+      // `close_kind` は `expired_unassigned` (交代成立の `auto_expired` とは分ける)
       // ⚠️ **終わったコマでは失効させない** (PR #298 のレビュー)。判断と、
       // 元講師との違いは `shouldExpireSubstituteAbsence` (テスト済み)
       const substituteExpired = !shouldExpireSubstituteAbsence(
@@ -664,7 +667,7 @@ export async function cancelApprovedSwap(
             req.approvedApplicantId,
             req.date,
             req.slotNumber,
-            ABSENCE_EXPIRED_UNASSIGNED_NOTE,
+            "expired_unassigned",
           );
 
       // status='approved' を条件に「奪う」更新。同時操作は rowcount 0 で弾く
@@ -716,10 +719,7 @@ export async function cancelApprovedSwap(
             eq(absenceRequests.date, req.date),
             eq(absenceRequests.slotNumber, req.slotNumber),
             eq(absenceRequests.status, "cancelled"),
-            eq(absenceRequests.decisionNote, ABSENCE_AUTO_EXPIRED_NOTE),
-            // ⚠️ 文字列一致だけで自動失効と断定しない (absence-expiry.ts)。
-            // 自動失効は必ず decided_by が null
-            isNull(absenceRequests.decidedBy),
+            eq(absenceRequests.closeKind, "auto_expired"),
           ),
         );
 
@@ -1242,7 +1242,7 @@ export async function recordSubstitution(
         tutorId,
         date,
         slotNumber,
-        ABSENCE_AUTO_EXPIRED_NOTE,
+        "auto_expired",
       );
       // ⚠️ 黙って失効させない。`cancelApprovedSwap` が expiredAbsences を返して
       // 画面に出しているのと揃える。#217 で登録した欠勤が消えたことに
