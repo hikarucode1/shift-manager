@@ -81,15 +81,15 @@ describe("toAbsenceLogEntry", () => {
     expect(e.eventLabel).toBe("失効（担当でなくなったため）");
   });
 
-  it("#225 より前の自動失効 (承認した教室長の名前が残っている) も失効と出す (#292)", () => {
-    const e = toAbsenceLogEntry(
-      absence({
-        status: "cancelled",
-        closeKind: "auto_expired",
-        actorName: "教室長A",
-      }),
-    );
-    expect(e.event).toBe("auto-expired");
+  it("#225 より前の自動失効 (承認した教室長の名前が残っている) も失効と出し、名前は出さない (#292)", () => {
+    for (const closeKind of ["auto_expired", "expired_unassigned"] as const) {
+      const e = toAbsenceLogEntry(
+        absence({ status: "cancelled", closeKind, actorName: "教室長A" }),
+      );
+      expect(e.event).toMatch(/^auto-expired/);
+      // 承認した人が「失効させた人」に見えないように
+      expect(e.actorName).toBeNull();
+    }
   });
 
   it("教室長が取り消し理由に定型文を書いても、種類は close_kind で決まる (#292)", () => {

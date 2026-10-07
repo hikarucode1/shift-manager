@@ -265,8 +265,14 @@ export function toAbsenceLogEntry(i: AbsenceLogInput): RequestLogEntry {
             : "approved"
           : absenceCancelEvent(i.closeKind, i.actorName);
   // 欠勤に代講者の概念は無い
+  // 自動失効は誰の判断でもないので、操作した人を出さない。PR #235 (#225) より
+  // 前の自動失効は decided_by に承認した教室長が残っており、そのまま出すと
+  // 「失効」の横に承認者の名前が並ぶ (#304 のレビュー)。decided_by 自体は
+  // 「誰が承認したか」の唯一の記録なので消さない (#236)
+  const autoExpired =
+    event === "auto-expired" || event === "auto-expired-unassigned";
   return base(
-    i,
+    autoExpired ? { ...i, actorName: null } : i,
     "absence",
     event,
     i.tutorName,
