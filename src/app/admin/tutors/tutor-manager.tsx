@@ -7,7 +7,11 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
-import { isIndeterminate, toFailedResult } from "@/lib/action-failure";
+import {
+  isIndeterminate,
+  isStale,
+  toFailedResult,
+} from "@/lib/action-failure";
 import { cn } from "@/lib/utils";
 import { avatarColor, avatarInitial } from "@/lib/avatar";
 import type { InviteStatus } from "@/lib/invite-resend";
@@ -137,7 +141,9 @@ export function TutorManager({
         // 失敗時は入力状態を保持し、エラーだけ表示
         setNotice({ type: "error", text: res.error ?? "失敗しました。" });
         // #202: reject 由来は「書いたか不明」なのでサーバーから読み直す。
-        if (isIndeterminate(res)) router.refresh();
+        // #300: 画面の状態が古いと分かって断られたときも読み直す (受け取り済み
+        // なのに「招待中」のままだと、エラーの案内どおりに操作できない)
+        if (isIndeterminate(res) || isStale(res)) router.refresh();
       }
     });
   }

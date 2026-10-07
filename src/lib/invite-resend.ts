@@ -1,4 +1,5 @@
 import { isAuthError } from "@supabase/supabase-js";
+import { staleRefusal, type StaleRefusal } from "@/lib/action-failure";
 import { isAuthUnavailable } from "@/lib/auth-availability";
 
 /**
@@ -158,6 +159,21 @@ export function resendErrorMessage(error: unknown): string {
  */
 export const NOT_YET_ACCEPTED =
   "この講師はまだ招待を受け取っていません。「招待を再送」から送り直してください。";
+
+/**
+ * 招待の再送は招待中の講師に、パスワード再設定メールは受け取り済みの講師に
+ * だけ送る。画面は招待の状態に合わせてボタンを出し分けているので、ここで断る
+ * のは画面を開いた後に講師が招待を受け取った (または画面が状態を読めなかった)
+ * ときで、画面の状態が古い (#300)
+ */
+export function acceptanceRefusal(
+  action: "resend" | "reset",
+  accepted: boolean,
+): StaleRefusal | null {
+  if (action === "resend" && accepted) return staleRefusal(ALREADY_ACCEPTED);
+  if (action === "reset" && !accepted) return staleRefusal(NOT_YET_ACCEPTED);
+  return null;
+}
 
 /** getUserById / resetPasswordForEmail の失敗 */
 export function resetErrorMessage(error: unknown): string {

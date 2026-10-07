@@ -3,6 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
 import { and, arrayContains, eq, isNotNull, isNull, ne, sql } from "drizzle-orm";
+import { staleRefusal, type StaleRefusal } from "@/lib/action-failure";
 import { requireRole } from "@/lib/auth";
 import { db } from "@/db/client";
 import { profiles } from "@/db/schema";
@@ -10,8 +11,7 @@ import { isUniqueViolation } from "@/lib/db-errors";
 import { setProfileActive } from "@/lib/profile-active";
 import { createAdminClient } from "@/lib/supabase/admin";
 import {
-  ALREADY_ACCEPTED,
-  NOT_YET_ACCEPTED,
+  acceptanceRefusal,
   emailInUseAfterResendMessage,
   emailInUseMessage,
   inviteErrorMessage,
@@ -23,7 +23,10 @@ import {
   sameEmail,
 } from "@/lib/invite-resend";
 
-type ActionResult = { ok: true } | { ok: false; error: string };
+type ActionResult =
+  | { ok: true }
+  | { ok: false; error: string }
+  | StaleRefusal;
 
 /** 招待: 新規講師 (displayName) または 既存 stub への紐付け (profileId) */
 const InviteSchema = z.union([
@@ -235,7 +238,8 @@ const MailTargetSchema = z.object({ profileId: z.string().uuid() });
 
 type MailTarget =
   | { ok: true; authUserId: string; email: string; accepted: boolean }
-  | { ok: false; error: string };
+  | { ok: false; error: string }
+  | StaleRefusal;
 
 /**
  * 招待の再送とパスワード再設定メール (#268) の送り先を確かめる。
@@ -262,8 +266,10 @@ async function loadMailTarget(
     .from(profiles)
     .where(eq(profiles.id, parsed.data.profileId))
     .limit(1);
+  // 画面では送れる状態に見えていた (ボタンを出していた) のに断るので、
+  // 画面の状態が古い。読み直させる (#300)
   const refusal = mailTargetRefusal(target);
-  if (refusal) return { ok: false, error: refusal };
+  if (refusal) return staleRefusal(refusal);
   const authUserId = target.authUserId!;
 
   const supabase = createAdminClient();
@@ -306,7 +312,8 @@ export async function resendInvite(input: unknown): Promise<ActionResult> {
     resendErrorMessage,
   );
   if (!target.ok) return target;
-  if (target.accepted) return { ok: false, error: ALREADY_ACCEPTED };
+  const refusal = acceptanceRefusal("resend", target.accepted);
+  if (refusal) return refusal;
   const { authUserId } = target;
 
   const supabase = createAdminClient();
@@ -359,7 +366,8 @@ export async function sendPasswordReset(input: unknown): Promise<ActionResult> {
     resetErrorMessage,
   );
   if (!target.ok) return target;
-  if (!target.accepted) return { ok: false, error: NOT_YET_ACCEPTED };
+  const refusal = acceptanceRefusal("reset", target.accepted);
+  if (refusal) return refusal;
 
   // ⚠️ 管理用クライアント (flowType 既定の implicit) から呼ぶこと。
   // @supabase/ssr のクライアントは PKCE なので、code_verifier が**教室長の**

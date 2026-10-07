@@ -68,3 +68,27 @@ export function toFailedResult(e: unknown): IndeterminateFailure {
     indeterminate: true,
   };
 }
+
+/**
+ * **画面に出ている状態が古い**と分かって断った、という印 (#300)。
+ *
+ * action が返す `{ ok: false }` は「書いていない」ので、ふつう画面は読み直さ
+ * ない (`IndeterminateFailure` 参照)。ただ、断った理由が「画面では送れる状態に
+ * 見えていたが、DB / 認証 API では変わっていた」なら、読み直さないとエラーの
+ * 案内どおりに操作できない (例: 受け取り済みなのに行が「招待中」のままで、
+ * 「パスワード再設定メール」のボタンが出ない)。呼び出し側はこの印を見て
+ * `router.refresh()` する。
+ *
+ * 一時的な障害や送信回数の制限で断ったときには付けない。読み直しても画面は
+ * 変わらず、講師一覧なら認証 API からユーザーを全件読み直すことになる (#271)。
+ */
+export type StaleRefusal = { ok: false; error: string; stale: true };
+
+export function staleRefusal(error: string): StaleRefusal {
+  return { ok: false, error, stale: true };
+}
+
+/** `staleRefusal` 由来か (= 画面の状態が古い) */
+export function isStale(res: object): boolean {
+  return "stale" in res && res.stale === true;
+}

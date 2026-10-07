@@ -1,6 +1,8 @@
 import { describe, expect, it } from "vitest";
 import { createClient } from "@supabase/supabase-js";
+import { isStale } from "@/lib/action-failure";
 import {
+  acceptanceRefusal,
   ALREADY_ACCEPTED,
   collectAllPages,
   emailInUseMessage,
@@ -8,6 +10,7 @@ import {
   inviteStatusOf,
   mailTargetRefusal,
   normalizeEmail,
+  NOT_YET_ACCEPTED,
   resendErrorMessage,
   resetErrorMessage,
   sameEmail,
@@ -91,6 +94,23 @@ describe("mailTargetRefusal", () => {
     expect(mailTargetRefusal({ ...ok, roles: ["admin"] })).toMatch("講師以外");
     expect(mailTargetRefusal({ ...ok, authUserId: null })).toMatch("ログイン連携");
     expect(mailTargetRefusal({ ...ok, isActive: false })).toMatch("無効な講師");
+  });
+});
+
+describe("acceptanceRefusal (#300)", () => {
+  it("招待中への再送と、受け取り済みへの再設定メールは断らない", () => {
+    expect(acceptanceRefusal("resend", false)).toBeNull();
+    expect(acceptanceRefusal("reset", true)).toBeNull();
+  });
+
+  it("逆向きは断り、画面の状態が古い印を付ける (画面が読み直す)", () => {
+    const resend = acceptanceRefusal("resend", true);
+    expect(resend?.error).toBe(ALREADY_ACCEPTED);
+    expect(resend && isStale(resend)).toBe(true);
+
+    const reset = acceptanceRefusal("reset", false);
+    expect(reset?.error).toBe(NOT_YET_ACCEPTED);
+    expect(reset && isStale(reset)).toBe(true);
   });
 });
 
