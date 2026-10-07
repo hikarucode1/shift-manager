@@ -16,6 +16,11 @@ import { cn } from "@/lib/utils";
 import { avatarColor, avatarInitial } from "@/lib/avatar";
 import type { InviteStatus } from "@/lib/invite-resend";
 import {
+  isResendable,
+  isTutorVisible,
+  type StatusFilter,
+} from "@/lib/tutor-list-filter";
+import {
   inviteTutor,
   renameTutor,
   resendInvite,
@@ -39,14 +44,6 @@ export type TutorRow = {
   inviteStatus: InviteStatus | null;
   createdAt: string;
 };
-
-type StatusFilter = "all" | "linked" | "pending" | "unlinked";
-
-// 「招待中」の絞り込みは再送の対象を探すためのもの。無効な講師には再送できない
-// (mailTargetRefusal) ので数えない。
-function isResendable(t: TutorRow) {
-  return t.isActive && t.inviteStatus === "pending";
-}
 
 // 列幅: 氏名 / メール / 状態 / 担当科目 / 操作
 const COLS = "grid-cols-[1.2fr_1.6fr_.9fr_1.3fr_.8fr]";
@@ -99,24 +96,10 @@ export function TutorManager({
   }
 
   const filtered = useMemo(() => {
-    const q = search.trim().toLowerCase();
-    return tutors.filter((t) => {
-      // 編集を開いている行は、状態の絞り込みに当てはまらなくなっても残す。
-      // 再送などが「状態が古い」で断られて読み直すと (#300)、行の状態が変わって
-      // 絞り込みから外れ、エラーが案内するボタンごと消えるため (#302)。
-      // 検索は利用者が入れた条件なので、そのまま効かせる
-      const pinned = t.id === editingId;
-      if (!pinned && statusFilter === "linked" && !t.linked) return false;
-      if (!pinned && statusFilter === "pending" && !isResendable(t)) {
-        return false;
-      }
-      if (!pinned && statusFilter === "unlinked" && t.linked) return false;
-      if (!q) return true;
-      if (t.displayName.toLowerCase().includes(q)) return true;
-      // 未連携行は UI 上メールを隠す (「ログイン未連携」表示) ため、
-      // 隠れた実メールで誤ヒットしないよう連携済みのみメールを検索対象にする。
-      return t.linked && t.email.toLowerCase().includes(q);
-    });
+    const query = search.trim().toLowerCase();
+    return tutors.filter((t) =>
+      isTutorVisible(t, { statusFilter, query, editingId }),
+    );
   }, [tutors, search, statusFilter, editingId]);
 
   // 通知は数秒で自動的に消す
@@ -205,14 +188,22 @@ export function TutorManager({
       <div className="flex flex-wrap items-center gap-2">
         <Input
           value={search}
-          onChange={(e) => setSearch(e.target.value)}
+          onChange={(e) => {
+            setSearch(e.target.value);
+            // 見るものを変えたら編集を閉じる。編集中の行は絞り込みや検索に
+            // 合わなくても残すので (#302)、開いたままだと合わない行が居座る
+            setEditingId(null);
+          }}
           placeholder="氏名・メールで検索"
           className="h-9 max-w-[280px]"
           aria-label="氏名・メールで検索"
         />
         <select
           value={statusFilter}
-          onChange={(e) => setStatusFilter(e.target.value as StatusFilter)}
+          onChange={(e) => {
+            setStatusFilter(e.target.value as StatusFilter);
+            setEditingId(null);
+          }}
           className="h-9 rounded-md border bg-background px-2.5 text-sm focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
           aria-label="状態で絞り込み"
         >
