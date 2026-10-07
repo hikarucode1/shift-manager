@@ -18,7 +18,6 @@ import type { InviteStatus } from "@/lib/invite-resend";
 import {
   isResendable,
   isTutorVisible,
-  matchesStatus,
   normalizeQuery,
   type StatusFilter,
 } from "@/lib/tutor-list-filter";
@@ -158,22 +157,6 @@ export function TutorManager({
     );
   }
 
-  /**
-   * 状態の絞り込みを変える。編集中の行が新しい絞り込みに合わなくなるなら編集を
-   * 閉じる。編集中の行は合わなくても残すので (#302)、開いたままだと合わない
-   * 行が居座る。合っている間は閉じない (入力途中の内容を消さない)。
-   *
-   * ⚠️ 検索欄では閉じない。日本語入力では変換前の「やま」でも onChange が
-   * 呼ばれ、打ち間違いも途中で当たらなくなるので、1 文字目で閉じて入力途中の
-   * 内容を消してしまう。編集中の行は検索に当たらなくても残るので、閉じなくて
-   * よい
-   */
-  function changeStatusFilter(next: StatusFilter) {
-    setStatusFilter(next);
-    const editingRow = tutors.find((t) => t.id === editingId);
-    if (editingRow && !matchesStatus(editingRow, next)) setEditingId(null);
-  }
-
   function startEdit(t: TutorRow) {
     setEditingId(t.id);
     setEditName(t.displayName);
@@ -213,9 +196,7 @@ export function TutorManager({
         />
         <select
           value={statusFilter}
-          onChange={(e) =>
-            changeStatusFilter(e.target.value as StatusFilter)
-          }
+          onChange={(e) => setStatusFilter(e.target.value as StatusFilter)}
           className="h-9 rounded-md border bg-background px-2.5 text-sm focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
           aria-label="状態で絞り込み"
         >
