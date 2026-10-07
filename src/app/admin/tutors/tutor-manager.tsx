@@ -101,16 +101,23 @@ export function TutorManager({
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase();
     return tutors.filter((t) => {
-      if (statusFilter === "linked" && !t.linked) return false;
-      if (statusFilter === "pending" && !isResendable(t)) return false;
-      if (statusFilter === "unlinked" && t.linked) return false;
+      // 編集を開いている行は、状態の絞り込みに当てはまらなくなっても残す。
+      // 再送などが「状態が古い」で断られて読み直すと (#300)、行の状態が変わって
+      // 絞り込みから外れ、エラーが案内するボタンごと消えるため (#302)。
+      // 検索は利用者が入れた条件なので、そのまま効かせる
+      const pinned = t.id === editingId;
+      if (!pinned && statusFilter === "linked" && !t.linked) return false;
+      if (!pinned && statusFilter === "pending" && !isResendable(t)) {
+        return false;
+      }
+      if (!pinned && statusFilter === "unlinked" && t.linked) return false;
       if (!q) return true;
       if (t.displayName.toLowerCase().includes(q)) return true;
       // 未連携行は UI 上メールを隠す (「ログイン未連携」表示) ため、
       // 隠れた実メールで誤ヒットしないよう連携済みのみメールを検索対象にする。
       return t.linked && t.email.toLowerCase().includes(q);
     });
-  }, [tutors, search, statusFilter]);
+  }, [tutors, search, statusFilter, editingId]);
 
   // 通知は数秒で自動的に消す
   useEffect(() => {
