@@ -1,8 +1,8 @@
 import type { AbsenceCloseKind } from "@/db/schema";
 
 /**
- * 欠勤申請の閉じ方 (`close_kind`, #292) を、画面が使う 3 つの印にする。
- * 台帳 (`request-log-query.ts`) と講師の履歴 (`absences.ts`) で共有する。
+ * 欠勤申請の閉じ方 (`close_kind`, #292) を、講師の履歴 (`absences.ts`) が使う
+ * 3 つの印にする。台帳は `close_kind` をそのまま受け取る (`request-log.ts`)。
  *
  * ⚠️ 種類は `close_kind` だけで判定する。`decision_note` の文言 (定型文) や
  * `decided_by` の有無を見ないこと。教室長の取り消し理由が定型文と偶然一致

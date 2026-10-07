@@ -3,7 +3,6 @@ import { and, asc, desc, eq, gte, inArray, sql } from "drizzle-orm";
 import { alias } from "drizzle-orm/pg-core";
 import { db } from "@/db/client";
 import { absenceRequests, profiles, swapRequests } from "@/db/schema";
-import { absenceCloseFlags } from "@/lib/absence-close-kind";
 import { getSlotMeta } from "@/lib/slot-meta";
 import { isSlotPast } from "@/lib/slot-time";
 import {
@@ -183,7 +182,7 @@ export async function getRequestLog(opts: {
       // ⚠️ null ガードを外さないこと。0034 は backfill 無しなので、それ以前の
       // 行は created_by = null (= 講師本人が作った行)
       isProxy: r.createdBy !== null && r.createdBy !== r.tutorId,
-      ...absenceCloseFlags(r.closeKind),
+      closeKind: r.closeKind,
     }),
   );
 

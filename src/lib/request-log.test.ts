@@ -29,9 +29,7 @@ const absence = (o: Partial<AbsenceLogInput> = {}): AbsenceLogInput => ({
   status: "approved",
   tutorName: "山田",
   isProxy: false,
-  autoExpired: false,
-  closedUnassigned: false,
-  expiredUnassigned: false,
+  closeKind: null,
   ...o,
 });
 
@@ -62,13 +60,11 @@ describe("toAbsenceLogEntry", () => {
   });
 
   it("自動失効は、講師の自己取り下げと区別する (#225)", () => {
-    // 実データの形: 自動失効は decided_by を明示的に null にし、decided_at は
-    // 書く。actorName より先に autoExpired を見ていないと「講師が取り下げ」に
-    // 落ちる
+    // 実データの形: 自動失効は decided_by を null にし、decided_at は書く
     const e = toAbsenceLogEntry(
       absence({
         status: "cancelled",
-        autoExpired: true,
+        closeKind: "auto_expired",
         actorName: null,
         decidedAt: "2026-08-25T12:30:00.000Z",
       }),
@@ -79,32 +75,35 @@ describe("toAbsenceLogEntry", () => {
 
   it("代講の取り消しで担当でなくなった失効 (#291) は、交代成立の失効と分ける", () => {
     const e = toAbsenceLogEntry(
-      absence({ status: "cancelled", expiredUnassigned: true, actorName: null }),
+      absence({ status: "cancelled", closeKind: "expired_unassigned" }),
     );
     expect(e.event).toBe("auto-expired-unassigned");
     expect(e.eventLabel).toBe("失効（担当でなくなったため）");
   });
 
-  it("教室長が理由に「担当でなくなったため自動失効」と書いても、失効に化けない (#291)", () => {
-    // 自動失効は必ず actorName が無い。教室長の取り消しは actorName がある
+  it("#225 より前の自動失効 (承認した教室長の名前が残っている) も失効と出す (#292)", () => {
     const e = toAbsenceLogEntry(
       absence({
         status: "cancelled",
-        expiredUnassigned: true,
+        closeKind: "auto_expired",
         actorName: "教室長A",
       }),
     );
-    expect(e.event).toBe("cancelled-by-admin");
+    expect(e.event).toBe("auto-expired");
   });
 
-  it("教室長が取り消し理由に同じ文言を書いても失効に化けない", () => {
-    // decision_note は自由文なので、アプリ外で代講を手配した教室長が
-    // 「交代成立により自動失効」と書きうる。自動失効は必ず decided_by が
-    // null なので、AND で縛って構造的に区別する
-    const e = toAbsenceLogEntry(
-      absence({ status: "cancelled", autoExpired: true, actorName: "教室長A" }),
-    );
-    expect(e.event).toBe("cancelled-by-admin");
+  it("教室長が取り消し理由に定型文を書いても、種類は close_kind で決まる (#292)", () => {
+    for (const note of ["交代成立により自動失効", "担当変更のため不要"]) {
+      const e = toAbsenceLogEntry(
+        absence({
+          status: "cancelled",
+          closeKind: "admin_cancel",
+          actorName: "教室長A",
+          note,
+        }),
+      );
+      expect(e.event).toBe("cancelled-by-admin");
+    }
   });
 
   it("「不要として閉じる」(#289) は承認を経ていないので「教室長が取り下げ」", () => {
@@ -113,7 +112,7 @@ describe("toAbsenceLogEntry", () => {
     const e = toAbsenceLogEntry(
       absence({
         status: "cancelled",
-        closedUnassigned: true,
+        closeKind: "unassigned",
         actorName: "教室長A",
         note: "担当変更のため不要",
       }),
@@ -122,14 +121,41 @@ describe("toAbsenceLogEntry", () => {
     expect(e.eventLabel).toBe("教室長が取り下げ");
   });
 
-  it("教室長の取り消しと講師の自己取り下げを分ける", () => {
+  it("教室長のプロフィールが削除されて名前が無くても、講師の取り下げに化けない (#292)", () => {
     expect(
       toAbsenceLogEntry(
-        absence({ status: "cancelled", actorName: "教室長A" }),
+        absence({ status: "cancelled", closeKind: "admin_cancel" }),
       ).event,
     ).toBe("cancelled-by-admin");
     expect(
-      toAbsenceLogEntry(absence({ status: "cancelled", actorName: null })).event,
+      toAbsenceLogEntry(
+        absence({ status: "cancelled", closeKind: "unassigned" }),
+      ).event,
+    ).toBe("withdrawn-by-admin");
+  });
+
+  it("教室長の取り消しと講師の自己取り下げを分ける", () => {
+    expect(
+      toAbsenceLogEntry(
+        absence({ status: "cancelled", closeKind: "admin_cancel", actorName: "教室長A" }),
+      ).event,
+    ).toBe("cancelled-by-admin");
+    expect(
+      toAbsenceLogEntry(
+        absence({ status: "cancelled", closeKind: "tutor_withdraw" }),
+      ).event,
+    ).toBe("cancelled-by-tutor");
+  });
+
+  it("close_kind が空 (反映の途中だけ) なら、決めた人の有無で分ける", () => {
+    expect(
+      toAbsenceLogEntry(
+        absence({ status: "cancelled", closeKind: null, actorName: "教室長A" }),
+      ).event,
+    ).toBe("cancelled-by-admin");
+    expect(
+      toAbsenceLogEntry(absence({ status: "cancelled", closeKind: null }))
+        .event,
     ).toBe("cancelled-by-tutor");
   });
 

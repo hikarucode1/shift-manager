@@ -13,7 +13,7 @@
 
 1. 型 `absence_close_kind` を作る
 2. `absence_requests.close_kind` (null 可) を足す
-3. 既存の取り消し済みの行を、それまでの判定式で埋める (下の 3 節と同じ SQL)
+3. 既存の取り消し済みの行を、`decision_note` の定型文で埋める (下の 3 節と同じ SQL)
 
 列を足して埋めるだけなので、今動いているコードは壊れない。適用の方法は
 `docs/migration-policy.md` (pooler 経由の `db:migrate` は使えない)。手で流す
@@ -33,30 +33,41 @@ WHERE status = 'cancelled' AND close_kind IS NULL;
 
 ## 2. コードをマージする
 
-マージから Vercel の反映までの間に、古いコードが取り消した行は
-`close_kind` が空のまま残る (古いコードは列を知らない)。
+マージから Vercel の反映が終わるまでの間に、古いコードが取り消した行は
+`close_kind` が空のまま残る (古いコードは列を知らない)。その間、台帳は
+空の行を、決めた人の有無で「教室長が取り消し」か「講師が取り下げ」に
+分ける (自動失効などの種類までは分からない)。
 
-## 3. 埋め直す (マージの後に 1 回)
+## 3. 埋め直す (Vercel の反映が終わってから)
+
+**マージ直後ではなく、Vercel の Deployments で本番の反映が完了したのを
+確かめてから流す。** 反映の途中は、古いコードがまだリクエストを受けている
+ことがある。
 
 0037 の 3 と同じ SQL。空の行だけを埋めるので、何度流しても結果は同じ。
 
 ```sql
 UPDATE absence_requests SET close_kind = CASE
-  WHEN decision_note = '交代成立により自動失効' AND decided_by IS NULL THEN 'auto_expired'::absence_close_kind
-  WHEN decision_note = '担当でなくなったため自動失効' AND decided_by IS NULL THEN 'expired_unassigned'::absence_close_kind
-  WHEN decision_note = '担当変更のため不要' AND decided_by IS NOT NULL THEN 'unassigned'::absence_close_kind
+  WHEN decision_note = '交代成立により自動失効' THEN 'auto_expired'::absence_close_kind
+  WHEN decision_note = '担当でなくなったため自動失効' THEN 'expired_unassigned'::absence_close_kind
+  WHEN decision_note = '担当変更のため不要' THEN 'unassigned'::absence_close_kind
   WHEN decision_note IS NULL AND decided_by IS NULL THEN 'tutor_withdraw'::absence_close_kind
   ELSE 'admin_cancel'::absence_close_kind
 END
 WHERE status = 'cancelled' AND close_kind IS NULL;
 ```
 
-その後、1 節の確認の SQL で 0 件になることを見る。
+その後、1 節の確認の SQL で 0 件になることを見る。**0 件にならなければ、
+少し待ってもう一度流す。**
+
+埋める判定は定型文だけで、`decided_by` は見ない。#225 (PR #235) より前の
+自動失効は、承認済みの欠勤なら `decided_by` に承認した教室長が残っている
+ので、`decided_by` を条件にすると「教室長の取り消し」に化けるため。
 
 ## 4. 人が確かめる行
 
-それまでの判定式は文言に頼っていたので、次の行は種類を取り違えているおそれが
-ある。件数と中身を見て、違っていれば `close_kind` を手で直す。
+定型文だけで埋めたので、次の 3 つの形は種類を取り違えているおそれがある。
+件数と中身を見て、違っていれば `close_kind` を手で直す。
 
 ```sql
 SELECT a.id, p.display_name, a.date, a.slot_number,
@@ -65,20 +76,29 @@ FROM absence_requests a
 JOIN profiles p ON p.id = a.tutor_id
 WHERE a.status = 'cancelled'
   AND (
-    -- PR #290 より前に、教室長が承認済みの取り消し理由へたまたま
-    -- 「担当変更のため不要」と書いた → 本当は admin_cancel
-    a.close_kind = 'unassigned'
-    -- 不要として閉じた教室長のプロフィールが削除され decided_by が null に
-    -- なった → 本当は unassigned
+    -- (a) 「不要として閉じる」(PR #290) がまだ無かった頃に「担当変更のため不要」
+    --     で閉じた行 → 教室長が承認済みの取り消し理由にたまたま書いた。
+    --     本当は admin_cancel
+    (a.close_kind = 'unassigned'
+      AND a.decided_at < '2026-10-05T12:12:14Z')
+    -- (b) 自動失効が decided_by を空にするようになった (PR #235) 後なのに、
+    --     「交代成立により自動失効」で決めた人が入っている行 → 教室長が
+    --     取り消し理由にたまたま書いた。本当は admin_cancel
+    OR (a.close_kind = 'auto_expired'
+      AND a.decided_by IS NOT NULL
+      AND a.decided_at >= '2026-08-26T05:29:01Z')
+    -- (c) 教室長の取り消しなのに決めた人が空 → 教室長のプロフィールが削除
+    --     された。種類は admin_cancel のままでよいが、本当は不要として
+    --     閉じた (unassigned) 行でないかを確かめる
     OR (a.close_kind = 'admin_cancel' AND a.decided_by IS NULL)
   )
 ORDER BY a.decided_at;
 ```
 
-`unassigned` の行は、元が未処理 (pending) だったか承認済み (approved) だったかを
-行からは区別できない。台帳の取り消しの経緯や、教室長の記憶で確かめる。
-PR #290 (`closeUnassignedAbsence`) のマージより前の `decided_at` なら、
-`unassigned` ではありえない (その経路がまだ無い) ので `admin_cancel` に直す。
+- 時刻は PR のマージ時刻 (UTC)。本番への反映は数分遅れるので、境目の
+  前後数分の行は、自動失効のこともある。経緯を確かめてから直す
+- (a) と (b) の取り違えは、それぞれ PR #290 / PR #298 で取り消し理由に
+  定型文を書けなくなる前にだけ起こりうる
 
 ## 5. その後 (別の PR)
 

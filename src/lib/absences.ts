@@ -215,7 +215,6 @@ export async function getPendingAbsenceRequests(): Promise<PendingAbsence[]> {
       reason: absenceRequests.reason,
       status: absenceRequests.status,
       decisionNote: absenceRequests.decisionNote,
-      decidedBy: absenceRequests.decidedBy,
       decidedAt: absenceRequests.decidedAt,
       closeKind: absenceRequests.closeKind,
       createdBy: absenceRequests.createdBy,

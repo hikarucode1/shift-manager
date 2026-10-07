@@ -16,6 +16,8 @@
  * (このリポジトリのテストは全て純関数レベル)。
  */
 
+import type { AbsenceCloseKind } from "@/db/schema";
+
 export type RequestLogKind = "absence" | "swap";
 
 /**
@@ -148,12 +150,13 @@ export type AbsenceLogInput = CommonInput & {
    * **過去の承認済み欠勤が全部「代理登録」になる**。
    */
   isProxy: boolean;
-  /** `decision_note` が交代成立の自動失効マーカーと一致するか */
-  autoExpired: boolean;
-  /** `decision_note` が「不要として閉じる」(#289) のマーカーと一致するか */
-  closedUnassigned: boolean;
-  /** `decision_note` が「担当でなくなったため自動失効」(#291) のマーカーと一致するか */
-  expiredUnassigned: boolean;
+  /**
+   * 閉じ方の種類 (`close_kind`, #292)。`cancelled` の行の分類はこれだけで
+   * 決める。`decision_note` の文言や `actorName` (`decided_by`) の有無では
+   * 判定しない。教室長のプロフィールが削除されると `decided_by` は null に
+   * なり、取り消し理由が定型文と偶然一致することもあるため
+   */
+  closeKind: AbsenceCloseKind | null;
 };
 
 export type SwapLogInput = CommonInput & {
@@ -215,6 +218,38 @@ function base(
   };
 }
 
+/**
+ * 取り消し済みの欠勤が、どの経路で閉じたか。種類は `close_kind` だけで決める
+ * (#292)。
+ *
+ * `close_kind` が空なのは、反映の途中 (migration 0037 を流した後、コードの
+ * 反映が終わるまでに古いコードが閉じた行) だけで、埋め直しの SQL で埋まる
+ * (docs/runbooks/absence-close-kind.md)。それまでの間だけ、決めた人の有無で
+ * 教室長か講師かを分ける (自動失効などの種類までは分からない)
+ */
+function absenceCancelEvent(
+  closeKind: AbsenceCloseKind | null,
+  actorName: string | null,
+): RequestLogEvent {
+  switch (closeKind) {
+    case "auto_expired":
+      return "auto-expired";
+    case "expired_unassigned":
+      return "auto-expired-unassigned";
+    case "unassigned":
+      // 「不要として閉じる」(#289) は承認を経ていないので、承認済みを
+      // 取り消した「取り消し」と分ける
+      return "withdrawn-by-admin";
+    case "admin_cancel":
+      // 教室長のプロフィールが削除されて名前が無くても、教室長の取り消し
+      return "cancelled-by-admin";
+    case "tutor_withdraw":
+      return "cancelled-by-tutor";
+    case null:
+      return actorName !== null ? "cancelled-by-admin" : "cancelled-by-tutor";
+  }
+}
+
 /** 欠勤申請 1 行 → 台帳の行 */
 export function toAbsenceLogEntry(i: AbsenceLogInput): RequestLogEntry {
   const event: RequestLogEvent =
@@ -228,30 +263,7 @@ export function toAbsenceLogEntry(i: AbsenceLogInput): RequestLogEntry {
             i.isProxy
             ? "registered"
             : "approved"
-          : // ---- cancelled ----
-            // ⚠️ 自動失効の判定を actorName より先に見る。理由は「時刻」では
-            // ない — #225 以降、自動失効は `decided_by` を**明示的に null に
-            // する**ので、順序を入れ替えると「講師が取り下げ」に落ちる。
-            //
-            // ⚠️ note の文字列一致だけに頼らない。`cancelApprovedAbsence` の
-            // 理由欄は自由文なので、教室長が偶然 同じ文言を書くと
-            // (アプリ外で代講を手配した場合に十分あり得る) 本人の判断が
-            // 「失効」に化ける。自動失効は必ず actorName が無いので AND で縛る
-            i.autoExpired && i.actorName === null
-            ? "auto-expired"
-            : // 代講の取り消しで担当でなくなった失効 (#291)。自動失効と同じく
-              // actorName が無いことと AND で縛る
-              i.expiredUnassigned && i.actorName === null
-              ? "auto-expired-unassigned"
-              : // 「不要として閉じる」(#289) は承認を経ていないので、承認済みを
-              // 取り消した「取り消し」と分ける。note の定型文は
-              // cancelApprovedAbsence の理由欄で弾いてあるので、自由文と
-              // 衝突しない
-              i.closedUnassigned && i.actorName !== null
-              ? "withdrawn-by-admin"
-              : i.actorName !== null
-                ? "cancelled-by-admin"
-                : "cancelled-by-tutor";
+          : absenceCancelEvent(i.closeKind, i.actorName);
   // 欠勤に代講者の概念は無い
   return base(
     i,
