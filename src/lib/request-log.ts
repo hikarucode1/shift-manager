@@ -22,7 +22,9 @@ export type RequestLogKind = "absence" | "swap";
 
 /**
  * その行が「今の状態にどうやってなったか」。
- * status だけでは足りない — 同じ `cancelled` でも 4 経路ある。
+ * status だけでは足りない — 同じ `cancelled` でも 5 経路ある (教室長の取り消し・
+ * 教室長の取り下げ・講師の取り下げ・2 種類の自動失効)。欠勤ではどれかを
+ * `close_kind` で判定する (#292)。
  */
 export type RequestLogEvent =
   /** 未対応 (台帳には出ないが、判定を全域にするため持つ) */
