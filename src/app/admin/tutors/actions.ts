@@ -3,6 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
 import { and, arrayContains, eq, isNotNull, isNull, ne, sql } from "drizzle-orm";
+import { staleRefusal, type StaleRefusal } from "@/lib/action-failure";
 import { requireRole } from "@/lib/auth";
 import { db } from "@/db/client";
 import { profiles } from "@/db/schema";
@@ -10,8 +11,7 @@ import { isUniqueViolation } from "@/lib/db-errors";
 import { setProfileActive } from "@/lib/profile-active";
 import { createAdminClient } from "@/lib/supabase/admin";
 import {
-  ALREADY_ACCEPTED,
-  NOT_YET_ACCEPTED,
+  acceptanceRefusal,
   emailInUseAfterResendMessage,
   emailInUseMessage,
   inviteErrorMessage,
@@ -19,11 +19,15 @@ import {
   mailTargetRefusal,
   normalizeEmail,
   resendErrorMessage,
+  resendFailure,
   resetErrorMessage,
   sameEmail,
 } from "@/lib/invite-resend";
 
-type ActionResult = { ok: true } | { ok: false; error: string };
+type ActionResult =
+  | { ok: true }
+  | { ok: false; error: string }
+  | StaleRefusal;
 
 /** 招待: 新規講師 (displayName) または 既存 stub への紐付け (profileId) */
 const InviteSchema = z.union([
@@ -57,20 +61,21 @@ export async function inviteTutor(input: unknown): Promise<ActionResult> {
   const data = parsed.data;
 
   if (data.mode === "link") {
-    // link 対象が「tutor かつ auth 未連携」か検証
+    // link 対象が「tutor かつ auth 未連携」か検証。画面では未連携の講師に
+    // 紐付けの入力欄を出しているので、ここで断るのは画面の状態が古いとき (#300)
     const target = await db
       .select({ roles: profiles.roles, authUserId: profiles.authUserId })
       .from(profiles)
       .where(eq(profiles.id, data.profileId))
       .limit(1);
     if (target.length === 0) {
-      return { ok: false, error: "対象の講師が見つかりません。" };
+      return staleRefusal("対象の講師が見つかりません。");
     }
     if (!target[0].roles.includes("tutor")) {
-      return { ok: false, error: "講師以外は紐付けできません。" };
+      return staleRefusal("講師以外は紐付けできません。");
     }
     if (target[0].authUserId) {
-      return { ok: false, error: "この講師は既にログイン連携済みです。" };
+      return staleRefusal("この講師は既にログイン連携済みです。");
     }
   } else {
     // new モード: 同名講師が既に居れば二重作成を防ぎ、紐付けへ誘導
@@ -235,7 +240,8 @@ const MailTargetSchema = z.object({ profileId: z.string().uuid() });
 
 type MailTarget =
   | { ok: true; authUserId: string; email: string; accepted: boolean }
-  | { ok: false; error: string };
+  | { ok: false; error: string }
+  | StaleRefusal;
 
 /**
  * 招待の再送とパスワード再設定メール (#268) の送り先を確かめる。
@@ -262,8 +268,10 @@ async function loadMailTarget(
     .from(profiles)
     .where(eq(profiles.id, parsed.data.profileId))
     .limit(1);
+  // 画面では送れる状態に見えていた (ボタンを出していた) のに断るので、
+  // 画面の状態が古い。読み直させる (#300)
   const refusal = mailTargetRefusal(target);
-  if (refusal) return { ok: false, error: refusal };
+  if (refusal) return staleRefusal(refusal);
   const authUserId = target.authUserId!;
 
   const supabase = createAdminClient();
@@ -306,7 +314,8 @@ export async function resendInvite(input: unknown): Promise<ActionResult> {
     resendErrorMessage,
   );
   if (!target.ok) return target;
-  if (target.accepted) return { ok: false, error: ALREADY_ACCEPTED };
+  const refusal = acceptanceRefusal("resend", target.accepted);
+  if (refusal) return refusal;
   const { authUserId } = target;
 
   const supabase = createAdminClient();
@@ -315,7 +324,7 @@ export async function resendInvite(input: unknown): Promise<ActionResult> {
   );
   if (error || !invited?.user) {
     console.error("resendInvite: inviteUserByEmail failed:", error?.message);
-    return { ok: false, error: resendErrorMessage(error) };
+    return resendFailure(error);
   }
   if (invited.user.id !== authUserId) {
     // loadMailTarget の一致確認があるので起きない想定 (GoTrue がメールと aud で別ユーザーを
@@ -359,7 +368,8 @@ export async function sendPasswordReset(input: unknown): Promise<ActionResult> {
     resetErrorMessage,
   );
   if (!target.ok) return target;
-  if (!target.accepted) return { ok: false, error: NOT_YET_ACCEPTED };
+  const refusal = acceptanceRefusal("reset", target.accepted);
+  if (refusal) return refusal;
 
   // ⚠️ 管理用クライアント (flowType 既定の implicit) から呼ぶこと。
   // @supabase/ssr のクライアントは PKCE なので、code_verifier が**教室長の**
