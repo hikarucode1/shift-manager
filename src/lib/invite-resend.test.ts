@@ -12,6 +12,7 @@ import {
   normalizeEmail,
   NOT_YET_ACCEPTED,
   resendErrorMessage,
+  resendFailure,
   resetErrorMessage,
   sameEmail,
 } from "@/lib/invite-resend";
@@ -164,6 +165,28 @@ describe("resendErrorMessage", () => {
       ),
     ).toMatch("再送できませんでした");
     expect(resendErrorMessage(null)).toMatch("再送できませんでした");
+  });
+});
+
+describe("resendFailure (#300)", () => {
+  it("email_exists は受け取り済みと伝え、画面の状態が古い印を付ける", async () => {
+    const res = resendFailure(
+      await inviteError(422, { error_code: "email_exists", msg: "exists" }),
+    );
+    expect(res.error).toBe(ALREADY_ACCEPTED);
+    expect(isStale(res)).toBe(true);
+  });
+
+  it("それ以外の失敗には印を付けない (読み直しても画面は変わらない)", async () => {
+    for (const error of [
+      await inviteError(429, { error_code: "over_email_send_rate_limit" }),
+      await inviteError(503),
+      null,
+    ]) {
+      const res = resendFailure(error);
+      expect(res.error).toBe(resendErrorMessage(error));
+      expect(isStale(res)).toBe(false);
+    }
   });
 });
 

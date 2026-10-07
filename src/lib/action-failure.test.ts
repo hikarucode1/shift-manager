@@ -162,6 +162,8 @@ describe("server action の reject が握り潰されていないこと (#202)",
 });
 
 describe("staleRefusal (#300)", () => {
+  afterEach(() => vi.restoreAllMocks());
+
   it("画面の状態が古い印を付ける。ふつうの断りや結果不定とは区別する", () => {
     expect(isStale(staleRefusal("受け取り済みです"))).toBe(true);
     expect(staleRefusal("受け取り済みです")).toMatchObject({
@@ -171,6 +173,5 @@ describe("staleRefusal (#300)", () => {
     expect(isStale({ ok: false, error: "送信回数の上限です" })).toBe(false);
     vi.spyOn(console, "error").mockImplementation(() => {});
     expect(isStale(toFailedResult(new Error("x")))).toBe(false);
-    vi.restoreAllMocks();
   });
 });

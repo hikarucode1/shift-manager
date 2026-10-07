@@ -153,6 +153,20 @@ export function resendErrorMessage(error: unknown): string {
 }
 
 /**
+ * 再送の `inviteUserByEmail` の失敗を、action が返す形にする。
+ * `email_exists` は確認済みかを読んだ後に講師がリンクを使った (または画面が
+ * 状態を読めていなかった) ときで、画面の状態が古いので印を付ける (#300)
+ */
+export function resendFailure(
+  error: unknown,
+): { ok: false; error: string } | StaleRefusal {
+  if (isAuthError(error) && error.code === "email_exists") {
+    return staleRefusal(ALREADY_ACCEPTED);
+  }
+  return { ok: false, error: resendErrorMessage(error) };
+}
+
+/**
  * パスワード再設定メール (#268) は、招待を受け取り済みの講師にだけ送る。
  * 招待中の講師に送っても GoTrue は受け付けて確認済みにしてしまうが、それなら
  * 招待の再送で足りる (届くメールの文面も招待のほうが合っている)。

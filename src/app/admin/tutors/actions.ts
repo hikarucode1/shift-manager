@@ -19,6 +19,7 @@ import {
   mailTargetRefusal,
   normalizeEmail,
   resendErrorMessage,
+  resendFailure,
   resetErrorMessage,
   sameEmail,
 } from "@/lib/invite-resend";
@@ -60,20 +61,21 @@ export async function inviteTutor(input: unknown): Promise<ActionResult> {
   const data = parsed.data;
 
   if (data.mode === "link") {
-    // link 対象が「tutor かつ auth 未連携」か検証
+    // link 対象が「tutor かつ auth 未連携」か検証。画面では未連携の講師に
+    // 紐付けの入力欄を出しているので、ここで断るのは画面の状態が古いとき (#300)
     const target = await db
       .select({ roles: profiles.roles, authUserId: profiles.authUserId })
       .from(profiles)
       .where(eq(profiles.id, data.profileId))
       .limit(1);
     if (target.length === 0) {
-      return { ok: false, error: "対象の講師が見つかりません。" };
+      return staleRefusal("対象の講師が見つかりません。");
     }
     if (!target[0].roles.includes("tutor")) {
-      return { ok: false, error: "講師以外は紐付けできません。" };
+      return staleRefusal("講師以外は紐付けできません。");
     }
     if (target[0].authUserId) {
-      return { ok: false, error: "この講師は既にログイン連携済みです。" };
+      return staleRefusal("この講師は既にログイン連携済みです。");
     }
   } else {
     // new モード: 同名講師が既に居れば二重作成を防ぎ、紐付けへ誘導
@@ -322,7 +324,7 @@ export async function resendInvite(input: unknown): Promise<ActionResult> {
   );
   if (error || !invited?.user) {
     console.error("resendInvite: inviteUserByEmail failed:", error?.message);
-    return { ok: false, error: resendErrorMessage(error) };
+    return resendFailure(error);
   }
   if (invited.user.id !== authUserId) {
     // loadMailTarget の一致確認があるので起きない想定 (GoTrue がメールと aud で別ユーザーを
