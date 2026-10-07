@@ -161,6 +161,7 @@ CHECK / trigger / NOT NULL すべてオブジェクト単位で存在確認)。�
 | 0034 | `absence_requests.created_by` 追加 (#217) | 非破壊 (nullable 列 + FK 追加のみ) | **コード deploy より先に適用（必須）**。教室長の代理登録 (`createAbsenceOnBehalf`) と 講師本人の申請の insert がこの列に書くため、列が無い状態でコードが動くと insert が 落ちて欠勤を登録できない。既存行は null のままでよい。**0032 より深刻**で、0032 の未適用は通知ロストで済むのに対し、0034 の未適用は講師の申請と教室長の代理登録の**両方**が insert 失敗して欠勤機能が全停止する |
 | 0035 | `swap_requests.created_by` 追加 (#227) | 非破壊 (nullable 列 + FK 追加のみ) | **コード deploy より先に適用（必須）**。0034 と同じ理由 — 講師の交代申請と教室長の代理募集の insert がこの列に書くため、列が無い状態でコードが動くと**交代・代講機能が全停止**する |
 | 0036 | `swap_kind` enum に `recorded` 追加 (#215) | 非破壊 (`ALTER TYPE ADD VALUE`) | **コード deploy より先に適用（必須）**。`recorded` を使うコードが先に動くと `recordSubstitution` の insert が invalid-enum で失敗する。**⚠️ tx 境界**: 0032 と同じく、`recorded` を DML/DEFAULT で使う migration を将来作る場合、0036 と同じ未適用バッチに入れると `unsafe use of new value` でバッチ全体が落ちる。0036 は `ALTER TYPE ADD VALUE` 単独なので今回は問題なし |
+| 0037 | `absence_close_kind` enum + `absence_requests.close_kind` 追加、既存の取り消し済みの行を backfill (#292) | 非破壊 (nullable 列の追加 + null の行だけを埋める UPDATE) | **コード deploy より先に適用（必須）**。`close_kind` を読むコードが先に動くと、欠勤の画面・台帳の select が列なしで落ちる。マージ後に backfill をもう一度流す (間に古いコードが書いた行を埋める)。手順は `docs/runbooks/absence-close-kind.md`。新しい型を作って同じ migration で使うのは問題ない (`ALTER TYPE ADD VALUE` ではない) |
 
 ### 0033 適用前の検証 (必須)
 

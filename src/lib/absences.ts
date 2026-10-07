@@ -12,11 +12,7 @@ import {
 } from "drizzle-orm";
 import { db } from "@/db/client";
 import { absenceRequests, profiles, weeklyShifts } from "@/db/schema";
-import {
-  ABSENCE_AUTO_EXPIRED_NOTE,
-  ABSENCE_EXPIRED_UNASSIGNED_NOTE,
-} from "@/lib/absence-expiry";
-import { ABSENCE_CLOSED_UNASSIGNED_NOTE } from "@/lib/pending-absence-actions";
+import { absenceCloseFlags } from "@/lib/absence-close-kind";
 import { getSlotMeta } from "@/lib/slot-meta";
 import { isSlotPast } from "@/lib/slot-time";
 import { jstToday, weekdayOf } from "@/lib/week";
@@ -45,15 +41,13 @@ export type AbsenceRequestRow = {
    * 交代成立による自動失効か (#250)。**`decisionNote` を「教室長より」として
    * 出さないため**に要る — 失効は誰の判断でもなく、#225 で admin 側は
    * `decided_by` を null にして誤帰属を消したのに、講師側だけ残っていた。
-   * 判定は admin 側 (`request-log.ts`) と同じく `decided_by` との AND。
+   * 判定は `close_kind` (#292、`absenceCloseFlags`)。
    */
   autoExpired: boolean;
   /**
    * 教室長が「不要として閉じる」(#289) で閉じたか。自動失効と同じく、
    * `decisionNote` を赤字の「教室長より」で出さないために要る — 担当でなく
-   * なったことの説明で、叱っているのではない。判定は状態 (cancelled)・note・
-   * `decided_by` (閉じた教室長が入る) の AND。note は `cancelApprovedAbsence` の
-   * 理由欄で使えないよう弾いてある (`ABSENCE_CLOSED_UNASSIGNED_NOTE` 参照)
+   * なったことの説明で、叱っているのではない。判定は `close_kind` (#292)
    */
   closedUnassigned: boolean;
   /**
@@ -195,16 +189,7 @@ export async function getTutorAbsenceRequests(
   return rows.map((r) => ({
     id: r.id,
     isProxy: r.createdBy !== null && r.createdBy !== r.tutorId,
-    autoExpired:
-      r.decisionNote === ABSENCE_AUTO_EXPIRED_NOTE && r.decidedBy === null,
-    closedUnassigned:
-      r.status === "cancelled" &&
-      r.decisionNote === ABSENCE_CLOSED_UNASSIGNED_NOTE &&
-      r.decidedBy !== null,
-    expiredUnassigned:
-      r.status === "cancelled" &&
-      r.decisionNote === ABSENCE_EXPIRED_UNASSIGNED_NOTE &&
-      r.decidedBy === null,
+    ...absenceCloseFlags(r.closeKind),
     date: r.date,
     slotNumber: r.slotNumber,
     slotLabel: slotLabelOf(meta, r.slotNumber).label,
@@ -232,6 +217,7 @@ export async function getPendingAbsenceRequests(): Promise<PendingAbsence[]> {
       decisionNote: absenceRequests.decisionNote,
       decidedBy: absenceRequests.decidedBy,
       decidedAt: absenceRequests.decidedAt,
+      closeKind: absenceRequests.closeKind,
       createdBy: absenceRequests.createdBy,
       createdAt: absenceRequests.createdAt,
       tutorAssigned: absenceTutorAssigned(),
@@ -257,19 +243,8 @@ export async function getPendingAbsenceRequests(): Promise<PendingAbsence[]> {
     // 代理登録は approved で入るので pending には出ないが、判定は 1 箇所に
     // 寄せず各取得関数で素直に計算する (将来 pending 経由を足しても壊れない)
     isProxy: r.createdBy !== null && r.createdBy !== r.tutorId,
-    // pending が自動失効していることは無いが、判定は各取得関数で素直に計算する
-    autoExpired:
-      r.decisionNote === ABSENCE_AUTO_EXPIRED_NOTE && r.decidedBy === null,
-    // pending が閉じていることは無いが、autoExpired と同じく判定は各取得関数で
-    // 素直に計算する (型を共有しているため)
-    closedUnassigned:
-      r.status === "cancelled" &&
-      r.decisionNote === ABSENCE_CLOSED_UNASSIGNED_NOTE &&
-      r.decidedBy !== null,
-    expiredUnassigned:
-      r.status === "cancelled" &&
-      r.decisionNote === ABSENCE_EXPIRED_UNASSIGNED_NOTE &&
-      r.decidedBy === null,
+    // pending が閉じていることは無いが、型を共有しているので同じく計算する
+    ...absenceCloseFlags(r.closeKind),
     isEnded: isSlotPast(r.date, slotLabelOf(meta, r.slotNumber).end),
     tutorAssigned: r.tutorAssigned,
   }));

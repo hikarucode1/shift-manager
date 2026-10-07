@@ -110,6 +110,11 @@ async function expireActiveAbsences(
     .update(absenceRequests)
     .set({
       status: "cancelled",
+      // 種類は close_kind で判定する (#292)。note は台帳のコメント欄に出す文言
+      closeKind:
+        note === ABSENCE_AUTO_EXPIRED_NOTE
+          ? "auto_expired"
+          : "expired_unassigned",
       decidedBy: null,
       decidedAt: new Date(),
       decisionNote: note,
@@ -716,10 +721,7 @@ export async function cancelApprovedSwap(
             eq(absenceRequests.date, req.date),
             eq(absenceRequests.slotNumber, req.slotNumber),
             eq(absenceRequests.status, "cancelled"),
-            eq(absenceRequests.decisionNote, ABSENCE_AUTO_EXPIRED_NOTE),
-            // ⚠️ 文字列一致だけで自動失効と断定しない (absence-expiry.ts)。
-            // 自動失効は必ず decided_by が null
-            isNull(absenceRequests.decidedBy),
+            eq(absenceRequests.closeKind, "auto_expired"),
           ),
         );
 
