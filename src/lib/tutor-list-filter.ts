@@ -37,7 +37,12 @@ export function matchesStatus(t: ListedTutor, filter: StatusFilter): boolean {
   }
 }
 
-/** `query` は前後の空白を除いて小文字にしたもの。空なら全員に当たる */
+/** 検索欄の入力を `matchesQuery` に渡す形にする */
+export function normalizeQuery(search: string): string {
+  return search.trim().toLowerCase();
+}
+
+/** `query` は `normalizeQuery` を通したもの。空なら全員に当たる */
 export function matchesQuery(t: ListedTutor, query: string): boolean {
   if (!query) return true;
   if (t.displayName.toLowerCase().includes(query)) return true;
@@ -52,13 +57,22 @@ export function matchesQuery(t: ListedTutor, query: string): boolean {
  * 行の状態が変わって絞り込みや検索から外れ、エラーが案内するボタンや入力欄
  * ごと消えるため。氏名を変えて検索から外れた場合も同じ。
  *
- * 教室長が自分で絞り込みや検索を変えたときは、画面側で編集を閉じる。合わない
- * 行が一覧に居座らないようにするため。
+ * 教室長が自分で絞り込みや検索を変えて、編集中の行がそれに合わなくなるなら、
+ * 画面側で編集を閉じる (`matchesView` で判定)。合わない行が一覧に居座らない
+ * ようにするため。合っている間は閉じない (入力途中の内容を消さない)。
  */
 export function isTutorVisible(
   t: ListedTutor,
   opts: { statusFilter: StatusFilter; query: string; editingId: string | null },
 ): boolean {
   if (t.id === opts.editingId) return true;
-  return matchesStatus(t, opts.statusFilter) && matchesQuery(t, opts.query);
+  return matchesView(t, opts);
+}
+
+/** 絞り込みと検索の両方に当たるか (編集中かどうかは見ない) */
+export function matchesView(
+  t: ListedTutor,
+  view: { statusFilter: StatusFilter; query: string },
+): boolean {
+  return matchesStatus(t, view.statusFilter) && matchesQuery(t, view.query);
 }

@@ -18,6 +18,8 @@ import type { InviteStatus } from "@/lib/invite-resend";
 import {
   isResendable,
   isTutorVisible,
+  matchesView,
+  normalizeQuery,
   type StatusFilter,
 } from "@/lib/tutor-list-filter";
 import {
@@ -96,7 +98,7 @@ export function TutorManager({
   }
 
   const filtered = useMemo(() => {
-    const query = search.trim().toLowerCase();
+    const query = normalizeQuery(search);
     return tutors.filter((t) =>
       isTutorVisible(t, { statusFilter, query, editingId }),
     );
@@ -156,6 +158,30 @@ export function TutorManager({
     );
   }
 
+  /**
+   * 検索・絞り込みを変える。編集中の行が新しい条件に合わなくなるなら編集を
+   * 閉じる。編集中の行は合わなくても残すので (#302)、開いたままだと合わない
+   * 行が居座る。合っている間は閉じない (入力途中の内容を消さない)
+   */
+  function changeView(next: { search?: string; statusFilter?: StatusFilter }) {
+    const view = {
+      search: next.search ?? search,
+      statusFilter: next.statusFilter ?? statusFilter,
+    };
+    setSearch(view.search);
+    setStatusFilter(view.statusFilter);
+    const editingRow = tutors.find((t) => t.id === editingId);
+    if (
+      editingRow &&
+      !matchesView(editingRow, {
+        statusFilter: view.statusFilter,
+        query: normalizeQuery(view.search),
+      })
+    ) {
+      setEditingId(null);
+    }
+  }
+
   function startEdit(t: TutorRow) {
     setEditingId(t.id);
     setEditName(t.displayName);
@@ -188,22 +214,16 @@ export function TutorManager({
       <div className="flex flex-wrap items-center gap-2">
         <Input
           value={search}
-          onChange={(e) => {
-            setSearch(e.target.value);
-            // 見るものを変えたら編集を閉じる。編集中の行は絞り込みや検索に
-            // 合わなくても残すので (#302)、開いたままだと合わない行が居座る
-            setEditingId(null);
-          }}
+          onChange={(e) => changeView({ search: e.target.value })}
           placeholder="氏名・メールで検索"
           className="h-9 max-w-[280px]"
           aria-label="氏名・メールで検索"
         />
         <select
           value={statusFilter}
-          onChange={(e) => {
-            setStatusFilter(e.target.value as StatusFilter);
-            setEditingId(null);
-          }}
+          onChange={(e) =>
+            changeView({ statusFilter: e.target.value as StatusFilter })
+          }
           className="h-9 rounded-md border bg-background px-2.5 text-sm focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
           aria-label="状態で絞り込み"
         >
@@ -444,10 +464,14 @@ export function TutorManager({
                                         profileId: t.id,
                                       }),
                                     "招待メールを送信し、講師に紐付けました。",
-                                    () => {
-                                      setLinkEmail("");
-                                      setEditingId(null);
-                                    },
+                                    // 紐付けた行の編集だけを閉じる。待っている
+                                    // 間に別の行を開いていたら、そちらは閉じない
+                                    // (編集中だから残っている行が消えるため。
+                                    // #302)。入力欄は開くときに startEdit が空にする
+                                    () =>
+                                      setEditingId((cur) =>
+                                        cur === t.id ? null : cur,
+                                      ),
                                   )
                                 }
                               >
