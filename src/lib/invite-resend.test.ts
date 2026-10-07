@@ -126,19 +126,6 @@ describe("sameEmail", () => {
 });
 
 describe("resendErrorMessage", () => {
-  it("確認済みユーザーへの招待 (email_exists) は受け取り済みと伝える", async () => {
-    const msg = "A user with this email address has already been registered";
-    // 旧形式 (error_code) と、API バージョン付きの新形式 (code) の両方
-    const legacy = await inviteError(422, { error_code: "email_exists", msg });
-    const versioned = await inviteError(
-      422,
-      { code: "email_exists", msg },
-      { "x-supabase-api-version": "2024-01-01" },
-    );
-    expect(resendErrorMessage(legacy)).toBe(ALREADY_ACCEPTED);
-    expect(resendErrorMessage(versioned)).toBe(ALREADY_ACCEPTED);
-  });
-
   it("メール送信の上限 (429) は障害ではなく送りすぎとして伝える", async () => {
     const error = await inviteError(429, {
       error_code: "over_email_send_rate_limit",
@@ -169,12 +156,20 @@ describe("resendErrorMessage", () => {
 });
 
 describe("resendFailure (#300)", () => {
-  it("email_exists は受け取り済みと伝え、画面の状態が古い印を付ける", async () => {
-    const res = resendFailure(
-      await inviteError(422, { error_code: "email_exists", msg: "exists" }),
+  it("確認済みユーザーへの招待 (email_exists) は受け取り済みと伝え、画面の状態が古い印を付ける", async () => {
+    const msg = "A user with this email address has already been registered";
+    // 旧形式 (error_code) と、API バージョン付きの新形式 (code) の両方
+    const legacy = await inviteError(422, { error_code: "email_exists", msg });
+    const versioned = await inviteError(
+      422,
+      { code: "email_exists", msg },
+      { "x-supabase-api-version": "2024-01-01" },
     );
-    expect(res.error).toBe(ALREADY_ACCEPTED);
-    expect(isStale(res)).toBe(true);
+    for (const error of [legacy, versioned]) {
+      const res = resendFailure(error);
+      expect(res.error).toBe(ALREADY_ACCEPTED);
+      expect(isStale(res)).toBe(true);
+    }
   });
 
   it("それ以外の失敗には印を付けない (読み直しても画面は変わらない)", async () => {

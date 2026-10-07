@@ -143,12 +143,11 @@ export function inviteErrorMessage(error: unknown): string {
   );
 }
 
-/** getUserById / inviteUserByEmail の失敗 */
+/**
+ * getUserById / inviteUserByEmail の失敗。inviteUserByEmail の `email_exists`
+ * は `resendFailure` が先に受ける (画面の状態が古い印を付けるため)
+ */
 export function resendErrorMessage(error: unknown): string {
-  // 確認済みかを読んだ後に講師がリンクを使った場合もここに来る
-  if (isAuthError(error) && error.code === "email_exists") {
-    return ALREADY_ACCEPTED;
-  }
   return mailErrorMessage(error, "招待", "招待を再送できませんでした。");
 }
 
