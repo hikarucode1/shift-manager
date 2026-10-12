@@ -339,47 +339,63 @@ export async function closeUnassignableSwap(
   requesterId: string,
   date: string,
   slotNumber: number,
-): Promise<{ id: string; isProxy: boolean } | null> {
-  const swap = await findPendingSwap(requesterId, date, slotNumber, executor);
-  if (!swap) return null;
+): Promise<string | null> {
+  // 探して閉じるのを 1 文にする (tx の中の往復を減らす)。
+  // `swap_requests_active_uniq` (0006) で pending は多くても 1 件
   const closed = await executor
     .update(swapRequests)
     .set({
       status: "cancelled",
       closeKind: "unassignable",
       decidedBy: null,
-      decidedAt: new Date(),
+      // ⚠️ アプリの時計 (new Date()) ではなく DB の now() (= tx の開始時刻)。
+      // 記録の行の created_at も同じ tx の now() なので、「この記録が閉じた
+      // 募集」を時刻の一致で引ける (`hasUnassignableClosedSwap`)
+      decidedAt: sql`now()`,
       decisionNote: null,
       updatedAt: new Date(),
     })
-    .where(
-      and(eq(swapRequests.id, swap.id), eq(swapRequests.status, "pending")),
-    )
-    .returning({ id: swapRequests.id });
-  return closed.length > 0 ? swap : null;
-}
-
-/**
- * その講師の、そのコマの募集のうち、担当が変わってシステムが閉じたものが
- * あるか (#293)。記録を取り消したとき、元講師の募集は記録の時点で閉じて
- * いるので、教室長に「募集し直して」と案内するために使う
- */
-export async function hasUnassignableClosedSwap(
-  executor: Executor,
-  requesterId: string,
-  date: string,
-  slotNumber: number,
-): Promise<boolean> {
-  const rows = await executor
-    .select({ id: swapRequests.id })
-    .from(swapRequests)
     .where(
       and(
         eq(swapRequests.requesterId, requesterId),
         eq(swapRequests.date, date),
         eq(swapRequests.slotNumber, slotNumber),
+        eq(swapRequests.status, "pending"),
+      ),
+    )
+    .returning({ id: swapRequests.id });
+  return closed[0]?.id ?? null;
+}
+
+/**
+ * 記録 `recordId` が、その講師の募集を閉じたか (#293)。記録を取り消したとき、
+ * 元講師の募集は記録の時点で閉じているので、教室長に「募集し直して」と
+ * 案内するために使う。
+ *
+ * ⚠️ **その記録が閉じた募集だけを見る。** 講師・日・コマだけで探すと、前の
+ * 記録 (取り消し済み) が閉じた募集や、代講者として閉じられた募集まで拾う。
+ * 記録の行の `created_at` と、同じ tx で閉じた募集の `decided_at` はどちらも
+ * DB の now() なので一致する (`closeUnassignableSwap`)。比べるのは SQL の中で
+ * 行う (JS の Date はミリ秒までで、DB のマイクロ秒が落ちて一致しなくなる)
+ */
+export async function hasUnassignableClosedSwap(
+  executor: Executor,
+  requesterId: string,
+  recordId: string,
+): Promise<boolean> {
+  const record = alias(swapRequests, "closingRecord");
+  const rows = await executor
+    .select({ id: swapRequests.id })
+    .from(swapRequests)
+    .innerJoin(record, eq(record.id, recordId))
+    .where(
+      and(
+        eq(swapRequests.requesterId, requesterId),
+        eq(swapRequests.date, record.date),
+        eq(swapRequests.slotNumber, record.slotNumber),
         eq(swapRequests.status, "cancelled"),
         eq(swapRequests.closeKind, "unassignable"),
+        eq(swapRequests.decidedAt, record.createdAt),
       ),
     )
     .limit(1);

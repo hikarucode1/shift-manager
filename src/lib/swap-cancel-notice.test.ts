@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { pendingSwapApproval } from "@/lib/pending-swap-approval";
 import {
   noLongerApprovableForApplicants,
   ORPHANED_WHY,
@@ -11,6 +12,7 @@ const none = {
   substituteExpiredName: null,
   substituteSwapClosedName: null,
   requesterSwapClosedName: null,
+  requesterPendingSwap: null,
 };
 
 describe("swapCancelNotice", () => {
@@ -62,6 +64,7 @@ describe("swapCancelNotice", () => {
       substituteExpiredName: "佐藤",
       substituteSwapClosedName: "佐藤",
       requesterSwapClosedName: "山田",
+      requesterPendingSwap: null,
     });
     const order = [
       "交代成立時に自動失効",
@@ -73,12 +76,41 @@ describe("swapCancelNotice", () => {
     expect([...order].sort((a, b) => a - b)).toEqual(order);
   });
 
+  it("#293 より前の記録で残っていた元講師の募集は、教室長にだけ知らせる", () => {
+    const entry = (isProxy: boolean, isPastDate: boolean) => ({
+      requesterName: "山田",
+      isProxy,
+      approval: pendingSwapApproval({
+        isPastDate,
+        requesterAssigned: true,
+        isEnded: false,
+        isProxy,
+      }),
+    });
+    expect(
+      swapCancelNotice({ ...none, requesterPendingSwap: entry(false, false) }),
+    ).toBe(
+      "取り消しました。このコマには 山田 さんの交代申請が残っていて、担当が戻ったため再び承認できます。「未対応」タブで承認するか、却下してください。",
+    );
+    // 代理募集の閉じ方は「取り下げ」(#231)
+    expect(
+      swapCancelNotice({ ...none, requesterPendingSwap: entry(true, false) }),
+    ).toContain("承認するか、取り下げてください。");
+    // 過去のコマは承認できない
+    expect(
+      swapCancelNotice({ ...none, requesterPendingSwap: entry(false, true) }),
+    ).toContain(
+      "「未対応」タブに残っています。過去のコマのため承認できません。",
+    );
+  });
+
   it("講師に知らせたとは言わない (通知は best-effort)", () => {
     const text = swapCancelNotice({
       expiredAbsences: 1,
       substituteExpiredName: "佐藤",
       substituteSwapClosedName: "佐藤",
       requesterSwapClosedName: "山田",
+      requesterPendingSwap: null,
     });
     expect(text).not.toContain("通知");
   });

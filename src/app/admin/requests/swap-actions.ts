@@ -13,6 +13,7 @@ import {
 } from "@/lib/absence-expiry";
 import {
   closeUnassignableSwap,
+  findPendingSwap,
   getActiveApplicantIds,
   getEligibleApplicantIds,
   hasSlotEnded,
@@ -25,7 +26,9 @@ import {
   noLongerApprovableForApplicants,
   ORPHANED_WHY,
   substituteCancelSuffix,
+  type PendingSwapAfterCancel,
 } from "@/lib/swap-cancel-notice";
+import { pendingSwapApproval } from "@/lib/pending-swap-approval";
 import { substitutionNote } from "@/lib/substitution-note";
 import { isValidIsoDate, jstToday, weekdayOf } from "@/lib/week";
 import { isUniqueViolation } from "@/lib/db-errors";
@@ -274,12 +277,10 @@ export async function decideSwapRequest(
       // 上の swap_requests の別行どうしでは起きうるので、どちらも
       // weekly_shifts → absence_requests の順を守ること
       // ⚠️ #293 で、取り消し (`cancelApprovedSwap`) と記録 (`recordSubstitution`)
-      // は weekly_shifts を書いた**後に**、担当が変わった講師の pending 募集を
-      // 閉じる (`closeUnassignableSwap`)。その募集をここで同時に承認すると、
-      // こちらは募集 → weekly_shifts、あちらは weekly_shifts → 募集の順になり、
-      // 待ちの輪ができうる。Postgres がデッドロックを検出して片方を落とすので、
-      // 落ちた側は「時間をおいて再度お試しください」になり、データは壊れない
-      // (どちらも 1 つの tx なので、落ちた側は何も書かない)
+      // も、担当が変わる講師の pending 募集を閉じる (`closeUnassignableSwap`)。
+      // あちらも **weekly_shifts を書く前に**閉じて、ここと同じ「募集 →
+      // weekly_shifts」の順にしてある。逆にすると、同じ募集の同時承認と
+      // デッドロックしうる
       const reqRows = await tx
         .select({
           requesterId: swapRequests.requesterId,
@@ -560,6 +561,8 @@ export async function cancelApprovedSwap(
       substituteSwapClosedName: string | null;
       /** 記録のときに閉じた元講師の募集があれば、その元講師の名前 (#293) */
       requesterSwapClosedName: string | null;
+      /** #293 より前の記録で閉じずに残っていた元講師の募集 */
+      requesterPendingSwap: PendingSwapAfterCancel | null;
     }
   | { ok: false; error: string }
 > {
@@ -638,6 +641,20 @@ export async function cancelApprovedSwap(
         );
       }
 
+      // ⚠️ **代講者 B が同じコマに出していた pending 募集は、システムが閉じる**
+      // (#287 / #293)。B が担当だった間に B が自分で (または教室長が代理で)
+      // 募集を出していると、担当が A に戻った今、その募集は承認できない。
+      // 閉じずに残すと、誰かが却下・取り下げしたときに応募者へ 2 通目が届き、
+      // B の募集は B が何もしていないのに「却下」として残っていた。
+      // ⚠️ **weekly_shifts を書き換える前に閉じる** (承認とロックの順を揃える。
+      // `recordSubstitution` と同じ)。担当を戻せずに失敗すれば tx ごと戻る
+      const substituteClosedSwapId = await closeUnassignableSwap(
+        tx,
+        req.approvedApplicantId,
+        req.date,
+        req.slotNumber,
+      );
+
       // 元講師へ戻す。⚠️ **現在の担当が承認された代講者である場合に限る**。
       // CSV 取り込みや別の代講で既に変わっていたら、上書きせず止める
       // (黙って踏み潰すと、この機能が直そうとしている #210 の再演になる)。
@@ -700,29 +717,21 @@ export async function cancelApprovedSwap(
         throw new SwapBizError("既に他の操作で確定済みです。");
       }
 
-      // ⚠️ **代講者 B が同じコマに出していた pending 募集は、システムが閉じる**
-      // (#287 / #293)。B が担当だった間に B が自分で (または教室長が代理で)
-      // 募集を出していると、担当が A に戻った今、その募集は承認できない。
-      // 閉じずに残すと、誰かが却下・取り下げしたときに応募者へ 2 通目が届き、
-      // B の募集は B が何もしていないのに「却下」として残っていた
-      const substituteClosedSwap = await closeUnassignableSwap(
-        tx,
-        req.approvedApplicantId,
-        req.date,
-        req.slotNumber,
-      );
       // ⚠️ **記録の取り消しでは、元講師 A の募集を開き直さない** (#293)。記録の
-      // 時点でシステムが閉じている。教室長に募集し直しを案内するために、閉じた
-      // 募集があるかだけを見る (以前の #283 は、閉じずに残した募集を再び承認
-      // 可能として扱い、応募者に「また有効になりました」を送っていた)
+      // 時点でシステムが閉じている。教室長に募集し直しを案内するために、
+      // **この記録が**閉じた募集があるかだけを見る (以前の #283 は、閉じずに
+      // 残した募集を再び承認可能として扱い、応募者に「また有効になりました」を
+      // 送っていた)
       const requesterSwapClosed =
         req.kind === "recorded" &&
-        (await hasUnassignableClosedSwap(
-          tx,
-          req.requesterId,
-          req.date,
-          req.slotNumber,
-        ));
+        (await hasUnassignableClosedSwap(tx, req.requesterId, id));
+      // #293 より前の記録は A の募集を閉じていない。担当が A に戻ったので、
+      // その募集は黙って再び承認できる状態になる。教室長にだけ知らせる
+      // (応募者への「また有効になりました」は #293 でやめた)
+      const requesterPendingSwap =
+        req.kind === "recorded"
+          ? await findPendingSwap(req.requesterId, req.date, req.slotNumber, tx)
+          : null;
 
       // 承認時に自動失効させた欠勤申請の件数を数えるだけ (戻さない)
       const expired = await tx
@@ -741,8 +750,9 @@ export async function cancelApprovedSwap(
       return {
         expiredAbsences: expired.length,
         substituteExpiredAbsences: substituteExpired,
-        substituteClosedSwapId: substituteClosedSwap?.id ?? null,
+        substituteClosedSwapId,
         requesterSwapClosed,
+        requesterPendingSwap,
         requesterId: req.requesterId,
         applicantId: req.approvedApplicantId,
         requesterName: nameOf(req.requesterId),
@@ -853,11 +863,29 @@ export async function cancelApprovedSwap(
         info.substituteExpiredAbsences > 0 ? info.applicantName : null,
       substituteSwapClosedName:
         info.substituteClosedSwapId !== null ? info.applicantName : null,
-      // 過去のコマは募集し直せない (代理募集は当日以降のみ) ので案内しない
+      // 終わったコマは募集し直せない (代理募集は終わっていないコマのみ) ので
+      // 案内しない。判定はコマの終了時刻まで見る (代講者の欠勤の失効と同じ)
       requesterSwapClosedName:
-        info.requesterSwapClosed && info.date >= jstToday()
+        info.requesterSwapClosed &&
+        shouldExpireSubstituteAbsence(
+          info.date,
+          slotMeta.get(info.slotNumber)?.end,
+        )
           ? info.requesterName
           : null,
+      requesterPendingSwap: info.requesterPendingSwap
+        ? {
+            requesterName: info.requesterName,
+            isProxy: info.requesterPendingSwap.isProxy,
+            approval: pendingSwapApproval({
+              isPastDate: info.date < jstToday(),
+              requesterAssigned: true,
+              // 見出しにしか効かない
+              isEnded: false,
+              isProxy: info.requesterPendingSwap.isProxy,
+            }),
+          }
+        : null,
     };
   } catch (e) {
     if (e instanceof SwapBizError) return { ok: false, error: e.message };
@@ -1159,6 +1187,18 @@ export async function recordSubstitution(
         throw new SwapBizError("記録に失敗しました。");
       }
 
+      // 元講師の未処理の募集は、記録で付け替え対象が変わって承認できなく
+      // なるので、**システムが閉じる** (#293)。#253 では「閉じると応募者の
+      // 一覧が『取り下げられました』になって嘘になる」ので閉じなかったが、
+      // 閉じ方の種類 (`close_kind = 'unassignable'`) を記録して、応募者の
+      // 一覧は「担当が変わったため締め切られました」と出すようにした。
+      // 閉じないと、誰かが却下・取り消ししたときに応募者へ 2 通目が届き、
+      // 申請者の募集が何もしていないのに「却下」として残っていた。
+      // ⚠️ **weekly_shifts を書き換える前に閉じる。** 承認 (`decideSwapRequest`)
+      // は募集 → weekly_shifts の順にロックするので、順番を揃えないと同じ
+      // 募集の同時承認とデッドロックしうる。この後で失敗しても tx ごと戻る
+      closedSwapId = await closeUnassignableSwap(tx, tutorId, date, slotNumber);
+
       const reassigned = await tx
         .update(weeklyShifts)
         .set({
@@ -1191,17 +1231,6 @@ export async function recordSubstitution(
       // 画面に出しているのと揃える。#217 で登録した欠勤が消えたことに
       // 教室長が気づけないと、記録を取り消しても戻し忘れる
       expiredAbsences = expired;
-
-      // 元講師の未処理の募集は、記録で付け替え対象が変わって承認できなく
-      // なるので、**システムが閉じる** (#293)。#253 では「閉じると応募者の
-      // 一覧が『取り下げられました』になって嘘になる」ので閉じなかったが、
-      // 閉じ方の種類 (`close_kind = 'unassignable'`) を記録して、応募者の
-      // 一覧は「担当が変わったため締め切られました」と出すようにした。
-      // 閉じないと、誰かが却下・取り下げしたときに応募者へ 2 通目が届き、
-      // 申請者の募集が何もしていないのに「却下」として残っていた
-      closedSwapId =
-        (await closeUnassignableSwap(tx, tutorId, date, slotNumber))?.id ??
-        null;
     });
   } catch (e) {
     if (e instanceof SwapBizError) return { ok: false, error: e.message };

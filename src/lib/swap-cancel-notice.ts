@@ -1,6 +1,21 @@
+import {
+  closeAction,
+  type PendingSwapApproval,
+} from "@/lib/pending-swap-approval";
 // 型だけ。notifications.ts は server-only だが、型の import は消えるので
 // クライアント (request-log-panel) から読んでも問題ない
 import type { NotificationInput } from "@/lib/notifications";
+
+/**
+ * #293 より前の記録で閉じずに残っていた元講師の募集。記録を取り消して担当が
+ * 戻ると、再び承認できる状態になる (応募者には知らせない。#293 で決めた)
+ */
+export type PendingSwapAfterCancel = {
+  /** 募集を出した講師 */
+  requesterName: string;
+  isProxy: boolean;
+  approval: PendingSwapApproval;
+};
 
 /**
  * 承認済み代講を取り消したあと、教室長に出す知らせ。
@@ -29,6 +44,8 @@ export function swapCancelNotice(res: {
    * 元講師の名前 (#293)。過去のコマは募集し直せないので null
    */
   requesterSwapClosedName: string | null;
+  /** #293 より前の記録で閉じずに残っていた元講師の募集 */
+  requesterPendingSwap: PendingSwapAfterCancel | null;
 }): string {
   const parts = ["取り消しました。"];
   if (res.expiredAbsences > 0) {
@@ -52,6 +69,16 @@ export function swapCancelNotice(res: {
   if (res.requesterSwapClosedName) {
     parts.push(
       `${res.requesterSwapClosedName} さんがこのコマに出していた交代・代講の募集は、記録したときに締め切っています。代講が必要なら「代理で代講を募集する」から募集し直してください。`,
+    );
+  }
+  // 承認できない理由と閉じ方 (却下 / 取り下げ) は「未対応」タブと同じ
+  // `pendingSwapApproval` の結果から作る
+  const p = res.requesterPendingSwap;
+  if (p) {
+    parts.push(
+      p.approval.approvable
+        ? `このコマには ${p.requesterName} さんの交代申請が残っていて、担当が戻ったため再び承認できます。「未対応」タブで承認するか、${closeAction(p.isProxy)}`
+        : `このコマには ${p.requesterName} さんの交代申請が「未対応」タブに残っています。${p.approval.notice ?? ""}`,
     );
   }
   return parts.join("");
