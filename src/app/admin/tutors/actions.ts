@@ -239,7 +239,14 @@ async function rollbackInvitedUser(
 const MailTargetSchema = z.object({ profileId: z.string().uuid() });
 
 type MailTarget =
-  | { ok: true; authUserId: string; email: string; accepted: boolean }
+  | {
+      ok: true;
+      authUserId: string;
+      email: string;
+      accepted: boolean;
+      /** 招待 (または確認メール) を最後に送った時刻。#296 の調査用 */
+      confirmationSentAt: string | null;
+    }
   | { ok: false; error: string }
   | StaleRefusal;
 
@@ -297,6 +304,7 @@ async function loadMailTarget(
     authUserId,
     email: authEmail,
     accepted: isInviteAccepted(found.user),
+    confirmationSentAt: found.user.confirmation_sent_at ?? null,
   };
 }
 
@@ -341,6 +349,15 @@ export async function resendInvite(input: unknown): Promise<ActionResult> {
         "ログインアカウントの紐付けが一致しないため、再送できませんでした。",
     };
   }
+
+  // #296 (再送しても期限が戻らない) の調査: 招待の期限は、招待を送った時刻
+  // (confirmation_sent_at) から数える。再送でこれが今の時刻に進んでいるかを残す。
+  // 進んでいなければ、再送しても最初の招待から数えた期限のまま
+  console.info("resendInvite: confirmation_sent_at", {
+    authUserId,
+    before: target.confirmationSentAt,
+    after: invited.user.confirmation_sent_at ?? null,
+  });
 
   // revalidatePath は呼ばない。招待の状態は変わらず、呼ぶと画面が作り直されて
   // 認証 API からユーザーを全件読み直すことになる (#271)
