@@ -29,6 +29,22 @@ export const requestStatusEnum = pgEnum("request_status", [
   "cancelled",
 ]);
 
+/**
+ * 欠勤申請がどう閉じたか (#292)。`status = 'cancelled'` の行にだけ入る。
+ * 以前は自由文の `decision_note` と `decided_by` の組み合わせで見分けていたが、
+ * 教室長の取り消し理由が定型文と偶然一致すると分類が変わり、`decided_by` は
+ * 教室長の削除で null になるので、専用の列にした。
+ */
+export const absenceCloseKindEnum = pgEnum("absence_close_kind", [
+  "tutor_withdraw", // 講師本人が pending を取り下げた
+  "admin_cancel", // 教室長が approved を取り消した (cancelApprovedAbsence)
+  "unassigned", // 担当でないため教室長が不要として閉じた (#290)
+  "auto_expired", // 交代成立で元講師がコマを失い自動失効 (#225)
+  "expired_unassigned", // 代講の取り消しで代講者がコマを失い自動失効 (#291)
+]);
+
+export type AbsenceCloseKind = (typeof absenceCloseKindEnum.enumValues)[number];
+
 export const swapKindEnum = pgEnum("swap_kind", [
   "named", // 指名交代
   "open",  // 代講募集
@@ -701,6 +717,13 @@ export const absenceRequests = pgTable(
     /** 教室長の判断コメント (却下理由など)。承認時は任意 */
     decisionNote: text("decision_note"),
     decidedAt: timestamp("decided_at", { withTimezone: true }),
+    /**
+     * 閉じ方の種類 (#292)。`cancelled` の行にだけ入る。種類の判定はこの列だけで
+     * 行い、`decision_note` の文言や `decided_by` の有無を見ないこと。
+     * 0037 で既存の行を埋めた。「cancelled なら必ず入る」制約は、反映の間に
+     * 古いコードが書いた行を埋め終えてから別に足す (docs/runbooks/absence-close-kind.md)
+     */
+    closeKind: absenceCloseKindEnum("close_kind"),
     createdAt: timestamp("created_at", { withTimezone: true })
       .notNull()
       .defaultNow(),
