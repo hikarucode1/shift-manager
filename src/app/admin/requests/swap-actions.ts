@@ -268,19 +268,18 @@ export async function decideSwapRequest(
       // まま 2 本目の接続を要求しない、という `client.ts` の max:3 の前提は
       // 守られる。
       //
-      // ⚠️ ロック順は `cancelApprovedSwap` (weekly_shifts → absence_requests
-      // (代講者の欠勤, #291) → swap_requests) と逆になるが、**待ちの輪は
-      // 閉じない** — 承認が触るのは pending の募集、取り消しが触るのは
-      // approved の募集で別行であり、取り消し側はこちらの行を要求しない。
-      // ⚠️ absence_requests の行は承認 (元講師・代講者の欠勤) と取り消し
-      // (代講者の欠勤) の両方が触る。同じコマで両方が同時に走ることは、
-      // 上の swap_requests の別行どうしでは起きうるので、どちらも
+      // ⚠️ **ロックの順** (待ちの輪を作らないため、どの経路もこの順を守る):
+      //   - 承認 (ここ): pending の募集 (この行) → weekly_shifts → absence_requests
+      //   - 取り消し (`cancelApprovedSwap`): 代講者の pending の募集 (#293) →
+      //     weekly_shifts → absence_requests (代講者の欠勤, #291) → approved の募集
+      //   - 記録 (`recordSubstitution`): 元講師の pending の募集 (#293) →
+      //     weekly_shifts → absence_requests
+      // pending の募集は、触る経路がどれも**最初に**触る (#293 で、取り消しと
+      // 記録が担当の変わる講師の pending の募集を閉じるようになった。
+      // weekly_shifts を書く前に閉じないと、同じ募集の同時承認とデッドロック
+      // しうる)。approved の募集は取り消しだけが最後に触り、承認は触らない。
+      // absence_requests は承認と取り消しの両方が触るので、どちらも
       // weekly_shifts → absence_requests の順を守ること
-      // ⚠️ #293 で、取り消し (`cancelApprovedSwap`) と記録 (`recordSubstitution`)
-      // も、担当が変わる講師の pending 募集を閉じる (`closeUnassignableSwap`)。
-      // あちらも **weekly_shifts を書く前に**閉じて、ここと同じ「募集 →
-      // weekly_shifts」の順にしてある。逆にすると、同じ募集の同時承認と
-      // デッドロックしうる
       const reqRows = await tx
         .select({
           requesterId: swapRequests.requesterId,
@@ -793,7 +792,14 @@ export async function cancelApprovedSwap(
       notify([info.requesterId], {
         type: "swap_result",
         title: "代講の取り消し（あなたが担当に戻りました）",
-        body: `対象: ${info.date} ${cancelSlotLabel} ／ 理由: ${reason}`,
+        // ⚠️ この記録が A の募集を閉じていたら、閉じたままであることも伝える
+        // (#293)。A は出られないから募集を出していたので、知らないと出られない
+        // コマの担当に戻ったまま誰も気づかない。募集し直しの案内は教室長にも出す
+        body: `対象: ${info.date} ${cancelSlotLabel} ／ 理由: ${reason}${
+          info.requesterSwapClosed
+            ? " ／ 記録したときに締め切った交代・代講の募集は、締め切ったままです。必要なら教室長にご相談ください。"
+            : ""
+        }`,
         // ⚠️ `cancelApprovedSwap` に日付ガードは無いので、**過去日の記録を
         // 取り消すと /tutor には出ない** (今週・来週しか読まない)。行自体は
         // /tutor/swaps に status=cancelled で必ずある (#251)

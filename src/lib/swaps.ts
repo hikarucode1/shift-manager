@@ -290,8 +290,10 @@ export async function isTutorBusyAt(
 /**
  * その講師がそのコマに出している pending の募集 (無ければ null)。
  *
- * 担当が変わって承認できなくなった募集を閉じる `closeUnassignableSwap` (#293) と、
- * 欠勤の代理登録の案内 (`createAbsenceOnBehalf`) が使う。
+ * 記録の取り消しで残っていた元講師の募集の案内 (`cancelApprovedSwap`、#293 より
+ * 前の記録の分) と、欠勤の代理登録の案内 (`createAbsenceOnBehalf`) が使う。
+ * ⚠️ 募集を閉じる `closeUnassignableSwap` (#293) は、同じ条件を UPDATE の
+ * WHERE に自前で持つ (1 文にするため)。条件を変えるときは両方変えること。
  * `swap_requests_active_uniq` (0006) が (requester_id, date, slot_number) の
  * pending を 1 件に制限している
  */
@@ -353,7 +355,8 @@ export async function closeUnassignableSwap(
       // 募集」を時刻の一致で引ける (`hasUnassignableClosedSwap`)
       decidedAt: sql`now()`,
       decisionNote: null,
-      updatedAt: new Date(),
+      // decided_at と同じ時計にそろえる
+      updatedAt: sql`now()`,
     })
     .where(
       and(
