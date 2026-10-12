@@ -142,6 +142,7 @@ export async function getRequestLog(opts: {
             slotNumber: swapRequests.slotNumber,
             reason: swapRequests.reason,
             note: swapRequests.decisionNote,
+            closeKind: swapRequests.closeKind,
             decidedAt: swapRequests.decidedAt,
             updatedAt: swapRequests.updatedAt,
           })
@@ -206,6 +207,7 @@ export async function getRequestLog(opts: {
       isProxy: r.createdBy !== null && r.createdBy !== r.requesterId,
       approvedApplicantName: r.approvedApplicantName,
       isRecorded: r.kind === "recorded",
+      closeKind: r.closeKind,
     }),
   );
 

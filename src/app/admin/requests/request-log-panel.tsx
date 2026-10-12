@@ -95,8 +95,8 @@ export function RequestLogPanel({
         : cancelApprovedSwap({ id: entry.id, reason: trimmed }).then((r) =>
             // ⚠️ 交代の取り消しで同一コマの欠勤が自動失効していたら必ず伝える。
             // 黙って消すと、#217 で登録した欠勤が消えたことに気づけない (#225)。
-            // 同じコマに元講師 (#283) や代講者 (#287) の募集が残っていれば、
-            // それも伝える (両方のこともある)
+            // 代講者の募集を閉じたこと (#293)、記録のときに閉じた元講師の
+            // 募集の募集し直しも伝える
             r.ok ? { ok: true as const, text: swapCancelNotice(r) } : r,
           )
       ).catch(toFailedResult);

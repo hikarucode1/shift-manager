@@ -37,6 +37,23 @@ describe("applicationOutcome", () => {
     expect(applicationOutcome("approved", true, true, true)).toBe("chosen");
   });
 
+  it("担当が変わってシステムが締め切った募集は、取り下げと分ける (#293)", () => {
+    // 誰も取り下げていないのに「取り下げられました」と出すと嘘になる
+    expect(
+      applicationOutcome("cancelled", false, false, true, "unassignable"),
+    ).toBe("closed-unassignable");
+    expect(OUTCOME_LABEL["closed-unassignable"]).toBe(
+      "担当が変わったため締め切られました",
+    );
+    // ほかの閉じ方は従来どおり
+    expect(
+      applicationOutcome("cancelled", false, false, true, "tutor_withdraw"),
+    ).toBe("withdrawn");
+    expect(
+      applicationOutcome("cancelled", false, true, true, "admin_cancel"),
+    ).toBe("cancelled-after-approval");
+  });
+
   it("記録された代講が後から取り消されたら cancelled-after-approval", () => {
     // 応募していなくても、一度承認された事実 (approved_applicant_id) は残る
     expect(applicationOutcome("cancelled", true, true, false)).toBe(
@@ -53,6 +70,7 @@ describe("applicationOutcome", () => {
       rejected: "却下されました",
       withdrawn: "取り下げられました",
       "cancelled-after-approval": "決まった代講が取り消されました",
+      "closed-unassignable": "担当が変わったため締め切られました",
     });
   });
 });
@@ -89,6 +107,7 @@ describe("toApplicationRow", () => {
     reason: "体調不良のため",
     applicationId: "app-1",
     approvedApplicantId: "me",
+    closeKind: null,
     note: null,
     decidedAt: "2026-08-27T05:00:00.000Z",
     updatedAt: "2026-08-21T00:00:00.000Z",
@@ -195,5 +214,31 @@ describe("toApplicationRow", () => {
       note: "体調不良のため",
       decidedAt: "2026-08-27T05:00:00.000Z",
     });
+  });
+});
+
+describe("toApplicationRow の閉じ方 (#293)", () => {
+  it("close_kind を結果に通す (配線)", () => {
+    expect(
+      toApplicationRow(
+        {
+          id: "req-1",
+          status: "cancelled",
+          date: "2026-10-18",
+          slotNumber: 1,
+          slotLabel: "1限",
+          weekdayLabel: "日",
+          requesterName: "佐藤",
+          reason: "用事のため",
+          applicationId: "app-1",
+          approvedApplicantId: null,
+          closeKind: "unassignable",
+          note: null,
+          decidedAt: "2026-10-12T05:00:00.000Z",
+          updatedAt: "2026-10-12T05:00:00.000Z",
+        },
+        "me",
+      )?.outcome,
+    ).toBe("closed-unassignable");
   });
 });

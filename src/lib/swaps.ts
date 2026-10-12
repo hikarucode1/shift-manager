@@ -70,6 +70,11 @@ export type MySwapRequest = {
   nominatedName: string | null;
   approvedApplicantName: string | null;
   decisionNote: string | null;
+  /**
+   * 担当が変わって承認できなくなり、システムが締め切ったか (#293)。
+   * 「取消」と出すと、本人が何もしていないのに取り消されたように読める
+   */
+  closedUnassignable: boolean;
   applicants: SwapApplicant[];
   /**
    * 教室長の代理募集か (#227)。`created_by !== requester_id` で判定する。
@@ -285,11 +290,12 @@ export async function isTutorBusyAt(
 /**
  * その講師がそのコマに出している pending の募集 (無ければ null)。
  *
- * 記録 (`recordSubstitution`, #253) が「承認できなくなりました」を送る相手と、
- * 記録の取り消し (`cancelApprovedSwap`, #283) が「また承認できる」と訂正する
- * 相手は、**同じ募集でなければならない**。対になる 2 経路で条件がずれない
- * よう、ここに 1 つだけ置く。`swap_requests_active_uniq` (0006) が
- * (requester_id, date, slot_number) の pending を 1 件に制限している
+ * 記録の取り消しで残っていた元講師の募集の案内 (`cancelApprovedSwap`、#293 より
+ * 前の記録の分) と、欠勤の代理登録の案内 (`createAbsenceOnBehalf`) が使う。
+ * ⚠️ 募集を閉じる `closeUnassignableSwap` (#293) は、同じ条件を UPDATE の
+ * WHERE に自前で持つ (1 文にするため)。条件を変えるときは両方変えること。
+ * `swap_requests_active_uniq` (0006) が (requester_id, date, slot_number) の
+ * pending を 1 件に制限している
  */
 export async function findPendingSwap(
   requesterId: string,
@@ -313,6 +319,90 @@ export async function findPendingSwap(
   if (!r) return null;
   // 代理募集 (#231) の判定は一覧 (`getPendingSwapRequests`) と同じ式
   return { id: r.id, isProxy: r.createdBy !== null && r.createdBy !== requesterId };
+}
+
+/**
+ * 担当が変わって承認できなくなった募集を、**システムが中立に閉じる** (#293)。
+ * 代講の記録 (#253) で元講師の募集、代講の取り消し (#287) で代講者の募集に使う。
+ *
+ * - `close_kind = 'unassignable'`。決めた人 (`decided_by`) と理由
+ *   (`decision_note`) は空にする — 教室長の判断ではないので、講師の画面に
+ *   「教室長より」と出さない。時刻だけ残す
+ * - 閉じたことで通知は出さない。応募者への「締め切られました」と、
+ *   申請者への知らせは呼び出し側が出す (1 通にするため)
+ * - `status = 'pending'` を条件に更新する。同時に承認・取り下げされていれば
+ *   閉じずに null を返す
+ *
+ * ⚠️ 閉じた募集は開き直さない。記録を取り消しても元講師の募集は閉じたまま
+ * (#293 で決めた。開き直すと「誰がいつ閉じたか」の記録が崩れる)
+ */
+export async function closeUnassignableSwap(
+  executor: Executor,
+  requesterId: string,
+  date: string,
+  slotNumber: number,
+): Promise<string | null> {
+  // 探して閉じるのを 1 文にする (tx の中の往復を減らす)。
+  // `swap_requests_active_uniq` (0006) で pending は多くても 1 件
+  const closed = await executor
+    .update(swapRequests)
+    .set({
+      status: "cancelled",
+      closeKind: "unassignable",
+      decidedBy: null,
+      // ⚠️ アプリの時計 (new Date()) ではなく DB の now() (= tx の開始時刻)。
+      // 記録の行の created_at も同じ tx の now() なので、「この記録が閉じた
+      // 募集」を時刻の一致で引ける (`hasUnassignableClosedSwap`)
+      decidedAt: sql`now()`,
+      decisionNote: null,
+      // decided_at と同じ時計にそろえる
+      updatedAt: sql`now()`,
+    })
+    .where(
+      and(
+        eq(swapRequests.requesterId, requesterId),
+        eq(swapRequests.date, date),
+        eq(swapRequests.slotNumber, slotNumber),
+        eq(swapRequests.status, "pending"),
+      ),
+    )
+    .returning({ id: swapRequests.id });
+  return closed[0]?.id ?? null;
+}
+
+/**
+ * 記録 `recordId` が、その講師の募集を閉じたか (#293)。記録を取り消したとき、
+ * 元講師の募集は記録の時点で閉じているので、教室長に「募集し直して」と
+ * 案内するために使う。
+ *
+ * ⚠️ **その記録が閉じた募集だけを見る。** 講師・日・コマだけで探すと、前の
+ * 記録 (取り消し済み) が閉じた募集や、代講者として閉じられた募集まで拾う。
+ * 記録の行の `created_at` と、同じ tx で閉じた募集の `decided_at` はどちらも
+ * DB の now() なので一致する (`closeUnassignableSwap`)。比べるのは SQL の中で
+ * 行う (JS の Date はミリ秒までで、DB のマイクロ秒が落ちて一致しなくなる)
+ */
+export async function hasUnassignableClosedSwap(
+  executor: Executor,
+  requesterId: string,
+  recordId: string,
+): Promise<boolean> {
+  const record = alias(swapRequests, "closingRecord");
+  const rows = await executor
+    .select({ id: swapRequests.id })
+    .from(swapRequests)
+    .innerJoin(record, eq(record.id, recordId))
+    .where(
+      and(
+        eq(swapRequests.requesterId, requesterId),
+        eq(swapRequests.date, record.date),
+        eq(swapRequests.slotNumber, record.slotNumber),
+        eq(swapRequests.status, "cancelled"),
+        eq(swapRequests.closeKind, "unassignable"),
+        eq(swapRequests.decidedAt, record.createdAt),
+      ),
+    )
+    .limit(1);
+  return rows.length > 0;
 }
 
 /**
@@ -461,6 +551,7 @@ export async function getTutorSwapRequests(
       reason: swapRequests.reason,
       status: swapRequests.status,
       decisionNote: swapRequests.decisionNote,
+      closeKind: swapRequests.closeKind,
       nominatedName: nominee.displayName,
       approvedApplicantName: approved.displayName,
       createdBy: swapRequests.createdBy,
@@ -486,6 +577,7 @@ export async function getTutorSwapRequests(
     nominatedName: r.nominatedName,
     approvedApplicantName: r.approvedApplicantName,
     decisionNote: r.decisionNote,
+    closedUnassignable: r.closeKind === "unassignable",
     applicants: applicants.get(r.id) ?? [],
     isProxy: r.createdBy !== null && r.createdBy !== tutorId,
     createdAt: r.createdAt.toISOString(),
@@ -617,6 +709,8 @@ export async function getPendingSwapRequests(): Promise<AdminSwapRequest[]> {
     ),
     approvedApplicantName: null,
     decisionNote: r.decisionNote,
+    // 未対応の一覧なので閉じた募集は入らない
+    closedUnassignable: false,
     applicants: applicants.get(r.id) ?? [],
     isProxy: r.createdBy !== null && r.createdBy !== r.requesterId,
     decidedAt: r.decidedAt ? r.decidedAt.toISOString() : null,
@@ -689,6 +783,7 @@ export async function getTutorApplications(
       reason: swapRequests.reason,
       status: swapRequests.status,
       approvedApplicantId: swapRequests.approvedApplicantId,
+      closeKind: swapRequests.closeKind,
       note: swapRequests.decisionNote,
       decidedAt: swapRequests.decidedAt,
       updatedAt: swapRequests.updatedAt,
@@ -730,6 +825,7 @@ export async function getTutorApplications(
         reason: r.reason,
         applicationId: r.applicationId,
         approvedApplicantId: r.approvedApplicantId,
+        closeKind: r.closeKind,
         note: r.note,
         decidedAt: r.decidedAt ? r.decidedAt.toISOString() : null,
         updatedAt: r.updatedAt.toISOString(),

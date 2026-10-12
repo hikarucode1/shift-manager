@@ -267,6 +267,13 @@
       "when": 1791355061735,
       "tag": "0037_absence_close_kind",
       "breakpoints": true
+    },
+    {
+      "idx": 38,
+      "version": "7",
+      "when": 1791793528824,
+      "tag": "0038_swap_close_kind",
+      "breakpoints": true
     }
   ]
 }

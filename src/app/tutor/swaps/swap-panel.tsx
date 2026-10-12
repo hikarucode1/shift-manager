@@ -315,7 +315,10 @@ export function SwapPanel({
           ) : (
             <div className="divide-y">
               {requests.map((r) => {
-                const st = STATUS[r.status];
+                // #293: システムが締め切った募集は「取消」ではなく「締切」
+                const st = r.closedUnassignable
+                  ? { text: "締切", variant: "outline" as const }
+                  : STATUS[r.status];
                 return (
                   <div key={r.id} className="py-3">
                     <div className="flex flex-wrap items-center gap-2">
@@ -380,6 +383,11 @@ export function SwapPanel({
                     {r.status === "approved" && r.approvedApplicantName && (
                       <p className="mt-0.5 text-sm text-primary">
                         代講者: {r.approvedApplicantName}
+                      </p>
+                    )}
+                    {r.closedUnassignable && (
+                      <p className="mt-0.5 text-sm text-muted-foreground">
+                        このコマの担当が変わって承認できなくなったため、募集は締め切られました
                       </p>
                     )}
                     {r.decisionNote && (

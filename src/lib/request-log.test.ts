@@ -41,6 +41,7 @@ const swap = (o: Partial<SwapLogInput> = {}): SwapLogInput => ({
   swapKind: "open" as const,
   approvedApplicantName: "佐藤",
   isRecorded: false,
+  closeKind: null,
   ...o,
 });
 
@@ -186,6 +187,28 @@ describe("toAbsenceLogEntry", () => {
 });
 
 describe("toSwapLogEntry", () => {
+  it("取り消し済みの分類は close_kind で決める (#293)", () => {
+    const ev = (closeKind: SwapLogInput["closeKind"], o = {}) =>
+      toSwapLogEntry(swap({ status: "cancelled", closeKind, ...o })).event;
+    expect(ev("unassignable")).toBe("closed-unassignable");
+    expect(EVENT_LABEL["closed-unassignable"]).toBe(
+      "締め切り（担当が変わったため）",
+    );
+    expect(ev("admin_cancel")).toBe("cancelled-by-admin");
+    // 教室長のプロフィールが削除されて名前が無くても、講師の取り下げに化けない
+    expect(ev("admin_cancel", { actorName: null })).toBe("cancelled-by-admin");
+    expect(ev("admin_withdraw", { actorName: null, approvedApplicantName: null })).toBe(
+      "withdrawn-by-admin",
+    );
+    expect(ev("tutor_withdraw")).toBe("cancelled-by-tutor");
+  });
+
+  it("close_kind が空 (反映の途中だけ) なら以前の判定で分ける", () => {
+    expect(
+      toSwapLogEntry(swap({ status: "cancelled", actorName: null })).event,
+    ).toBe("cancelled-by-tutor");
+  });
+
   it("承認と記録 (#215) を区別する", () => {
     expect(toSwapLogEntry(swap()).event).toBe("approved");
     const rec = toSwapLogEntry(swap({ isRecorded: true }));
@@ -377,7 +400,7 @@ describe("代講の取り消し前の注意 (#291)", () => {
 });
 
 describe("eventLabel", () => {
-  it("10 種すべてを固定する", () => {
+  it("11 種すべてを固定する", () => {
     // 画面は eventLabel を並べるだけにする設計なので、ラベルは製品面そのもの。
     // 嘘が出やすいのは「取り消し」「失効」側なので全部固定する
     expect(EVENT_LABEL).toEqual({
@@ -391,6 +414,7 @@ describe("eventLabel", () => {
       "cancelled-by-tutor": "講師が取り下げ",
       "auto-expired": "失効（交代成立による）",
       "auto-expired-unassigned": "失効（担当でなくなったため）",
+      "closed-unassignable": "締め切り（担当が変わったため）",
     });
   });
 });

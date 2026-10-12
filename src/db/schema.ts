@@ -45,6 +45,21 @@ export const absenceCloseKindEnum = pgEnum("absence_close_kind", [
 
 export type AbsenceCloseKind = (typeof absenceCloseKindEnum.enumValues)[number];
 
+/**
+ * 交代・代講申請がどう閉じたか (#293)。`status = 'cancelled'` の行にだけ入る
+ * (却下は `rejected` で別)。欠勤の `absence_close_kind` (#292) と同じ作り。
+ */
+export const swapCloseKindEnum = pgEnum("swap_close_kind", [
+  "tutor_withdraw", // 講師本人が pending を取り下げた (cancelSwapRequest)
+  "admin_withdraw", // 教室長が代理募集を取り下げた (cancelOpenSwapOnBehalf, #231)
+  "admin_cancel", // 教室長が承認済みを取り消した (cancelApprovedSwap, #213)
+  // 担当が変わって承認できなくなったので、システムが閉じた (#293)。代講の
+  // 記録 (#253) で元講師の募集、代講の取り消し (#287) で代講者の募集
+  "unassignable",
+]);
+
+export type SwapCloseKind = (typeof swapCloseKindEnum.enumValues)[number];
+
 export const swapKindEnum = pgEnum("swap_kind", [
   "named", // 指名交代
   "open",  // 代講募集
@@ -785,6 +800,12 @@ export const swapRequests = pgTable(
     /** 教室長の判断コメント (却下理由など) */
     decisionNote: text("decision_note"),
     decidedAt: timestamp("decided_at", { withTimezone: true }),
+    /**
+     * 閉じ方の種類 (#293)。`cancelled` の行にだけ入る。種類の判定はこの列だけで
+     * 行い、`decided_by` や `approved_applicant_id` の有無では判定しない。
+     * 0038 で既存の行を埋めた (docs/runbooks/swap-close-kind.md)
+     */
+    closeKind: swapCloseKindEnum("close_kind"),
     createdAt: timestamp("created_at", { withTimezone: true })
       .notNull()
       .defaultNow(),

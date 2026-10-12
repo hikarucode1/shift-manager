@@ -235,7 +235,11 @@ export async function cancelSwapRequest(
 
   const updated = await db
     .update(swapRequests)
-    .set({ status: "cancelled", updatedAt: new Date() })
+    .set({
+      status: "cancelled",
+      closeKind: "tutor_withdraw",
+      updatedAt: new Date(),
+    })
     .where(
       and(
         eq(swapRequests.id, parsed.data.id),
