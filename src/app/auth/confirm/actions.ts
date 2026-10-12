@@ -6,6 +6,7 @@ import { reportIncident } from "@/lib/incident";
 import {
   classifyVerifyError,
   parseEmailLink,
+  verifyErrorSummary,
   type EmailLink,
   type VerifyFailure,
 } from "@/lib/invite-link";
@@ -37,7 +38,17 @@ export async function verifyEmailLink(formData: FormData) {
     });
     if (error) {
       failure = classifyVerifyError(error);
-      if (failure === "unavailable") reportIncident("verify-email-link", error);
+      if (failure === "unavailable") {
+        reportIncident("verify-email-link", error);
+      } else {
+        // 使えないリンクは障害ではない (warn にして reportIncident と分ける) が、
+        // #296 (再送しても期限が戻らない) を調べるために、いつ・どの種類の
+        // リンクで・どのコードで失敗したかを残す
+        console.warn("verify-email-link: invalid", {
+          type: link.type,
+          ...verifyErrorSummary(error),
+        });
+      }
     }
   } catch (e) {
     // auth-js は AuthError 以外をそのまま throw する。判定できていないので

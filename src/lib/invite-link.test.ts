@@ -3,6 +3,7 @@ import { createClient } from "@supabase/supabase-js";
 import {
   classifyVerifyError,
   parseEmailLink,
+  verifyErrorSummary,
   passwordUpdateErrorMessage,
   validateNewPassword,
 } from "@/lib/invite-link";
@@ -93,6 +94,31 @@ describe("classifyVerifyError", () => {
     expect(classifyVerifyError(await verifyError(respond))).toBe(
       "unavailable",
     );
+  });
+});
+
+describe("verifyErrorSummary (#296)", () => {
+  it("リンクが使えなかったときのコードとステータスを取り出す", async () => {
+    const error = await verifyError(
+      respondWith(403, {
+        error_code: "otp_expired",
+        msg: "Email link is invalid or has expired",
+      }),
+    );
+    expect(verifyErrorSummary(error)).toEqual({
+      code: "otp_expired",
+      status: 403,
+      // error_code が無い応答でも手がかりが残るよう、文面も残す
+      message: "Email link is invalid or has expired",
+    });
+  });
+
+  it("AuthError でなければ空にする (中身をそのままログに出さない)", () => {
+    expect(verifyErrorSummary(new Error("boom"))).toEqual({
+      code: null,
+      status: null,
+      message: null,
+    });
   });
 });
 

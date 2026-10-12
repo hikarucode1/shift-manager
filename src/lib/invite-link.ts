@@ -47,6 +47,27 @@ export function classifyVerifyError(error: unknown): VerifyFailure {
 }
 
 /**
+ * リンクが使えなかったとき (`invalid`) にサーバーのログへ残す中身 (#296)。
+ *
+ * ⚠️ **これで「期限切れ」と「再送で差し替えられた古いリンク」は見分けられ
+ * ない。** GoTrue はどちらも `otp_expired` で返す。残すのは、いつ・どの種類の
+ * リンクで・どのコード (無ければ文面) で失敗したかだけ。トークンやメール
+ * アドレスは載せない (GoTrue の文面にも含まれない)
+ */
+export function verifyErrorSummary(error: unknown): {
+  code: string | null;
+  status: number | null;
+  message: string | null;
+} {
+  if (!isAuthError(error)) return { code: null, status: null, message: null };
+  return {
+    code: error.code ?? null,
+    status: error.status ?? null,
+    message: error.message || null,
+  };
+}
+
+/**
  * GoTrue は bcrypt で保存するため 72 バイトを超えると拒否する。
  * 下限は Supabase の既定 (6) より厳しくしている。
  */
