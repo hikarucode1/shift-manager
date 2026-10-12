@@ -72,6 +72,9 @@ WHERE status = 'cancelled' AND close_kind IS NULL;
 - 代講者のプロフィールが削除されて `approved_applicant_id` が空になった取り消し
   は、`admin_withdraw` か `tutor_withdraw` に取り違えうる (今は講師のプロフィールを
   削除しない運用)
+- 教室長が代理募集を取り下げたあと、その教室長のプロフィールが削除されると、
+  `created_by` と `decided_by` が両方空になり、`tutor_withdraw` (講師が取り下げ)
+  に取り違える (今は教室長のプロフィールを削除しない運用)
 - `unassignable` (システムが締め切った) は、このコードより前には無いので埋めない
 
 ## 5. その後 (別の PR)
