@@ -108,6 +108,8 @@ describe("verifyErrorSummary (#296)", () => {
     expect(verifyErrorSummary(error)).toEqual({
       code: "otp_expired",
       status: 403,
+      // error_code が無い応答でも手がかりが残るよう、文面も残す
+      message: "Email link is invalid or has expired",
     });
   });
 
@@ -115,6 +117,7 @@ describe("verifyErrorSummary (#296)", () => {
     expect(verifyErrorSummary(new Error("boom"))).toEqual({
       code: null,
       status: null,
+      message: null,
     });
   });
 });
