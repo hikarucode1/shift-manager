@@ -1,3 +1,5 @@
+import type { SwapCloseKind } from "@/db/schema";
+
 /**
  * 「自分が関わった代講」がどうなったか (#245 / #247)。
  *
@@ -26,7 +28,14 @@ export type ApplicationOutcome =
    * 落選者から見ると「募集が取り下げられた」のではなく「決まった代講が
    * 後から取り消された」で、意味が違う
    */
-  | "cancelled-after-approval";
+  | "cancelled-after-approval"
+  /**
+   * 担当が変わって承認できなくなり、システムが締め切った (#293)。代講の記録で
+   * 元講師の募集、代講の取り消しで代講者の募集。`withdrawn` と分ける —
+   * 誰も取り下げていないのに「取り下げられました」と出すと嘘になる (#253 で
+   * 募集を閉じなかった理由はこれだった)
+   */
+  | "closed-unassignable";
 
 export const OUTCOME_LABEL: Record<ApplicationOutcome, string> = {
   chosen: "あなたに決まりました",
@@ -35,6 +44,7 @@ export const OUTCOME_LABEL: Record<ApplicationOutcome, string> = {
   rejected: "却下されました",
   withdrawn: "取り下げられました",
   "cancelled-after-approval": "決まった代講が取り消されました",
+  "closed-unassignable": "担当が変わったため締め切られました",
 };
 
 /**
@@ -64,9 +74,12 @@ export function applicationOutcome(
    *    1 のガードは取り下げ時点でまだ pending なので発動しない。
    */
   applied: boolean,
+  /** 閉じ方の種類 (`swap_requests.close_kind`, #293)。cancelled のときだけ見る */
+  closeKind: SwapCloseKind | null = null,
 ): ApplicationOutcome {
   if (status === "rejected") return "rejected";
   if (status === "cancelled") {
+    if (closeKind === "unassignable") return "closed-unassignable";
     return wasApproved ? "cancelled-after-approval" : "withdrawn";
   }
   if (!chosen) return "not-chosen";
@@ -130,6 +143,8 @@ export type ApplicationRowInput = {
   /** 自分の応募行の id。取り下げ済み / 未応募なら null */
   applicationId: string | null;
   approvedApplicantId: string | null;
+  /** 閉じ方の種類 (#293) */
+  closeKind: SwapCloseKind | null;
   note: string | null;
   decidedAt: string | null;
   updatedAt: string;
@@ -159,6 +174,7 @@ export function toApplicationRow(
     chosen,
     r.approvedApplicantId !== null,
     r.applicationId !== null,
+    r.closeKind,
   );
   return {
     id: r.id,

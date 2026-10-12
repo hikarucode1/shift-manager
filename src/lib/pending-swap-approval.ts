@@ -71,13 +71,14 @@ function blocked(reason: string, isProxy: boolean): PendingSwapApproval {
 /**
  * その募集を承認できるか (#283)。**画面側の定義はここ 1 つ。**
  *
- * 「未対応」タブの承認ボタン (`pendingSwapApproval`) と、記録を取り消して
- * 募集が再び承認できるようになったかの判定 (`cancelApprovedSwap`) が共有する。
+ * 「未対応」タブの承認ボタン (`pendingSwapApproval`) が使う。#293 以前は、
+ * 記録を取り消して募集が再び承認できるようになったかの判定
+ * (`cancelApprovedSwap`) も共有していた (今は記録の時点で募集を閉じる)。
  *
  * ⚠️ **実際に承認するサーバ (`decideSwapRequest`) はこれを通らない。** 同じ
  * 条件を自前で持つ (過去日ガードと、付け替えの UPDATE の行数)。条件を
  * 足すときは**両方**変えること。片方だけだと、ボタンが押せるのに必ず失敗する
- * (#262 の再演) か、取り消し側が「また承認できます」と嘘を言う
+ * (#262 の再演) になる
  */
 export function isPendingSwapApprovable(
   s: Pick<PendingSwapApprovalState, "isPastDate" | "requesterAssigned">,

@@ -16,15 +16,15 @@
  * (このリポジトリのテストは全て純関数レベル)。
  */
 
-import type { AbsenceCloseKind } from "@/db/schema";
+import type { AbsenceCloseKind, SwapCloseKind } from "@/db/schema";
 
 export type RequestLogKind = "absence" | "swap";
 
 /**
  * その行が「今の状態にどうやってなったか」。
- * status だけでは足りない — 同じ `cancelled` でも 5 経路ある (教室長の取り消し・
- * 教室長の取り下げ・講師の取り下げ・2 種類の自動失効)。欠勤ではどれかを
- * `close_kind` で判定する (#292)。
+ * status だけでは足りない — 同じ `cancelled` でも経路が複数ある (教室長の取り消し・
+ * 教室長の取り下げ・講師の取り下げ・欠勤の 2 種類の自動失効・交代の締め切り)。
+ * どれかは `close_kind` で判定する (欠勤 #292 / 交代 #293)。
  */
 export type RequestLogEvent =
   /** 未対応 (台帳には出ないが、判定を全域にするため持つ) */
@@ -49,7 +49,12 @@ export type RequestLogEvent =
   /** 交代成立により欠勤が自動失効した (欠勤のみ) */
   | "auto-expired"
   /** 代講の取り消しで担当でなくなり、欠勤が自動失効した (欠勤のみ。#291) */
-  | "auto-expired-unassigned";
+  | "auto-expired-unassigned"
+  /**
+   * 担当が変わって承認できなくなり、システムが締め切った (交代のみ。#293)。
+   * 代講の記録で元講師の募集、代講の取り消しで代講者の募集
+   */
+  | "closed-unassignable";
 
 export type RequestLogEntry = {
   id: string;
@@ -120,6 +125,7 @@ export const EVENT_LABEL: Record<RequestLogEvent, string> = {
   "cancelled-by-tutor": "講師が取り下げ",
   "auto-expired": "失効（交代成立による）",
   "auto-expired-unassigned": "失効（担当でなくなったため）",
+  "closed-unassignable": "締め切り（担当が変わったため）",
 };
 
 export type LogStatus = "pending" | "approved" | "rejected" | "cancelled";
@@ -177,6 +183,11 @@ export type SwapLogInput = CommonInput & {
   isProxy: boolean;
   /** 承認された代講者。承認前に閉じた行では null */
   approvedApplicantName: string | null;
+  /**
+   * 閉じ方の種類 (`close_kind`, #293)。`cancelled` の行の分類はこれだけで
+   * 決める (欠勤の #292 と同じ)
+   */
+  closeKind: SwapCloseKind | null;
   /** `kind === "recorded"` (#215) */
   isRecorded: boolean;
 };
@@ -311,6 +322,33 @@ function swapCancelWarning(i: SwapLogInput): string {
   return `取り消すと、担当を ${i.requesterName} さんに戻し、${sub}の代講記録を消します。${expiry}実際に代講が入った場合は取り消さないでください。`;
 }
 
+/**
+ * 取り消し済みの交代・代講申請が、どの経路で閉じたか。種類は `close_kind` で
+ * 決める (#293)。空なのは反映の途中 (migration 0038 を流した後、コードの反映が
+ * 終わるまでに古いコードが閉じた行) だけで、そのときだけ以前の判定 (決めた人の
+ * 有無と、代講者が決まっていたか) で分ける
+ */
+function swapCancelEvent(i: SwapLogInput): RequestLogEvent {
+  switch (i.closeKind) {
+    case "unassignable":
+      return "closed-unassignable";
+    case "admin_cancel":
+      return "cancelled-by-admin";
+    case "admin_withdraw":
+      return "withdrawn-by-admin";
+    case "tutor_withdraw":
+      return "cancelled-by-tutor";
+    case null:
+      return i.actorName === null
+        ? "cancelled-by-tutor"
+        : // 承認済みを取り消したのか、承認前の代理募集を取り下げたのか。
+          // 代講者が決まっていたかで区別する (#231 / #240)
+          i.approvedApplicantName !== null
+          ? "cancelled-by-admin"
+          : "withdrawn-by-admin";
+  }
+}
+
 export function toSwapLogEntry(i: SwapLogInput): RequestLogEntry {
   const event: RequestLogEvent =
     i.status === "pending"
@@ -321,14 +359,7 @@ export function toSwapLogEntry(i: SwapLogInput): RequestLogEntry {
           ? i.isRecorded
             ? "recorded"
             : "approved"
-          : // ---- cancelled ----
-            i.actorName === null
-            ? "cancelled-by-tutor"
-            : // 承認済みを取り消したのか、承認前の代理募集を取り下げたのか。
-              // 代講者が決まっていたかで区別する (#231 / #240)
-              i.approvedApplicantName !== null
-              ? "cancelled-by-admin"
-              : "withdrawn-by-admin";
+          : swapCancelEvent(i);
   return base(
     i,
     "swap",

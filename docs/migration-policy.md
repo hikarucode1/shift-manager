@@ -84,6 +84,9 @@ staging が無いため、**migration は本番に直接適用される**。破�
 > **0037 (#292) は未適用。** **コード deploy より先に適用（必須）**。`close_kind`
 > を読むコードが先に動くと、欠勤の画面と台帳が落ちる。反映の手順 (migration →
 > マージ → 埋め直し → 翌日の確認) は `docs/runbooks/absence-close-kind.md`。
+>
+> **0038 (#293) は未適用。** 0037 の後、**コード deploy より先に適用（必須）**。
+> 手順は `docs/runbooks/swap-close-kind.md` (0037 と同じ順番)。
 
 **⚠️ 「任意」と書かれた migration は自動では流れない** — 2026-07-30 の監査で、本番が
 **0028 までしか適用されていない**ことが判明した (recorded=29)。`notifications` テーブルと
@@ -169,6 +172,7 @@ CHECK / trigger / NOT NULL すべてオブジェクト単位で存在確認)。�
 | 0035 | `swap_requests.created_by` 追加 (#227) | 非破壊 (nullable 列 + FK 追加のみ) | **コード deploy より先に適用（必須）**。0034 と同じ理由 — 講師の交代申請と教室長の代理募集の insert がこの列に書くため、列が無い状態でコードが動くと**交代・代講機能が全停止**する |
 | 0036 | `swap_kind` enum に `recorded` 追加 (#215) | 非破壊 (`ALTER TYPE ADD VALUE`) | **コード deploy より先に適用（必須）**。`recorded` を使うコードが先に動くと `recordSubstitution` の insert が invalid-enum で失敗する。**⚠️ tx 境界**: 0032 と同じく、`recorded` を DML/DEFAULT で使う migration を将来作る場合、0036 と同じ未適用バッチに入れると `unsafe use of new value` でバッチ全体が落ちる。0036 は `ALTER TYPE ADD VALUE` 単独なので今回は問題なし |
 | 0037 | `absence_close_kind` enum + `absence_requests.close_kind` 追加、既存の取り消し済みの行を backfill (#292) | 非破壊 (nullable 列の追加 + null の行だけを埋める UPDATE) | **コード deploy より先に適用（必須）**。`close_kind` を読むコードが先に動くと、欠勤の画面・台帳の select が列なしで落ちる。マージ後に backfill をもう一度流す (間に古いコードが書いた行を埋める)。手順は `docs/runbooks/absence-close-kind.md`。新しい型を作って同じ migration で使うのは問題ない (`ALTER TYPE ADD VALUE` ではない) |
+| 0038 | `swap_close_kind` enum + `swap_requests.close_kind` 追加、既存の取り消し済みの行を backfill (#293) | 非破壊 (nullable 列の追加 + null の行だけを埋める UPDATE) | **0037 の後、コード deploy より先に適用（必須）**。`close_kind` を読むコードが先に動くと、交代の画面・台帳の select が列なしで落ちる。マージ後に backfill をもう一度流す。手順は `docs/runbooks/swap-close-kind.md` |
 
 ### 0033 適用前の検証 (必須)
 
