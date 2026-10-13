@@ -84,12 +84,25 @@ staging が無いため、**migration は本番に直接適用される**。破�
 > 手動で回して「全 38 本適用済み」を確認。反映の手順は
 > `docs/runbooks/absence-close-kind.md`。
 >
-> **0038 (#293) は未適用。** 0037 の後、**コード deploy より先に適用（必須）**。
-> 手順は `docs/runbooks/swap-close-kind.md` (0037 と同じ順番)。
+> **0038 (#293) は 2026-10-12 に適用済 (recorded=39)。** 手順どおり先に流してから
+> PR #306 をマージした。手順は `docs/runbooks/swap-close-kind.md`。
 
 **PR でも `migration guard` が動く (#307、2026-10-13〜)。** migration を含む PR は、本番に
 流すまで `check:migrations (production)` が赤くなる。本番に流してから、その job を Re-run して
 緑にしてマージする (0037 を流す前に PR #304 をマージして欠勤の画面を落とした再発防止)。
+
+- **本番に流すのは、レビューが済んで migration が確定してから。** 流した後に migration を
+  作り直すと、記録の hash と `created_at` (journal の `when`) がずれて、下の「direct SQL +
+  tracking reconcile」で手で合わせる必要がある
+- **列を消す・名前を変えるなどの破壊的な migration は、コードと別の PR にする**
+  (expand / contract)。先に「古い列を使わなくなる」コードの PR をマージして本番に反映し、
+  そのあと migration だけの PR を出す。この順番なら、migration を先に流しても動いている
+  コードは壊れない。1 つの PR にまとめると、guard を緑にするために先に流した時点で、
+  まだ古い列を読んでいる本番が落ちる
+- PR が migration を変えていないのに赤いときは、main の migration が本番に未適用か、本番の
+  migration テーブルを読めないなど、main か本番の側の問題 (job の Summary にそう出る)
+- PR では `pull_request_target` で動き、**main の** workflow とスクリプトで、PR の `drizzle/`
+  を**データとして**読むだけ。PR のコードは本番の接続情報と一緒に実行しない (#307 のレビュー)
 
 **⚠️ 「任意」と書かれた migration は自動では流れない** — 2026-07-30 の監査で、本番が
 **0028 までしか適用されていない**ことが判明した (recorded=29)。`notifications` テーブルと
@@ -280,5 +293,7 @@ export が残っていると、誤って `db.select().from(...)` を書くと型
 - `scripts/check-migrations.ts` — journal と本番の `drizzle.__drizzle_migrations` を
   比較して**未適用 migration を列挙**する read-only チェック
   (`DATABASE_URL='...' npm run check:migrations`)。migrate と違い通常のクエリなので
-  **pooler 経由でも動く**。機能 PR のマージ後・deploy 前に実行する
+  **pooler 経由でも動く**。migration を含む PR は**マージの前**に、本番に流してから
+  確かめる (#307 以降は PR の `migration guard` が自動で回す)。Vercel はマージで
+  すぐ deploy するので、「マージ後・deploy 前」の窓は無い
 - Issue #85 (2) — 本ドキュメントの起点

@@ -41,10 +41,26 @@ if (!url || url.includes("<project-ref>")) {
   process.exit(1);
 }
 
+// migration のファイル名の形 (drizzle-kit が付ける `0037_absence_close_kind`)。
+// PR の journal は PR の作者が書けるデータなので (#307 で PR でも動かすように
+// した)、細工した tag で drizzle/ の外のファイルを読ませないよう形を確かめる
+const TAG_PATTERN = /^\d{4}_[a-z0-9_]+$/;
+
 function journalEntries(): JournalEntry[] {
   const j = JSON.parse(
     readFileSync(join("drizzle", "meta", "_journal.json"), "utf8"),
   ) as { entries: JournalEntry[] };
+  const bad = j.entries.filter(
+    (e) => !TAG_PATTERN.test(e.tag) || !Number.isSafeInteger(e.when),
+  );
+  if (bad.length > 0) {
+    console.error(
+      `✗ journal の migration 名か時刻が想定外の形です: ${bad
+        .map((e) => JSON.stringify(e.tag))
+        .join(", ")}`,
+    );
+    process.exit(1);
+  }
   return [...j.entries].sort((a, b) => a.when - b.when);
 }
 

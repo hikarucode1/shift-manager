@@ -9,15 +9,23 @@
 # 動かしてマージの前に止める (#307)。PR のブランチの journal に、本番に未適用の
 # migration があれば失敗する。本番に流してから「Re-run jobs」で緑にしてマージする。
 #
-# ⚠️ fork からの PR には secret が渡らない (GitHub の仕様)。同じリポジトリの
-# ブランチからの PR に限って動かす (job の if)。
+# ⚠️ **PR では `pull_request_target` を使い、PR のコードを実行しない** (#307 の
+# レビュー)。`pull_request` だと、PR のブランチの workflow・スクリプト・依存
+# パッケージが本番の接続情報を持ったまま動き、レビュー前に本番へ任意の SQL を
+# 流せてしまう。`pull_request_target` は **main の** workflow とスクリプトで動く。
+# PR からは `drizzle/` (journal の JSON と .sql) を**データとして**取り出すだけで、
+# 実行しない。この形なら fork からの PR も安全に確かめられる。
+#
+# ⚠️ そのため、この workflow の変更は main にマージされてから PR に効く。
 name: migration guard
 
 on:
   # マージの前に止める (#307)。ブランチ保護の required check にすると、赤い間は
   # マージできない
-  pull_request:
+  pull_request_target:
     branches: [main]
+    # base を main に変えたとき (edited) も動かす (ci.yml の #90 と同じ)
+    types: [opened, synchronize, reopened, edited]
   # 機能 PR をマージした直後に気づけるようにする (7/30 の事故がこの形)
   push:
     branches: [main]
@@ -27,22 +35,40 @@ on:
   workflow_dispatch:
 
 concurrency:
-  # PR ごとに分ける (main の監視と PR の確認が互いを待たないように)
-  group: migration-guard-${{ github.ref }}
+  # PR ごとに分ける (main の監視と PR の確認が互いを待たないように)。
+  # pull_request_target の github.ref は base (main) なので PR 番号で分ける
+  group: migration-guard-${{ github.event.pull_request.number || github.ref }}
   cancel-in-progress: false
 
 jobs:
   check:
     name: check:migrations (production)
     runs-on: ubuntu-latest
-    # fork でスケジュール実行や push が走っても意味が無いので上流限定。
-    # PR は同じリポジトリのブランチからのものだけ (fork には secret が渡らない)
-    if: >-
-      github.repository == 'hikarucode1/shift-manager' &&
-      (github.event_name != 'pull_request' ||
-       github.event.pull_request.head.repo.full_name == github.repository)
+    # 本番への問い合わせが固まったとき、既定の 6 時間待たされて全 PR がマージ
+    # できなくなるのを防ぐ (ci.yml と同じ理由)
+    timeout-minutes: 5
+    # fork でスケジュール実行や push が走っても意味が無いので上流限定
+    if: github.repository == 'hikarucode1/shift-manager'
     steps:
+      # pull_request_target でも、ここで取るのは **main** (base) のコード
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Take migrations from the PR (data only)
+        if: github.event_name == 'pull_request_target'
+        # ⚠️ PR のファイルは drizzle/ だけを取り出し、何も実行しない。
+        # npm ci もスクリプトも main のもの
+        run: |
+          git fetch --no-tags origin "pull/${{ github.event.pull_request.number }}/head:pr-head"
+          rm -rf drizzle
+          git checkout pr-head -- drizzle
+          # PR が drizzle/ を変えたか (失敗時の案内の出し分けに使う)
+          if git diff --quiet "${{ github.event.pull_request.base.sha }}" pr-head -- drizzle; then
+            echo "PR_TOUCHES_MIGRATIONS=0" >> "$GITHUB_ENV"
+          else
+            echo "PR_TOUCHES_MIGRATIONS=1" >> "$GITHUB_ENV"
+          fi
 
       - name: Setup Node
         uses: actions/setup-node@v4
@@ -91,12 +117,16 @@ jobs:
           status=$?
           set -e
           echo '```' >> "$GITHUB_STEP_SUMMARY"
-          if [ $status -ne 0 ] && [ "${{ github.event_name }}" = "pull_request" ]; then
-            {
-              echo ""
-              echo "**この PR の migration が本番に未適用です。マージの前に本番へ流してください** (#307)。"
-              echo "流し方は docs/migration-policy.md と、各 migration の runbook。流したら、この job を Re-run して緑にしてからマージする。"
-            } >> "$GITHUB_STEP_SUMMARY"
-            echo "::error::この PR の migration が本番に未適用です。本番に流してから Re-run してください"
+          # 失敗の理由で案内を分ける (#307 のレビュー)。PR が migration を
+          # 変えていなければ、この PR のせいではない
+          if [ $status -ne 0 ] && [ "${{ github.event_name }}" = "pull_request_target" ]; then
+            if [ "${PR_TOUCHES_MIGRATIONS}" = "1" ]; then
+              msg="この PR の migration が本番に未適用か、記録と食い違っています。レビューが済んで migration が確定してから本番に流し、この job を Re-run して緑にしてからマージしてください (docs/migration-policy.md)"
+            else
+              msg="この PR は migration を変えていません。main の migration が本番に未適用か、本番の migration テーブルを読めないなど、main か本番の側の問題です (上の出力を参照)"
+            fi
+            echo "" >> "$GITHUB_STEP_SUMMARY"
+            echo "**${msg}**" >> "$GITHUB_STEP_SUMMARY"
+            echo "::error::${msg}"
           fi
           exit $status
