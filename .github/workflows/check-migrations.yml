@@ -4,10 +4,20 @@
 # 通知機能が 9 日間動いていなかった。人手の「マージしたら適用状況を確認する」
 # 運用では取りこぼすので、ここで自動化する。
 #
-# ⚠️ pull_request では動かさない。fork からの PR に secret を渡さないため。
+# 2026-10-12: migration 0037 を本番に流す前に PR #304 をマージし、欠勤の画面が
+# 落ちた。push / schedule だけだと**マージの後**にしか気づけないので、PR でも
+# 動かしてマージの前に止める (#307)。PR のブランチの journal に、本番に未適用の
+# migration があれば失敗する。本番に流してから「Re-run jobs」で緑にしてマージする。
+#
+# ⚠️ fork からの PR には secret が渡らない (GitHub の仕様)。同じリポジトリの
+# ブランチからの PR に限って動かす (job の if)。
 name: migration guard
 
 on:
+  # マージの前に止める (#307)。ブランチ保護の required check にすると、赤い間は
+  # マージできない
+  pull_request:
+    branches: [main]
   # 機能 PR をマージした直後に気づけるようにする (7/30 の事故がこの形)
   push:
     branches: [main]
@@ -17,15 +27,20 @@ on:
   workflow_dispatch:
 
 concurrency:
-  group: migration-guard
+  # PR ごとに分ける (main の監視と PR の確認が互いを待たないように)
+  group: migration-guard-${{ github.ref }}
   cancel-in-progress: false
 
 jobs:
   check:
     name: check:migrations (production)
     runs-on: ubuntu-latest
-    # fork でスケジュール実行や push が走っても意味が無いので上流限定
-    if: github.repository == 'hikarucode1/shift-manager'
+    # fork でスケジュール実行や push が走っても意味が無いので上流限定。
+    # PR は同じリポジトリのブランチからのものだけ (fork には secret が渡らない)
+    if: >-
+      github.repository == 'hikarucode1/shift-manager' &&
+      (github.event_name != 'pull_request' ||
+       github.event.pull_request.head.repo.full_name == github.repository)
     steps:
       - uses: actions/checkout@v4
 
@@ -76,4 +91,12 @@ jobs:
           status=$?
           set -e
           echo '```' >> "$GITHUB_STEP_SUMMARY"
+          if [ $status -ne 0 ] && [ "${{ github.event_name }}" = "pull_request" ]; then
+            {
+              echo ""
+              echo "**この PR の migration が本番に未適用です。マージの前に本番へ流してください** (#307)。"
+              echo "流し方は docs/migration-policy.md と、各 migration の runbook。流したら、この job を Re-run して緑にしてからマージする。"
+            } >> "$GITHUB_STEP_SUMMARY"
+            echo "::error::この PR の migration が本番に未適用です。本番に流してから Re-run してください"
+          fi
           exit $status

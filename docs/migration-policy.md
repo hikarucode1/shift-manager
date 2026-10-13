@@ -87,6 +87,10 @@ staging が無いため、**migration は本番に直接適用される**。破�
 > **0038 (#293) は未適用。** 0037 の後、**コード deploy より先に適用（必須）**。
 > 手順は `docs/runbooks/swap-close-kind.md` (0037 と同じ順番)。
 
+**PR でも `migration guard` が動く (#307、2026-10-13〜)。** migration を含む PR は、本番に
+流すまで `check:migrations (production)` が赤くなる。本番に流してから、その job を Re-run して
+緑にしてマージする (0037 を流す前に PR #304 をマージして欠勤の画面を落とした再発防止)。
+
 **⚠️ 「任意」と書かれた migration は自動では流れない** — 2026-07-30 の監査で、本番が
 **0028 までしか適用されていない**ことが判明した (recorded=29)。`notifications` テーブルと
 `notification_type` enum が存在せず、**#155 の通知機能 (#164/#166/#180) は本番で
