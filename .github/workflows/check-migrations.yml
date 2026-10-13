@@ -27,8 +27,10 @@ on:
   # マージできない
   pull_request_target:
     branches: [main]
-    # base を main に変えたとき (edited) も動かす。タイトル・本文の編集では
-    # 本番に接続しないよう、job の if で base の変更に限る
+    # base を main に変えたとき (edited) も動かす (ci.yml の #90 と同じ)。
+    # ⚠️ タイトル・本文の編集でも飛ばさずに確かめる。job を skip すると required
+    # check では「通った」扱いになり、赤い PR をタイトルの編集で通せてしまう。
+    # 専用の読み取りロールなので、接続が増えても害は無い
     types: [opened, synchronize, reopened, edited]
   # 機能 PR をマージした直後に気づけるようにする (7/30 の事故がこの形)
   push:
@@ -42,9 +44,10 @@ permissions:
   contents: read
 
 concurrency:
-  # PR ごとに分ける (main の監視と PR の確認が互いを待たないように)。
-  # pull_request_target の github.ref は base (main) なので PR 番号で分ける
-  group: migration-guard-${{ github.event.pull_request.number || github.ref }}
+  # PR と commit の組で分ける。PR 番号だけだと、待てるのは 1 本だけなので、
+  # 編集で走った実行が新しい commit の確認を押し出して取り消しうる。
+  # pull_request_target の github.ref は base (main) なので PR の値で分ける
+  group: migration-guard-${{ github.event.pull_request.number || github.ref }}-${{ github.event.pull_request.head.sha || github.sha }}
   cancel-in-progress: false
 
 jobs:
@@ -54,18 +57,16 @@ jobs:
     # 本番への問い合わせが固まったとき、既定の 6 時間待たされて全 PR がマージ
     # できなくなるのを防ぐ。npm ci が冷えたキャッシュでも収まるよう余裕を見る
     timeout-minutes: 10
-    # fork でスケジュール実行や push が走っても意味が無いので上流限定。
-    # edited は base が変わったときだけ (タイトル・本文の編集では動かさない)
-    if: >-
-      github.repository == 'hikarucode1/shift-manager' &&
-      (github.event.action != 'edited' || github.event.changes.base != null)
+    # fork でスケジュール実行や push が走っても意味が無いので上流限定
+    if: github.repository == 'hikarucode1/shift-manager'
     steps:
       # pull_request_target でも、ここで取るのは **main** (base) のコード
       - uses: actions/checkout@v4
         with:
           persist-credentials: false
           # PR のときだけ全履歴 (分岐点からの差分に要る)。push / schedule は浅くてよい
-          fetch-depth: ${{ github.event_name == 'pull_request_target' && 0 || 1 }}
+          # ⚠️ 数値の 0 は式の中で偽になり `&& 0 || 1` が常に 1 になるので、文字列で書く
+          fetch-depth: ${{ github.event_name == 'pull_request_target' && '0' || '1' }}
 
       - name: Take migrations from the PR (data only)
         if: github.event_name == 'pull_request_target'
@@ -150,10 +151,14 @@ jobs:
           status=$?
           set -e
           echo '```' >> "$GITHUB_STEP_SUMMARY"
-          # 失敗の理由で案内を分ける (#307 のレビュー)。PR が migration を
-          # 変えていなければ、この PR のせいではない
+          # 失敗の理由で案内を分ける (#307 のレビュー)。終了コードは
+          # scripts/check-migrations.ts: 1 = 未適用、2 = 本番を読めない、3 = journal が不正
           if [ $status -ne 0 ] && [ "${EVENT_NAME}" = "pull_request_target" ]; then
-            if [ "${PR_TOUCHES_MIGRATIONS:-0}" = "1" ]; then
+            if [ $status -eq 2 ]; then
+              msg="本番の migration テーブルを読めませんでした (接続や権限の問題)。migration を本番に流しても直りません。secret PROD_MIGRATIONS_READER_URL と専用ロールを確かめてください"
+            elif [ $status -eq 3 ]; then
+              msg="この PR の drizzle/meta/_journal.json か .sql が想定外の形です (上の出力を参照)"
+            elif [ "${PR_TOUCHES_MIGRATIONS:-0}" = "1" ]; then
               msg="この PR の migration が本番に未適用か、記録と食い違っています。レビューが済んで migration が確定してから本番に流し、この job を Re-run して緑にしてからマージしてください (docs/migration-policy.md)"
             else
               msg="この PR は migration を変えていません。main の migration が本番に未適用か、本番の migration テーブルを読めないなど、main か本番の側の問題です (上の出力を参照)"

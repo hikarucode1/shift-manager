@@ -94,11 +94,15 @@ staging が無いため、**migration は本番に直接適用される**。破�
 - **本番に流すのは、レビューが済んで migration が確定してから。** 流した後に migration を
   作り直すと、記録の hash と `created_at` (journal の `when`) がずれて、下の「direct SQL +
   tracking reconcile」で手で合わせる必要がある
-- **列を消す・名前を変えるなどの破壊的な migration は、コードと別の PR にする**
-  (expand / contract)。先に「古い列を使わなくなる」コードの PR をマージして本番に反映し、
-  そのあと migration だけの PR を出す。この順番なら、migration を先に流しても動いている
-  コードは壊れない。1 つの PR にまとめると、guard を緑にするために先に流した時点で、
-  まだ古い列を読んでいる本番が落ちる
+- **今動いているコードを壊す migration は、コードと別の PR にして順番を守る** (expand /
+  contract)。1 つの PR にまとめると、guard を緑にするために先に流した時点で、まだ古い
+  コードが動いている本番が落ちる
+  - 列を消す・名前を変える: 先に「古い列を使わなくなる」コードの PR をマージして本番に
+    反映し、そのあと migration だけの PR を出す
+  - 既定値の無い NOT NULL 列の追加・新しい CHECK / UNIQUE 制約・enum の値を減らす変更:
+    古いコードが書く行で落ちる。先に「既定値つき (または NULL 可) で足す migration と、
+    その列を正しく書くコード」を出し、全行が満たしたあとで、制約を締める migration を
+    別の PR にする
 - PR が migration を変えていないのに赤いときは、main の migration が本番に未適用か、本番の
   migration テーブルを読めないなど、main か本番の側の問題 (job の Summary にそう出る)
 - PR では `pull_request_target` で動き、**main の** workflow とスクリプトで、PR の `drizzle/`
@@ -120,20 +124,25 @@ staging が無いため、**migration は本番に直接適用される**。破�
 作り方 (Supabase の SQL Editor。`<パスワード>` は自分で決める):
 
 ```sql
-CREATE ROLE migrations_reader WITH LOGIN PASSWORD '<パスワード>' CONNECTION LIMIT 3;
+CREATE ROLE migrations_reader WITH LOGIN PASSWORD '<パスワード>' CONNECTION LIMIT 10;
 GRANT USAGE ON SCHEMA drizzle TO migrations_reader;
 GRANT SELECT ON drizzle.__drizzle_migrations TO migrations_reader;
 ALTER ROLE migrations_reader SET statement_timeout = '10s';
 ```
 
-アプリのテーブルを読めないことを確かめる (`profiles` が permission denied になること):
+読めるのが migration の記録だけであることを確かめる (1 行目が true、2・3 行目が false):
 
 ```sql
-SET ROLE migrations_reader;
-SELECT count(*) FROM drizzle.__drizzle_migrations;  -- これは読める
-SELECT count(*) FROM public.profiles;               -- permission denied になること
-RESET ROLE;
+SELECT
+  has_table_privilege('migrations_reader', 'drizzle.__drizzle_migrations', 'SELECT') AS migrations,
+  has_table_privilege('migrations_reader', 'public.profiles', 'SELECT')              AS profiles,
+  has_table_privilege('migrations_reader', 'public.absence_requests', 'SELECT')      AS absences;
 ```
+
+(`SET ROLE migrations_reader` で試す方法は、Postgres 16 以降の Supabase では SQL Editor の
+`postgres` ロールに権限が無く失敗することがあるので使わない)
+
+`CONNECTION LIMIT 10` は、複数の PR と main の監視が同時に走っても上限で落ちないため。
 
 接続文字列は、ダッシュボード上部の **Connect** > Transaction pooler の URI の、ユーザー名を
 `migrations_reader.<project-ref>`、パスワードを上で決めたものに替えたもの
