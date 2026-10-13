@@ -126,7 +126,7 @@ GRANT SELECT ON drizzle.__drizzle_migrations TO migrations_reader;
 ALTER ROLE migrations_reader SET statement_timeout = '10s';
 ```
 
-アプリのテーブルを読めないことを確かめる (どちらも permission denied になるはず):
+アプリのテーブルを読めないことを確かめる (`profiles` が permission denied になること):
 
 ```sql
 SET ROLE migrations_reader;
