@@ -103,6 +103,42 @@ staging が無いため、**migration は本番に直接適用される**。破�
   migration テーブルを読めないなど、main か本番の側の問題 (job の Summary にそう出る)
 - PR では `pull_request_target` で動き、**main の** workflow とスクリプトで、PR の `drizzle/`
   を**データとして**読むだけ。PR のコードは本番の接続情報と一緒に実行しない (#307 のレビュー)
+- **migration は journal の順 (`when` の小さい順) に流す。** drizzle は「本番の
+  `max(created_at)` より `when` が小さい migration は適用済み」とみなす。migration を含む
+  PR が 2 本同時に開いていて、後から作った方 (`when` が大きい) を先に流すと、先に作った方は
+  `drizzle-kit migrate` で黙って飛ばされる。後から来た PR の `when` が本番の最大より小さく
+  なったら、main に載せ直して migration を作り直す
+
+### migration guard の専用ロール (#307)
+
+**このリポジトリは公開 (public)** で、PR の migration guard は fork からの PR でも本番に
+接続する。そのため接続には、`drizzle.__drizzle_migrations` しか読めない専用ロールを使う
+(secret `PROD_MIGRATIONS_READER_URL`)。漏れても読めるのは適用済みの一覧だけで、その
+中身はもともとリポジトリに公開されている。**強い権限の接続情報 (postgres ロールなど) を
+この secret に入れないこと。**
+
+作り方 (Supabase の SQL Editor。`<パスワード>` は自分で決める):
+
+```sql
+CREATE ROLE migrations_reader WITH LOGIN PASSWORD '<パスワード>' CONNECTION LIMIT 3;
+GRANT USAGE ON SCHEMA drizzle TO migrations_reader;
+GRANT SELECT ON drizzle.__drizzle_migrations TO migrations_reader;
+ALTER ROLE migrations_reader SET statement_timeout = '10s';
+```
+
+アプリのテーブルを読めないことを確かめる (どちらも permission denied になるはず):
+
+```sql
+SET ROLE migrations_reader;
+SELECT count(*) FROM drizzle.__drizzle_migrations;  -- これは読める
+SELECT count(*) FROM public.profiles;               -- permission denied になること
+RESET ROLE;
+```
+
+接続文字列は、ダッシュボード上部の **Connect** > Transaction pooler の URI の、ユーザー名を
+`migrations_reader.<project-ref>`、パスワードを上で決めたものに替えたもの
+(⚠️ pooler 経由で自作ロールに接続できるかは未確認。登録したら workflow を手動で回して
+確かめる)。
 
 **⚠️ 「任意」と書かれた migration は自動では流れない** — 2026-07-30 の監査で、本番が
 **0028 までしか適用されていない**ことが判明した (recorded=29)。`notifications` テーブルと
@@ -113,7 +149,9 @@ staging が無いため、**migration は本番に直接適用される**。破�
 
 **2026-08-20: この確認を自動化した (#204)** — `.github/workflows/check-migrations.yml` が
 main への push 時と毎朝 06:00 JST に `check:migrations` を回す。人手の運用ルールに
-頼らないための多重防御。**secret `PROD_DATABASE_URL` が未設定だと workflow は落ちる**
+頼らないための多重防御。**secret が未設定だと workflow は落ちる** (#307 以降は
+`PROD_MIGRATIONS_READER_URL`。上の「migration guard の専用ロール」。以下の
+`PROD_DATABASE_URL` の説明は #307 より前のもの)
 (skip にすると「監視しているつもりで何も見ていない」状態が静かに続き、防ぎたい事故と
 同じ形になるため)。値は **ダッシュボード上部の緑の Connect ボタン** > Transaction pooler
 (6543) の URI (⚠️ Settings 配下ではない。2026-08 時点の UI では左ナビに Database の項目は

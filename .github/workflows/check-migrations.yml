@@ -6,17 +6,20 @@
 #
 # 2026-10-12: migration 0037 を本番に流す前に PR #304 をマージし、欠勤の画面が
 # 落ちた。push / schedule だけだと**マージの後**にしか気づけないので、PR でも
-# 動かしてマージの前に止める (#307)。PR のブランチの journal に、本番に未適用の
-# migration があれば失敗する。本番に流してから「Re-run jobs」で緑にしてマージする。
+# 動かしてマージの前に止める (#307)。PR の journal に、本番に未適用の migration が
+# あれば失敗する。本番に流してから「Re-run jobs」で緑にしてマージする。
 #
-# ⚠️ **PR では `pull_request_target` を使い、PR のコードを実行しない** (#307 の
-# レビュー)。`pull_request` だと、PR のブランチの workflow・スクリプト・依存
-# パッケージが本番の接続情報を持ったまま動き、レビュー前に本番へ任意の SQL を
-# 流せてしまう。`pull_request_target` は **main の** workflow とスクリプトで動く。
-# PR からは `drizzle/` (journal の JSON と .sql) を**データとして**取り出すだけで、
-# 実行しない。この形なら fork からの PR も安全に確かめられる。
+# ⚠️ **このリポジトリは公開 (public)。** PR では `pull_request_target` で動かすので、
+# 誰でも fork から PR を出せばこの job が本番に接続する (#307 のレビュー)。そのため:
+#   - 接続には `drizzle.__drizzle_migrations` しか読めない専用ロールを使う
+#     (secret `PROD_MIGRATIONS_READER_URL`)。漏れても読めるのは適用済みの一覧だけで、
+#     その中身はもともとリポジトリに公開されている。強い権限の接続情報は使わない
+#   - 動くのは **main の** workflow とスクリプトだけ。PR からは drizzle/ を**データ
+#     として**取り出すだけで、PR のコードは実行しない
+#   - PR の drizzle/ にシンボリックリンクなど通常のファイル以外があれば断る
+#   - token は read のみ、ディスクに残さない
 #
-# ⚠️ そのため、この workflow の変更は main にマージされてから PR に効く。
+# ⚠️ この workflow の変更は main にマージされてから PR に効く (pull_request_target)。
 name: migration guard
 
 on:
@@ -24,7 +27,8 @@ on:
   # マージできない
   pull_request_target:
     branches: [main]
-    # base を main に変えたとき (edited) も動かす (ci.yml の #90 と同じ)
+    # base を main に変えたとき (edited) も動かす。タイトル・本文の編集では
+    # 本番に接続しないよう、job の if で base の変更に限る
     types: [opened, synchronize, reopened, edited]
   # 機能 PR をマージした直後に気づけるようにする (7/30 の事故がこの形)
   push:
@@ -33,6 +37,9 @@ on:
   schedule:
     - cron: "0 21 * * *"
   workflow_dispatch:
+
+permissions:
+  contents: read
 
 concurrency:
   # PR ごとに分ける (main の監視と PR の確認が互いを待たないように)。
@@ -45,26 +52,54 @@ jobs:
     name: check:migrations (production)
     runs-on: ubuntu-latest
     # 本番への問い合わせが固まったとき、既定の 6 時間待たされて全 PR がマージ
-    # できなくなるのを防ぐ (ci.yml と同じ理由)
-    timeout-minutes: 5
-    # fork でスケジュール実行や push が走っても意味が無いので上流限定
-    if: github.repository == 'hikarucode1/shift-manager'
+    # できなくなるのを防ぐ。npm ci が冷えたキャッシュでも収まるよう余裕を見る
+    timeout-minutes: 10
+    # fork でスケジュール実行や push が走っても意味が無いので上流限定。
+    # edited は base が変わったときだけ (タイトル・本文の編集では動かさない)
+    if: >-
+      github.repository == 'hikarucode1/shift-manager' &&
+      (github.event.action != 'edited' || github.event.changes.base != null)
     steps:
       # pull_request_target でも、ここで取るのは **main** (base) のコード
       - uses: actions/checkout@v4
         with:
-          fetch-depth: 0
+          persist-credentials: false
+          # PR のときだけ全履歴 (分岐点からの差分に要る)。push / schedule は浅くてよい
+          fetch-depth: ${{ github.event_name == 'pull_request_target' && 0 || 1 }}
 
       - name: Take migrations from the PR (data only)
         if: github.event_name == 'pull_request_target'
+        env:
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
         # ⚠️ PR のファイルは drizzle/ だけを取り出し、何も実行しない。
-        # npm ci もスクリプトも main のもの
+        # npm ci もスクリプトも main のもの。取り出すのは確定した commit (head.sha)
         run: |
-          git fetch --no-tags origin "pull/${{ github.event.pull_request.number }}/head:pr-head"
+          set -euo pipefail
+          # 公開リポジトリなので認証なしで取れる (persist-credentials: false)
+          git fetch --no-tags origin "pull/${PR_NUMBER}/head" "${HEAD_SHA}"
+          if ! git cat-file -e "${HEAD_SHA}:drizzle" 2>/dev/null; then
+            msg="この PR には drizzle/ がありません。migration の置き場所を変える場合は、この workflow も合わせて直してください"
+            echo "**${msg}**" >> "$GITHUB_STEP_SUMMARY"
+            echo "::error::${msg}"
+            exit 1
+          fi
+          # 通常のファイル (100644 / 100755) とディレクトリ以外 (シンボリックリンク
+          # 120000、サブモジュール 160000) があれば断る。リンクだと、名前の形の
+          # チェックをすり抜けて drizzle/ の外を読ませられる
+          bad=$(git ls-tree -r "${HEAD_SHA}" -- drizzle | awk '$1 != "100644" && $1 != "100755"')
+          if [ -n "${bad}" ]; then
+            msg="この PR の drizzle/ に通常のファイル以外 (シンボリックリンクなど) があります"
+            echo "**${msg}**" >> "$GITHUB_STEP_SUMMARY"
+            echo "::error::${msg}"
+            exit 1
+          fi
           rm -rf drizzle
-          git checkout pr-head -- drizzle
-          # PR が drizzle/ を変えたか (失敗時の案内の出し分けに使う)
-          if git diff --quiet "${{ github.event.pull_request.base.sha }}" pr-head -- drizzle; then
+          git checkout "${HEAD_SHA}" -- drizzle
+          # PR が drizzle/ を変えたか (失敗時の案内の出し分けに使う)。分岐点からの
+          # 差分で見る (main が後から進んでも、この PR の変更だけを見る)
+          if git diff --quiet "${BASE_SHA}...${HEAD_SHA}" -- drizzle; then
             echo "PR_TOUCHES_MIGRATIONS=0" >> "$GITHUB_ENV"
           else
             echo "PR_TOUCHES_MIGRATIONS=1" >> "$GITHUB_ENV"
@@ -79,31 +114,29 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
-      - name: Require PROD_DATABASE_URL
+      - name: Require PROD_MIGRATIONS_READER_URL
         # 未設定なら **落とす**。skip にすると「監視しているつもりで何も見ていない」
         # 状態が静かに続き、この workflow が防ごうとしている事故と同じ形になる。
         env:
-          PROD_DATABASE_URL: ${{ secrets.PROD_DATABASE_URL }}
+          READER_URL: ${{ secrets.PROD_MIGRATIONS_READER_URL }}
         run: |
-          if [ -z "${PROD_DATABASE_URL}" ]; then
+          if [ -z "${READER_URL}" ]; then
             {
-              echo "### secret \`PROD_DATABASE_URL\` が未設定です"
+              echo "### secret \`PROD_MIGRATIONS_READER_URL\` が未設定です"
               echo ""
-              echo "Settings > Secrets and variables > Actions > New repository secret に登録してください。"
-              echo ""
-              echo "- 値: Supabase ダッシュボードの上部にある緑の **Connect** ボタン > **Transaction pooler** (ポート 6543) の URI"
-              echo "  (Settings 配下ではない。2026-08 時点の UI では左ナビに Database の項目は無い)"
-              echo "- \`DATABASE_URL\` と別名にしているのは、他のジョブが誤って本番へ繋がないようにするため"
-              echo "- 可能なら読み取り専用ロールの接続情報を使うこと (check:migrations は SELECT のみ)"
+              echo "\`drizzle.__drizzle_migrations\` しか読めない専用ロールの接続情報を登録してください (#307)。"
+              echo "ロールの作り方と接続文字列の形は docs/migration-policy.md の「migration guard の専用ロール」。"
+              echo "**強い権限の接続情報は登録しないこと** (公開リポジトリで、fork の PR からも動くため)。"
             } >> "$GITHUB_STEP_SUMMARY"
-            echo "::error::secret PROD_DATABASE_URL が未設定のため、本番の migration 適用状況を確認できません"
+            echo "::error::secret PROD_MIGRATIONS_READER_URL が未設定のため、本番の migration 適用状況を確認できません"
             exit 1
           fi
 
       - name: Check applied migrations
         env:
           # check-migrations は DIRECT_URL → DATABASE_URL の順に見る (SELECT のみ)
-          DATABASE_URL: ${{ secrets.PROD_DATABASE_URL }}
+          DATABASE_URL: ${{ secrets.PROD_MIGRATIONS_READER_URL }}
+          EVENT_NAME: ${{ github.event_name }}
         run: |
           # 既定シェルは bash -e なので、失敗時に閉じ ``` まで到達するよう外す
           set +e
@@ -119,8 +152,8 @@ jobs:
           echo '```' >> "$GITHUB_STEP_SUMMARY"
           # 失敗の理由で案内を分ける (#307 のレビュー)。PR が migration を
           # 変えていなければ、この PR のせいではない
-          if [ $status -ne 0 ] && [ "${{ github.event_name }}" = "pull_request_target" ]; then
-            if [ "${PR_TOUCHES_MIGRATIONS}" = "1" ]; then
+          if [ $status -ne 0 ] && [ "${EVENT_NAME}" = "pull_request_target" ]; then
+            if [ "${PR_TOUCHES_MIGRATIONS:-0}" = "1" ]; then
               msg="この PR の migration が本番に未適用か、記録と食い違っています。レビューが済んで migration が確定してから本番に流し、この job を Re-run して緑にしてからマージしてください (docs/migration-policy.md)"
             else
               msg="この PR は migration を変えていません。main の migration が本番に未適用か、本番の migration テーブルを読めないなど、main か本番の側の問題です (上の出力を参照)"
