@@ -88,8 +88,9 @@ staging が無いため、**migration は本番に直接適用される**。破�
 > PR #306 をマージした。手順は `docs/runbooks/swap-close-kind.md`。
 
 **PR でも `migration guard` が動く (#307、2026-10-13〜)。** migration を含む PR は、本番に
-流すまで `check:migrations (production)` が赤くなる。本番に流してから、その job を Re-run して
-緑にしてマージする (0037 を流す前に PR #304 をマージして欠勤の画面を落とした再発防止)。
+流すまで `check:migrations (pr)` が赤くなる。本番に流したら main の production を手動で回して
+一覧を更新し、PR の job を Re-run して緑にしてマージする (0037 を流す前に PR #304 をマージ
+して欠勤の画面を落とした再発防止)。
 
 - **本番に流すのは、レビューが済んで migration が確定してから。** 流した後に migration を
   作り直すと、記録の hash と `created_at` (journal の `when`) がずれて、下の「direct SQL +
@@ -105,49 +106,28 @@ staging が無いため、**migration は本番に直接適用される**。破�
     別の PR にする
 - PR が migration を変えていないのに赤いときは、main の migration が本番に未適用か、本番の
   migration テーブルを読めないなど、main か本番の側の問題 (job の Summary にそう出る)
-- PR では `pull_request_target` で動き、**main の** workflow とスクリプトで、PR の `drizzle/`
-  を**データとして**読むだけ。PR のコードは本番の接続情報と一緒に実行しない (#307 のレビュー)
+- PR の確認は本番に接続しない (下の「PR の migration guard の仕組み」)
 - **migration は journal の順 (`when` の小さい順) に流す。** drizzle は「本番の
   `max(created_at)` より `when` が小さい migration は適用済み」とみなす。migration を含む
   PR が 2 本同時に開いていて、後から作った方 (`when` が大きい) を先に流すと、先に作った方は
   `drizzle-kit migrate` で黙って飛ばされる。後から来た PR の `when` が本番の最大より小さく
   なったら、main に載せ直して migration を作り直す
 
-### migration guard の専用ロール (#307)
+### PR の migration guard の仕組み (#307)
 
-**このリポジトリは公開 (public)** で、PR の migration guard は fork からの PR でも本番に
-接続する。そのため接続には、`drizzle.__drizzle_migrations` しか読めない専用ロールを使う
-(secret `PROD_MIGRATIONS_READER_URL`)。漏れても読めるのは適用済みの一覧だけで、その
-中身はもともとリポジトリに公開されている。**強い権限の接続情報 (postgres ロールなど) を
-この secret に入れないこと。**
+**このリポジトリは公開 (public)** で、PR の確認は fork からの PR でも動く。PR から本番に
+接続する作りは、接続情報の漏れや接続の連打を防ぎきれなかったので、PR の確認は
+**本番にも秘密の情報にも触れない**:
 
-作り方 (Supabase の SQL Editor。`<パスワード>` は自分で決める):
+- `check:migrations (production)` (main の push・毎朝・手動) が本番を読み、適用済みの一覧
+  (hash と created_at だけ) を artifact `applied-migrations` に残す
+- `check:migrations (pr)` は、PR の journal をその一覧と比べるだけ
+  (`scripts/check-migrations-pr.mjs`。main の workflow とスクリプトで動き、PR からは
+  `drizzle/` をデータとして読むだけ)
 
-```sql
-CREATE ROLE migrations_reader WITH LOGIN PASSWORD '<パスワード>' CONNECTION LIMIT 10;
-GRANT USAGE ON SCHEMA drizzle TO migrations_reader;
-GRANT SELECT ON drizzle.__drizzle_migrations TO migrations_reader;
-ALTER ROLE migrations_reader SET statement_timeout = '10s';
-```
-
-読めるのが migration の記録だけであることを確かめる (1 行目が true、2・3 行目が false):
-
-```sql
-SELECT
-  has_table_privilege('migrations_reader', 'drizzle.__drizzle_migrations', 'SELECT') AS migrations,
-  has_table_privilege('migrations_reader', 'public.profiles', 'SELECT')              AS profiles,
-  has_table_privilege('migrations_reader', 'public.absence_requests', 'SELECT')      AS absences;
-```
-
-(`SET ROLE migrations_reader` で試す方法は、Postgres 16 以降の Supabase では SQL Editor の
-`postgres` ロールに権限が無く失敗することがあるので使わない)
-
-`CONNECTION LIMIT 10` は、複数の PR と main の監視が同時に走っても上限で落ちないため。
-
-接続文字列は、ダッシュボード上部の **Connect** > Transaction pooler の URI の、ユーザー名を
-`migrations_reader.<project-ref>`、パスワードを上で決めたものに替えたもの
-(⚠️ pooler 経由で自作ロールに接続できるかは未確認。登録したら workflow を手動で回して
-確かめる)。
+**本番に migration を流したら**、PR を Re-run する前に、Actions → migration guard →
+**Run workflow (main)** で production を回して一覧を更新する。そうしないと、PR は古い
+一覧と比べて赤いまま。
 
 **⚠️ 「任意」と書かれた migration は自動では流れない** — 2026-07-30 の監査で、本番が
 **0028 までしか適用されていない**ことが判明した (recorded=29)。`notifications` テーブルと
@@ -158,9 +138,8 @@ SELECT
 
 **2026-08-20: この確認を自動化した (#204)** — `.github/workflows/check-migrations.yml` が
 main への push 時と毎朝 06:00 JST に `check:migrations` を回す。人手の運用ルールに
-頼らないための多重防御。**secret が未設定だと workflow は落ちる** (#307 以降は
-`PROD_MIGRATIONS_READER_URL`。上の「migration guard の専用ロール」。以下の
-`PROD_DATABASE_URL` の説明は #307 より前のもの)
+頼らないための多重防御。**secret `PROD_DATABASE_URL` が未設定だと workflow は落ちる**
+(使うのは main の production job だけ。PR の job には渡さない)
 (skip にすると「監視しているつもりで何も見ていない」状態が静かに続き、防ぎたい事故と
 同じ形になるため)。値は **ダッシュボード上部の緑の Connect ボタン** > Transaction pooler
 (6543) の URI (⚠️ Settings 配下ではない。2026-08 時点の UI では左ナビに Database の項目は
