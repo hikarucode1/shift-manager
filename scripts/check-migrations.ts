@@ -30,8 +30,8 @@ import postgres from "postgres";
 
 type JournalEntry = { idx: number; tag: string; when: number };
 
-// 終了コード。workflow (`.github/workflows/check-migrations.yml`) が失敗の案内を
-// 出し分けるのに使う (#307)
+// 終了コード (#307)。原因を分けておく (workflow は分岐に使っていないが、ログを
+// 読むときに「未適用」と「読めない」「想定外」を取り違えないため)
 const EXIT_PENDING = 1; // 未適用の migration がある
 const EXIT_CANNOT_READ = 2; // 本番の migration テーブルを読めない (接続・権限)
 const EXIT_BAD_JOURNAL = 3; // journal や .sql が想定外の形、ほか想定外のエラー

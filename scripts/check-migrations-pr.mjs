@@ -22,6 +22,8 @@ import { join } from "node:path";
 
 const EXIT_PENDING = 1;
 const EXIT_BAD_INPUT = 3;
+// 適用済みの一覧がこれより古ければ警告する (毎朝作り直すので、ふだんは 1 日以内)
+const STALE_HOURS = 30;
 
 // drizzle-kit が付ける名前 (`0037_absence_close_kind`。`--name` にはハイフンや大文字も
 // 使える)。細工した名前で drizzle/ の外のファイルを読ませないよう、形を確かめる
@@ -93,13 +95,25 @@ function main() {
       .update(readFileSync(join("drizzle", `${tag}.sql`), "utf8"))
       .digest("hex");
 
+  // 本番の監視 (`check-migrations.ts`) と同じ基準: hash が無いか、`when` が
+  // 適用済みの最大の created_at より新しいなら未適用 (drizzle の判定は後者)
   const pending = [...entries]
     .sort((a, b) => a.when - b.when)
-    .filter((e) => !appliedHashes.has(hashOf(e.tag)));
+    .filter((e) => !appliedHashes.has(hashOf(e.tag)) || maxCreatedAt < e.when);
 
   console.log(
     `journal: ${entries.length} 本 / 適用済みの一覧: ${applied.rows.length} 行 (本番を読んだ時刻: ${applied.generatedAt ?? "不明"})`,
   );
+  // 一覧が古いと、main の production job が本番を読めずに失敗し続けている
+  // 可能性がある (失敗すると一覧は作られず、前のものが使われる)。毎朝作り直すので
+  // ふだんは 1 日以内
+  const ageHours = (Date.now() - Date.parse(applied.generatedAt)) / 3_600_000;
+  if (!(ageHours <= STALE_HOURS)) {
+    console.warn(
+      `\n⚠️  適用済みの一覧が古い (${Number.isFinite(ageHours) ? `${Math.round(ageHours)} 時間前` : "時刻不明"})。\n` +
+        `   main の check:migrations (production) が本番を読めずに失敗していないか確かめる`,
+    );
+  }
 
   if (pending.length === 0) {
     console.log(`\n✓ 全 ${entries.length} 本の migration が本番に適用済み`);
@@ -121,14 +135,19 @@ function main() {
       `\n✗ この PR の migration が本番に未適用です:\n` +
         byPr.map((e) => `  - ${e.tag}`).join("\n"),
     );
-    const outOfOrder = byPr.filter((e) => e.when <= maxCreatedAt);
-    if (outOfOrder.length > 0) {
-      console.error(
-        `\n⚠️  ${outOfOrder.map((e) => e.tag).join(", ")} の when が、本番に適用済みの最新より古い。\n` +
-          `   このまま流すと drizzle-kit migrate に黙って飛ばされる。main に載せ直して migration を作り直す\n` +
-          `   (docs/migration-policy.md の「journal の順に流す」)`,
-      );
-    }
+  }
+  // journal の順の崩れ (main 側・この PR の両方)。hash が無いのに when が適用済みの
+  // 最新以下だと、drizzle-kit migrate に黙って飛ばされる
+  const outOfOrder = pending.filter(
+    (e) => !appliedHashes.has(hashOf(e.tag)) && e.when <= maxCreatedAt,
+  );
+  if (outOfOrder.length > 0) {
+    console.error(
+      `\n⚠️  ${outOfOrder.map((e) => e.tag).join(", ")} の when が、本番に適用済みの最新より古い。\n` +
+        `   drizzle-kit migrate では黙って飛ばされる。この PR の分なら main に載せ直して作り直す。\n` +
+        `   main の分なら手で流して記録を合わせる (docs/migration-policy.md の「journal の順に流す」と\n` +
+        `   「direct SQL + tracking reconcile」)`,
+    );
   }
   console.error(
     `\n→ レビューが済んで migration が確定してから本番に流す。流したら、\n` +

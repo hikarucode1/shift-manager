@@ -187,13 +187,27 @@ jobs:
             --jq '.[].filename' > "${RUNNER_TEMP}/changed-files.txt"
 
       - name: Get the latest applied list from main
-        # production job が main で残した最新の一覧 (期限切れでないもの)
+        # production job が main で残した最新の一覧。
+        # ⚠️ artifact を名前で探さない (#307 のレビュー)。fork の PR は、fork 側の
+        # `main` ブランチから出され、ci.yml を書き換えて同じ名前の artifact を上げられる
+        # ので、名前とブランチ名だけで選ぶと偽の一覧を差し込める。**この workflow の、
+        # このリポジトリの main への push・毎朝・手動の実行**だけを新しい順に見て、
+        # そこから一覧を取る (fork の PR からはこれらの実行を起こせない)
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
-          id=$(gh api "repos/${GITHUB_REPOSITORY}/actions/artifacts?name=applied-migrations&per_page=100" \
-            --jq '[.artifacts[] | select(.expired == false and .workflow_run.head_branch == "main")][0].id // empty')
+          runs=$(gh api "repos/hikarucode1/shift-manager/actions/workflows/check-migrations.yml/runs?branch=main&status=completed&per_page=30" \
+            --jq '.workflow_runs[]
+              | select((.event == "push" or .event == "schedule" or .event == "workflow_dispatch")
+                       and .head_repository.full_name == "hikarucode1/shift-manager")
+              | .id')
+          id=""
+          for run in ${runs}; do
+            id=$(gh api "repos/hikarucode1/shift-manager/actions/runs/${run}/artifacts" \
+              --jq '[.artifacts[] | select(.name == "applied-migrations" and .expired == false)][0].id // empty')
+            if [ -n "${id}" ]; then break; fi
+          done
           if [ -z "${id}" ]; then
             msg="main の適用済みの一覧 (artifact applied-migrations) がありません。Actions → migration guard → Run workflow (main) で一度回してから、この job を Re-run してください"
             echo "**${msg}**" >> "$GITHUB_STEP_SUMMARY"
@@ -201,7 +215,7 @@ jobs:
             exit 1
           fi
           mkdir -p "${RUNNER_TEMP}/applied"
-          gh api "repos/${GITHUB_REPOSITORY}/actions/artifacts/${id}/zip" > "${RUNNER_TEMP}/applied.zip"
+          gh api "repos/hikarucode1/shift-manager/actions/artifacts/${id}/zip" > "${RUNNER_TEMP}/applied.zip"
           unzip -o -q "${RUNNER_TEMP}/applied.zip" -d "${RUNNER_TEMP}/applied"
 
       - name: Compare

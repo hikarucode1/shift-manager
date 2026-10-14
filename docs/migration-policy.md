@@ -104,8 +104,9 @@ staging が無いため、**migration は本番に直接適用される**。破�
     古いコードが書く行で落ちる。先に「既定値つき (または NULL 可) で足す migration と、
     その列を正しく書くコード」を出し、全行が満たしたあとで、制約を締める migration を
     別の PR にする
-- PR が migration を変えていないのに赤いときは、main の migration が本番に未適用か、本番の
-  migration テーブルを読めないなど、main か本番の側の問題 (job の Summary にそう出る)
+- PR が migration を変えていないのに赤いときは、main の migration が本番に未適用 (job の
+  Summary に「main 側」と出る)。比べる一覧が 30 時間より古いと警告が出る — main の
+  production job が本番を読めずに失敗し続けている可能性がある (PR の job は本番を読まない)
 - PR の確認は本番に接続しない (下の「PR の migration guard の仕組み」)
 - **migration は journal の順 (`when` の小さい順) に流す。** drizzle は「本番の
   `max(created_at)` より `when` が小さい migration は適用済み」とみなす。migration を含む
@@ -238,8 +239,8 @@ WHERE tp.date < p.start_date OR tp.date > p.end_date;
 **マージ⇔適用の順序**: `.github/workflows/check-migrations.yml` (#204) は `push: main` と
 毎朝 06:00 JST に走る。0033 を main にマージした時点で journal=0033 / 本番=0032 となり、
 **本番へ適用するまで migration guard は赤のまま**になる (それが期待動作)。
-PR の CI が green なのはこの workflow が `pull_request` では動かないためで、
-「CI green = 適用済み」ではない。
+(この節は #307 より前の記述。#307 以降は PR でも `check:migrations (pr)` が動き、未適用の
+migration を含む PR はマージの前に赤くなる。上の「PR の migration guard の仕組み」)
 
 
 ### ⚠️ 0027 の安全前提の誤り (#165 監査で判明)
