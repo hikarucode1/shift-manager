@@ -24,11 +24,17 @@
  */
 
 import { createHash } from "node:crypto";
-import { readFileSync } from "node:fs";
+import { lstatSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import postgres from "postgres";
 
 type JournalEntry = { idx: number; tag: string; when: number };
+
+// 終了コード (#307)。原因を分けておく (workflow は分岐に使っていないが、ログを
+// 読むときに「未適用」と「読めない」「想定外」を取り違えないため)
+const EXIT_PENDING = 1; // 未適用の migration がある
+const EXIT_CANNOT_READ = 2; // 本番の migration テーブルを読めない (接続・権限)
+const EXIT_BAD_JOURNAL = 3; // journal や .sql が想定外の形、ほか想定外のエラー
 
 const url =
   process.argv[2] || process.env.DIRECT_URL?.trim() || process.env.DATABASE_URL;
@@ -38,13 +44,43 @@ if (!url || url.includes("<project-ref>")) {
     "✗ 実 DATABASE_URL / DIRECT_URL が必要です (プレースホルダー不可)。\n" +
       "  Supabase ダッシュボード > Connect > Direct/Session pooler の接続文字列を使用",
   );
-  process.exit(1);
+  process.exit(EXIT_CANNOT_READ);
 }
+
+// migration のファイル名の形 (drizzle-kit が付ける `0037_absence_close_kind`。
+// `--name` にはハイフンや大文字も使える)。PR 用の `check-migrations-pr.mjs` と揃える
+const TAG_PATTERN = /^\d{4}_[A-Za-z0-9_-]+$/;
 
 function journalEntries(): JournalEntry[] {
   const j = JSON.parse(
     readFileSync(join("drizzle", "meta", "_journal.json"), "utf8"),
   ) as { entries: JournalEntry[] };
+  const bad = j.entries.filter(
+    (e) => !TAG_PATTERN.test(e.tag) || !Number.isSafeInteger(e.when),
+  );
+  if (bad.length > 0) {
+    console.error(
+      `✗ journal の migration 名か時刻が想定外の形です: ${bad
+        .map((e) => JSON.stringify(e.tag))
+        .join(", ")}`,
+    );
+    process.exit(EXIT_BAD_JOURNAL);
+  }
+  // journal にあるのに .sql が無い (または通常のファイルでない) なら、DB に繋ぐ前に
+  // 断る (hashOf が途中で落ちて接続が開いたままになるのを防ぐ)
+  const missing = j.entries.filter((e) => {
+    try {
+      return !lstatSync(join("drizzle", `${e.tag}.sql`)).isFile();
+    } catch {
+      return true;
+    }
+  });
+  if (missing.length > 0) {
+    console.error(
+      `✗ journal にあるのに .sql が無い (通常のファイルでない) migration: ${missing.map((e) => e.tag).join(", ")}`,
+    );
+    process.exit(EXIT_BAD_JOURNAL);
+  }
   return [...j.entries].sort((a, b) => a.when - b.when);
 }
 
@@ -65,7 +101,25 @@ async function main() {
   } catch (e) {
     console.error(`✗ 本番の migration テーブルを読めません: ${(e as Error).message}`);
     await sql.end().catch(() => {});
-    process.exit(1);
+    process.exit(EXIT_CANNOT_READ);
+  }
+
+  // PR の確認 (`check-migrations-pr.mjs`) が本番に接続せずに比べられるよう、
+  // 適用済みの一覧を書き出す (#307)。hash と created_at だけで、秘密は含まない。
+  // workflow が artifact `applied-migrations` として残す
+  const out = process.env.APPLIED_MIGRATIONS_OUT;
+  if (out) {
+    writeFileSync(
+      out,
+      JSON.stringify(
+        {
+          generatedAt: new Date().toISOString(),
+          rows: rows.map((r) => ({ hash: r.hash, created_at: String(r.created_at) })),
+        },
+        null,
+        2,
+      ),
+    );
   }
 
   const maxCreatedAt = rows.reduce((m, r) => Math.max(m, Number(r.created_at)), 0);
@@ -103,7 +157,11 @@ async function main() {
         .join("\n") +
       `\n\n  → docs/migration-policy.md の「migration ごとの適用方針」で破壊性を確認のうえ適用`,
   );
-  process.exit(1);
+  process.exit(EXIT_PENDING);
 }
 
-main();
+main().catch((e) => {
+  // 想定外の例外は「未適用」(1) と区別する
+  console.error(`✗ 想定外のエラー: ${(e as Error)?.message ?? e}`);
+  process.exit(EXIT_BAD_JOURNAL);
+});
