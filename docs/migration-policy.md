@@ -84,8 +84,51 @@ staging が無いため、**migration は本番に直接適用される**。破�
 > 手動で回して「全 38 本適用済み」を確認。反映の手順は
 > `docs/runbooks/absence-close-kind.md`。
 >
-> **0038 (#293) は未適用。** 0037 の後、**コード deploy より先に適用（必須）**。
-> 手順は `docs/runbooks/swap-close-kind.md` (0037 と同じ順番)。
+> **0038 (#293) は 2026-10-12 に適用済 (recorded=39)。** 手順どおり先に流してから
+> PR #306 をマージした。手順は `docs/runbooks/swap-close-kind.md`。
+
+**PR でも `migration guard` が動く (#307、2026-10-13〜)。** migration を含む PR は、本番に
+流すまで `check:migrations (pr)` が赤くなる。本番に流したら main の production を手動で回して
+一覧を更新し、PR の job を Re-run して緑にしてマージする (0037 を流す前に PR #304 をマージ
+して欠勤の画面を落とした再発防止)。
+
+- **本番に流すのは、レビューが済んで migration が確定してから。** 流した後に migration を
+  作り直すと、記録の hash と `created_at` (journal の `when`) がずれて、下の「direct SQL +
+  tracking reconcile」で手で合わせる必要がある
+- **今動いているコードを壊す migration は、コードと別の PR にして順番を守る** (expand /
+  contract)。1 つの PR にまとめると、guard を緑にするために先に流した時点で、まだ古い
+  コードが動いている本番が落ちる
+  - 列を消す・名前を変える: 先に「古い列を使わなくなる」コードの PR をマージして本番に
+    反映し、そのあと migration だけの PR を出す
+  - 既定値の無い NOT NULL 列の追加・新しい CHECK / UNIQUE 制約・enum の値を減らす変更:
+    古いコードが書く行で落ちる。先に「既定値つき (または NULL 可) で足す migration と、
+    その列を正しく書くコード」を出し、全行が満たしたあとで、制約を締める migration を
+    別の PR にする
+- PR が migration を変えていないのに赤いときは、main の migration が本番に未適用 (job の
+  Summary に「main 側」と出る)。比べる一覧が 30 時間より古いと警告が出る — main の
+  production job が本番を読めずに失敗し続けている可能性がある (PR の job は本番を読まない)
+- PR の確認は本番に接続しない (下の「PR の migration guard の仕組み」)
+- **migration は journal の順 (`when` の小さい順) に流す。** drizzle は「本番の
+  `max(created_at)` より `when` が小さい migration は適用済み」とみなす。migration を含む
+  PR が 2 本同時に開いていて、後から作った方 (`when` が大きい) を先に流すと、先に作った方は
+  `drizzle-kit migrate` で黙って飛ばされる。後から来た PR の `when` が本番の最大より小さく
+  なったら、main に載せ直して migration を作り直す
+
+### PR の migration guard の仕組み (#307)
+
+**このリポジトリは公開 (public)** で、PR の確認は fork からの PR でも動く。PR から本番に
+接続する作りは、接続情報の漏れや接続の連打を防ぎきれなかったので、PR の確認は
+**本番にも秘密の情報にも触れない**:
+
+- `check:migrations (production)` (main の push・毎朝・手動) が本番を読み、適用済みの一覧
+  (hash と created_at だけ) を artifact `applied-migrations` に残す
+- `check:migrations (pr)` は、PR の journal をその一覧と比べるだけ
+  (`scripts/check-migrations-pr.mjs`。main の workflow とスクリプトで動き、PR からは
+  `drizzle/` をデータとして読むだけ)
+
+**本番に migration を流したら**、PR を Re-run する前に、Actions → migration guard →
+**Run workflow (main)** で production を回して一覧を更新する。そうしないと、PR は古い
+一覧と比べて赤いまま。
 
 **⚠️ 「任意」と書かれた migration は自動では流れない** — 2026-07-30 の監査で、本番が
 **0028 までしか適用されていない**ことが判明した (recorded=29)。`notifications` テーブルと
@@ -97,6 +140,7 @@ staging が無いため、**migration は本番に直接適用される**。破�
 **2026-08-20: この確認を自動化した (#204)** — `.github/workflows/check-migrations.yml` が
 main への push 時と毎朝 06:00 JST に `check:migrations` を回す。人手の運用ルールに
 頼らないための多重防御。**secret `PROD_DATABASE_URL` が未設定だと workflow は落ちる**
+(使うのは main の production job だけ。PR の job には渡さない)
 (skip にすると「監視しているつもりで何も見ていない」状態が静かに続き、防ぎたい事故と
 同じ形になるため)。値は **ダッシュボード上部の緑の Connect ボタン** > Transaction pooler
 (6543) の URI (⚠️ Settings 配下ではない。2026-08 時点の UI では左ナビに Database の項目は
@@ -195,8 +239,8 @@ WHERE tp.date < p.start_date OR tp.date > p.end_date;
 **マージ⇔適用の順序**: `.github/workflows/check-migrations.yml` (#204) は `push: main` と
 毎朝 06:00 JST に走る。0033 を main にマージした時点で journal=0033 / 本番=0032 となり、
 **本番へ適用するまで migration guard は赤のまま**になる (それが期待動作)。
-PR の CI が green なのはこの workflow が `pull_request` では動かないためで、
-「CI green = 適用済み」ではない。
+(この節は #307 より前の記述。#307 以降は PR でも `check:migrations (pr)` が動き、未適用の
+migration を含む PR はマージの前に赤くなる。上の「PR の migration guard の仕組み」)
 
 
 ### ⚠️ 0027 の安全前提の誤り (#165 監査で判明)
@@ -276,5 +320,7 @@ export が残っていると、誤って `db.select().from(...)` を書くと型
 - `scripts/check-migrations.ts` — journal と本番の `drizzle.__drizzle_migrations` を
   比較して**未適用 migration を列挙**する read-only チェック
   (`DATABASE_URL='...' npm run check:migrations`)。migrate と違い通常のクエリなので
-  **pooler 経由でも動く**。機能 PR のマージ後・deploy 前に実行する
+  **pooler 経由でも動く**。migration を含む PR は**マージの前**に、本番に流してから
+  確かめる (#307 以降は PR の `migration guard` が自動で回す)。Vercel はマージで
+  すぐ deploy するので、「マージ後・deploy 前」の窓は無い
 - Issue #85 (2) — 本ドキュメントの起点

@@ -4,43 +4,66 @@
 # 通知機能が 9 日間動いていなかった。人手の「マージしたら適用状況を確認する」
 # 運用では取りこぼすので、ここで自動化する。
 #
-# ⚠️ pull_request では動かさない。fork からの PR に secret を渡さないため。
+# 2026-10-12: migration 0037 を本番に流す前に PR #304 をマージし、欠勤の画面が
+# 落ちた。push / schedule だけだと**マージの後**にしか気づけないので、PR でも
+# 確かめてマージの前に止める (#307)。
+#
+# job は 2 つ:
+#   - production: main (push / 毎朝 / 手動) で本番を読む。外部の PR からは動かない。
+#     読んだついでに「適用済みの一覧」(hash と created_at だけ。秘密は含まない) を
+#     artifact `applied-migrations` に残す
+#   - pr: PR の journal を、その一覧と比べるだけ。**本番にも秘密の情報にも触れない**。
+#
+# ⚠️ **このリポジトリは公開 (public)。** PR の確認は fork からの PR でも動く。PR から
+# 本番に接続する作りは、接続情報の漏れや接続の連打を防ぎきれなかった (#307 の
+# レビュー) ので、PR の job には secret を渡さない。`pull_request_target` で **main の**
+# workflow とスクリプトを使い (PR が workflow を書き換えて通すのを防ぐ)、PR からは
+# drizzle/ を**データとして**取り出すだけにする。
+#
+# 本番に migration を流したら、production を手動で回して (Actions → migration guard →
+# Run workflow) 一覧を更新してから、PR の check:migrations (pr) を Re-run する。
+#
+# ⚠️ pull_request_target は main の workflow で動くので、この workflow の変更は main に
+# マージされてから PR に効く。
 name: migration guard
 
 on:
+  pull_request_target:
+    branches: [main]
+    # base を main に変えたとき (edited) も動かす (ci.yml の #90 と同じ)。
+    # ⚠️ タイトル・本文の編集でも飛ばさずに確かめる。job を skip すると required
+    # check では「通った」扱いになり、赤い PR を編集で通せてしまう
+    types: [opened, synchronize, reopened, edited]
   # 機能 PR をマージした直後に気づけるようにする (7/30 の事故がこの形)
   push:
     branches: [main]
-  # 適用漏れが「静かに」残り続けないよう毎朝も見る (06:00 JST = 21:00 UTC)
+  # 適用漏れが「静かに」残り続けないよう毎朝も見る (06:00 JST = 21:00 UTC)。
+  # PR が比べる一覧もこれで毎日新しくなる
   schedule:
     - cron: "0 21 * * *"
   workflow_dispatch:
 
-concurrency:
-  group: migration-guard
-  cancel-in-progress: false
+permissions:
+  contents: read
 
 jobs:
-  check:
+  production:
     name: check:migrations (production)
     runs-on: ubuntu-latest
-    # fork でスケジュール実行や push が走っても意味が無いので上流限定
-    if: github.repository == 'hikarucode1/shift-manager'
+    # 本番への問い合わせが固まったとき、既定の 6 時間待たされるのを防ぐ
+    timeout-minutes: 10
+    # 上流の main だけ (PR からは動かさない。secret を使うのはこの job だけ)
+    if: >-
+      github.repository == 'hikarucode1/shift-manager' &&
+      github.event_name != 'pull_request_target'
+    concurrency:
+      group: migration-guard-production
+      cancel-in-progress: false
     steps:
-      - uses: actions/checkout@v4
-
-      - name: Setup Node
-        uses: actions/setup-node@v4
-        with:
-          node-version: 22
-          cache: npm
-
-      - name: Install dependencies
-        run: npm ci
-
       - name: Require PROD_DATABASE_URL
         # 未設定なら **落とす**。skip にすると「監視しているつもりで何も見ていない」
         # 状態が静かに続き、この workflow が防ごうとしている事故と同じ形になる。
+        # 依存を入れる前に確かめる (設定漏れに早く気づくため)
         env:
           PROD_DATABASE_URL: ${{ secrets.PROD_DATABASE_URL }}
         run: |
@@ -59,10 +82,25 @@ jobs:
             exit 1
           fi
 
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
       - name: Check applied migrations
         env:
           # check-migrations は DIRECT_URL → DATABASE_URL の順に見る (SELECT のみ)
           DATABASE_URL: ${{ secrets.PROD_DATABASE_URL }}
+          # PR の確認が比べる「適用済みの一覧」を書き出す (#307)
+          APPLIED_MIGRATIONS_OUT: applied-migrations.json
         run: |
           # 既定シェルは bash -e なので、失敗時に閉じ ``` まで到達するよう外す
           set +e
@@ -73,6 +111,126 @@ jobs:
             echo '```'
           } >> "$GITHUB_STEP_SUMMARY"
           npm run check:migrations 2>&1 | tee -a "$GITHUB_STEP_SUMMARY"
+          status=$?
+          set -e
+          echo '```' >> "$GITHUB_STEP_SUMMARY"
+          exit $status
+
+      - name: Keep the applied list for PR checks
+        # 未適用があって上が失敗しても、本番を読めていれば一覧は正しいので残す
+        if: always() && hashFiles('applied-migrations.json') != ''
+        uses: actions/upload-artifact@v4
+        with:
+          name: applied-migrations
+          path: applied-migrations.json
+          retention-days: 90
+
+  pr:
+    name: check:migrations (pr)
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    if: >-
+      github.repository == 'hikarucode1/shift-manager' &&
+      github.event_name == 'pull_request_target'
+    # secret は使わない。artifact と PR のファイル一覧を読むための token だけ
+    permissions:
+      contents: read
+      actions: read
+      pull-requests: read
+    # PR と commit の組で分ける (PR 番号だけだと、編集で走った実行が新しい commit の
+    # 確認を押し出して取り消しうる)
+    concurrency:
+      group: migration-guard-pr-${{ github.event.pull_request.number }}-${{ github.event.pull_request.head.sha }}
+      cancel-in-progress: false
+    steps:
+      # pull_request_target でも、ここで取るのは **main** (base) のコード
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - name: Take migrations from the PR (data only)
+        env:
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+        # ⚠️ PR のファイルは drizzle/ だけを取り出し、何も実行しない。
+        # 取り出すのは確定した commit (head.sha)
+        run: |
+          set -euo pipefail
+          # 公開リポジトリなので認証なしで取れる
+          git fetch --no-tags --depth=1 origin "pull/${PR_NUMBER}/head" "${HEAD_SHA}"
+          if ! git cat-file -e "${HEAD_SHA}:drizzle" 2>/dev/null; then
+            msg="この PR には drizzle/ がありません。migration の置き場所を変える場合は、この workflow も合わせて直してください"
+            echo "**${msg}**" >> "$GITHUB_STEP_SUMMARY"
+            echo "::error::${msg}"
+            exit 1
+          fi
+          # 通常のファイル (100644 / 100755) 以外 (シンボリックリンク 120000、
+          # サブモジュール 160000) があれば断る
+          bad=$(git ls-tree -r "${HEAD_SHA}" -- drizzle | awk '$1 != "100644" && $1 != "100755"')
+          if [ -n "${bad}" ]; then
+            msg="この PR の drizzle/ に通常のファイル以外 (シンボリックリンクなど) があります"
+            echo "**${msg}**" >> "$GITHUB_STEP_SUMMARY"
+            echo "::error::${msg}"
+            exit 1
+          fi
+          rm -rf drizzle
+          git checkout "${HEAD_SHA}" -- drizzle
+
+      - name: List files changed by the PR
+        # この PR が足した migration と main 側の migration を分けて案内するため。
+        # 分岐点との差分は GitHub が出す (全履歴を取らずに済む)
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+        run: |
+          gh api --paginate "repos/${GITHUB_REPOSITORY}/pulls/${PR_NUMBER}/files" \
+            --jq '.[].filename' > "${RUNNER_TEMP}/changed-files.txt"
+
+      - name: Get the latest applied list from main
+        # production job が main で残した最新の一覧。
+        # ⚠️ artifact を名前で探さない (#307 のレビュー)。fork の PR は、fork 側の
+        # `main` ブランチから出され、ci.yml を書き換えて同じ名前の artifact を上げられる
+        # ので、名前とブランチ名だけで選ぶと偽の一覧を差し込める。**この workflow の、
+        # このリポジトリの main への push・毎朝・手動の実行**だけを新しい順に見て、
+        # そこから一覧を取る (fork の PR からはこれらの実行を起こせない)
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          runs=$(gh api "repos/hikarucode1/shift-manager/actions/workflows/check-migrations.yml/runs?branch=main&status=completed&per_page=30" \
+            --jq '.workflow_runs[]
+              | select((.event == "push" or .event == "schedule" or .event == "workflow_dispatch")
+                       and .head_repository.full_name == "hikarucode1/shift-manager")
+              | .id')
+          id=""
+          for run in ${runs}; do
+            id=$(gh api "repos/hikarucode1/shift-manager/actions/runs/${run}/artifacts" \
+              --jq '[.artifacts[] | select(.name == "applied-migrations" and .expired == false)][0].id // empty')
+            if [ -n "${id}" ]; then break; fi
+          done
+          if [ -z "${id}" ]; then
+            msg="main の適用済みの一覧 (artifact applied-migrations) がありません。Actions → migration guard → Run workflow (main) で一度回してから、この job を Re-run してください"
+            echo "**${msg}**" >> "$GITHUB_STEP_SUMMARY"
+            echo "::error::${msg}"
+            exit 1
+          fi
+          mkdir -p "${RUNNER_TEMP}/applied"
+          gh api "repos/hikarucode1/shift-manager/actions/artifacts/${id}/zip" > "${RUNNER_TEMP}/applied.zip"
+          unzip -o -q "${RUNNER_TEMP}/applied.zip" -d "${RUNNER_TEMP}/applied"
+
+      - name: Compare
+        run: |
+          set +e
+          set -o pipefail
+          {
+            echo "### check:migrations (pr)"
+            echo ""
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+          # 依存パッケージを使わないスクリプト (npm ci は要らない)
+          node scripts/check-migrations-pr.mjs \
+            "${RUNNER_TEMP}/applied/applied-migrations.json" \
+            "${RUNNER_TEMP}/changed-files.txt" 2>&1 | tee -a "$GITHUB_STEP_SUMMARY"
           status=$?
           set -e
           echo '```' >> "$GITHUB_STEP_SUMMARY"

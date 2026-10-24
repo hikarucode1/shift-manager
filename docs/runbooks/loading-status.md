@@ -52,7 +52,7 @@
 - ⚠️ **3・4 行目の挙動は、セッションの cookie があるリクエストだけ**。cookie が無いと、auth-js は認証 API を呼ばずに「未ログイン」を返すので、middleware は障害に関係なく /login へ 307 し、ログイン画面は正常に出る。**cookie なしで画面を叩く確認では、認証 API の障害は見えない**
 - SystemUnavailable の文言「画面を表示できませんでした。」は、error.tsx (page の失敗) と、`/` `/login` `/auth/confirm` `/auth/set-password` でも出る (`grep -rl SystemUnavailable src/app` で確認)。**文言では、どの層の失敗か区別できない**
 - **画面を叩いてステータスや文言を見る監視では、障害を区別できない**。200 になる障害は正常と区別できず、307 になる障害もあり、cookie の有無でも変わる。死活は画面ではなく専用のエンドポイントで見る。#275 は今のところ DB の確認 (`select 1` → 503) が対象で、認証 API まで見るかは未定。認証 API の停止は、#275 が DB だけを見る形だと検知できない
-- migration の未適用は `.github/workflows/check-migrations.yml` (#204 / #206。main への push と毎日の cron) が見ている
+- migration の未適用は `.github/workflows/check-migrations.yml` (#204 / #206 / #307) が見ている。main への push・毎日の cron で本番を読み、PR では本番に接続せずに、適用済みの一覧と PR の migration を比べる (未適用の migration を含む PR を、マージの前に止める)
 
 ## 4. 配下でステータス (404 / 3xx / 403) が要るときの選択肢
 
