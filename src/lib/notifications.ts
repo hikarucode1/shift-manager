@@ -151,7 +151,11 @@ export async function getNotificationHealth(
   const rows = await db
     .select({
       recentCount: sql<number>`count(*) filter (where ${notifications.createdAt} >= ${since.toISOString()})::int`,
-      latestAt: sql<Date | null>`max(${notifications.createdAt})`,
+      // ⚠️ 手書きの式は列の変換を通らず、文字列のまま返る (#315)。列と同じ変換を
+      // 指定して Date にする
+      latestAt: sql`max(${notifications.createdAt})`.mapWith(
+        notifications.createdAt,
+      ),
       dedupKeyProbe: sql<number>`count(${notifications.dedupKey})::int`,
       typeProbe: sql<number>`count(*) filter (where ${notifications.type} = any(array[${typeProbe}]))::int`,
     })
