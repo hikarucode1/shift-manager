@@ -83,6 +83,10 @@ export async function getRequestLog(opts: {
     isSlotPast(date, meta.get(n)?.end ?? "");
   const today = jstToday();
 
+  // ⚠️ 下の 2 つは列ではなく手書きの式なので、`since` は ISO 文字列にして比べる
+  // (#313)。drizzle の postgres-js ドライバは timestamp の serializer を外しており、
+  // Date をそのまま渡すと送信時に ERR_INVALID_ARG_TYPE で落ちる
+  const sinceParam = since?.toISOString();
   const absenceOccurred = sql`coalesce(${absenceRequests.decidedAt}, ${absenceRequests.updatedAt})`;
   const swapOccurred = sql`coalesce(${swapRequests.decidedAt}, ${swapRequests.updatedAt})`;
 
@@ -121,7 +125,7 @@ export async function getRequestLog(opts: {
           .where(
             and(
               inArray(absenceRequests.status, states),
-              since ? gte(absenceOccurred, since) : undefined,
+              sinceParam ? gte(absenceOccurred, sinceParam) : undefined,
             ),
           )
           .orderBy(desc(absenceOccurred), asc(absenceRequests.id))
@@ -156,7 +160,7 @@ export async function getRequestLog(opts: {
           .where(
             and(
               inArray(swapRequests.status, states),
-              since ? gte(swapOccurred, since) : undefined,
+              sinceParam ? gte(swapOccurred, sinceParam) : undefined,
             ),
           )
           .orderBy(desc(swapOccurred), asc(swapRequests.id))
