@@ -145,9 +145,12 @@ export async function getNotificationHealth(
     sql`, `,
   );
 
+  // ⚠️ `since` は ISO 文字列にして渡す (#313)。drizzle の postgres-js ドライバは
+  // timestamp の serializer を外しており、列と比べるときだけ列の側で文字列にする。
+  // 手書きの sql`` に Date をそのまま入れると、送信時に ERR_INVALID_ARG_TYPE で落ちる
   const rows = await db
     .select({
-      recentCount: sql<number>`count(*) filter (where ${notifications.createdAt} >= ${since})::int`,
+      recentCount: sql<number>`count(*) filter (where ${notifications.createdAt} >= ${since.toISOString()})::int`,
       latestAt: sql<Date | null>`max(${notifications.createdAt})`,
       dedupKeyProbe: sql<number>`count(${notifications.dedupKey})::int`,
       typeProbe: sql<number>`count(*) filter (where ${notifications.type} = any(array[${typeProbe}]))::int`,
