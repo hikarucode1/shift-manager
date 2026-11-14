@@ -11,7 +11,8 @@ export const config = {
      * Match all request paths except:
      * - _next/static | _next/image | favicon.ico
      * - any file with an extension (svg, png, jpg, ...)
+     * - api/health (#275: 監視が認証なしで叩く。毎回認証 API を呼ばないためにも外す)
      */
-    "/((?!_next/static|_next/image|favicon.ico|.*\\.(?:svg|png|jpg|jpeg|gif|webp)$).*)",
+    "/((?!_next/static|_next/image|favicon.ico|api/health$|.*\\.(?:svg|png|jpg|jpeg|gif|webp)$).*)",
   ],
 };
