@@ -14,6 +14,7 @@ import { lastDayOfMonth } from "@/lib/shift-period";
 import { jstMonthStart } from "@/lib/week";
 import { AdminPeriodsNav } from "@/components/admin-section-nav";
 import { AdminSubmissionsOverview } from "./submissions-overview";
+import { parseStoredPreferredStudents } from "@/lib/preferred-students";
 
 /** "2026-07-01" → "2026-08-01" (翌月の 1 日)。target_month の範囲フィルタ用 */
 function nextMonthIso(monthIso: string): string {
@@ -102,6 +103,7 @@ export default async function AdminFixedShiftsOverviewPage({
           desiredDays: fixedShiftSubmissions.desiredDays,
           desiredSlots: fixedShiftSubmissions.desiredSlots,
           note: fixedShiftSubmissions.note,
+          preferredStudents: fixedShiftSubmissions.preferredStudents,
           status: fixedShiftSubmissions.status,
           submittedAt: fixedShiftSubmissions.submittedAt,
           lastStatusChangedAt: fixedShiftSubmissions.lastStatusChangedAt,
@@ -195,6 +197,9 @@ export default async function AdminFixedShiftsOverviewPage({
             desiredDays: sub.desiredDays,
             desiredSlots: sub.desiredSlots,
             note: sub.note,
+            preferredStudents: parseStoredPreferredStudents(
+              sub.preferredStudents,
+            ),
             status: sub.status,
             submittedAt: sub.submittedAt ? sub.submittedAt.toISOString() : null,
             lastStatusChangedAt: sub.lastStatusChangedAt

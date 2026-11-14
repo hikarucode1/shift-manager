@@ -274,6 +274,13 @@
       "when": 1791793528824,
       "tag": "0038_swap_close_kind",
       "breakpoints": true
+    },
+    {
+      "idx": 39,
+      "version": "7",
+      "when": 1794645670839,
+      "tag": "0039_fixed_shift_preferred_students",
+      "breakpoints": true
     }
   ]
 }

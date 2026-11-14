@@ -23,6 +23,10 @@ import {
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { cn } from "@/lib/utils";
 import { deadlineLabel } from "@/lib/deadline";
+import {
+  parseStoredPreferredStudents,
+  type PreferredStudent,
+} from "@/lib/preferred-students";
 
 export default async function FixedShiftPage() {
   const { profile } = await requireRole("tutor");
@@ -113,6 +117,7 @@ export default async function FixedShiftPage() {
         desiredDays: fixedShiftSubmissions.desiredDays,
         desiredSlots: fixedShiftSubmissions.desiredSlots,
         note: fixedShiftSubmissions.note,
+        preferredStudents: fixedShiftSubmissions.preferredStudents,
         status: fixedShiftSubmissions.status,
         submittedAt: fixedShiftSubmissions.submittedAt,
       })
@@ -222,6 +227,7 @@ export default async function FixedShiftPage() {
     entries: typeof currentEntries;
     desiredDays: number | null;
     desiredSlots: number | null;
+    preferredStudents: PreferredStudent[];
     sourceFrom: string;
   } | null = null;
   const currentDataExists = hasCurrentPeriodData({
@@ -237,6 +243,7 @@ export default async function FixedShiftPage() {
           effectiveTo: fixedShiftSubmissions.effectiveTo,
           desiredDays: fixedShiftSubmissions.desiredDays,
           desiredSlots: fixedShiftSubmissions.desiredSlots,
+          preferredStudents: fixedShiftSubmissions.preferredStudents,
         })
         .from(fixedShiftSubmissions)
         .where(
@@ -277,6 +284,11 @@ export default async function FixedShiftPage() {
           entries,
           desiredDays: source.desiredDays,
           desiredSlots: source.desiredSlots,
+          // #319: 担当は期をまたいで続くことが多いので引き継ぐ
+          preferredStudents: parseStoredPreferredStudents(
+            prevSubs.find((p) => p.effectiveFrom === source.effectiveFrom)
+              ?.preferredStudents,
+          ),
           sourceFrom: source.effectiveFrom,
         };
       }
@@ -291,6 +303,10 @@ export default async function FixedShiftPage() {
     desiredDays: submissionRow?.desiredDays ?? prefill?.desiredDays ?? null,
     desiredSlots: submissionRow?.desiredSlots ?? prefill?.desiredSlots ?? null,
     note: submissionRow?.note ?? null,
+    // #319: 当期の行があればそれ (空でも本人が消した結果なので前期で埋めない)
+    preferredStudents: submissionRow
+      ? parseStoredPreferredStudents(submissionRow.preferredStudents)
+      : (prefill?.preferredStudents ?? []),
     status: isPastDeadline ? "frozen" : dbStatus,
     submittedAt: submissionRow?.submittedAt
       ? submissionRow.submittedAt.toISOString()
@@ -413,6 +429,7 @@ export default async function FixedShiftPage() {
             initialMeta={initialMeta}
             periodLocked={activePeriod != null}
             periodLabel={activePeriod?.label ?? null}
+            periodEndDate={activePeriod?.endDate ?? null}
           />
         </CardContent>
       </Card>
