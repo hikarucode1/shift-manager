@@ -2,7 +2,14 @@
 
 import { useEffect, useMemo, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
-import { AlertCircle, KeyRound, Mail, UserPlus, X } from "lucide-react";
+import {
+  AlertCircle,
+  CheckCircle2,
+  KeyRound,
+  Mail,
+  UserPlus,
+  X,
+} from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -68,6 +75,17 @@ export function TutorManager({
     type: "ok" | "error";
     text: string;
   } | null>(null);
+  /**
+   * 行の中のボタン (招待の再送・パスワード再設定) の結果 (#312)。
+   * 上の notice は一覧の上端にあり、下の方の行で押すと画面の外に出て見えない
+   * まま消えていた。押した行の中に出し、自動では消さない。行を開き直すか、
+   * 別の操作をすると消える
+   */
+  const [rowNotice, setRowNotice] = useState<{
+    tutorId: string;
+    type: "ok" | "error";
+    text: string;
+  } | null>(null);
 
   // ツールバー
   const [search, setSearch] = useState("");
@@ -114,23 +132,35 @@ export function TutorManager({
     fn: () => Promise<{ ok: boolean; error?: string }>,
     okMsg: string,
     onSuccess?: () => void,
-    /**
-     * 成功したら画面を読み直すか。招待の再送とパスワード再設定メールは
-     * 講師の状態を何も変えないので false にする。読み直すと認証 API から
-     * ユーザーを全件読み直すことになる (#271)
-     */
-    refreshOnSuccess = true,
+    {
+      refreshOnSuccess = true,
+      rowId,
+    }: {
+      /**
+       * 成功したら画面を読み直すか。招待の再送とパスワード再設定メールは
+       * 講師の状態を何も変えないので false にする。読み直すと認証 API から
+       * ユーザーを全件読み直すことになる (#271)
+       */
+      refreshOnSuccess?: boolean;
+      /** 結果を上ではなく、この講師の行の中に出す (#312) */
+      rowId?: string;
+    } = {},
   ) {
     setNotice(null);
+    setRowNotice(null);
+    const show = (type: "ok" | "error", text: string) =>
+      rowId
+        ? setRowNotice({ tutorId: rowId, type, text })
+        : setNotice({ type, text });
     startTransition(async () => {
       const res = await fn().catch(toFailedResult);
       if (res.ok) {
-        setNotice({ type: "ok", text: okMsg });
+        show("ok", okMsg);
         onSuccess?.();
         if (refreshOnSuccess) router.refresh();
       } else {
         // 失敗時は入力状態を保持し、エラーだけ表示
-        setNotice({ type: "error", text: res.error ?? "失敗しました。" });
+        show("error", res.error ?? "失敗しました。");
         // #202: reject 由来は「書いたか不明」なのでサーバーから読み直す。
         // #300: 画面の状態が古いと分かって断られたときも読み直す (受け取り済み
         // なのに「招待中」のままだと、エラーの案内どおりに操作できない)
@@ -159,6 +189,9 @@ export function TutorManager({
 
   function startEdit(t: TutorRow) {
     setEditingId(t.id);
+    // 別の行を開いたら消す。同じ行を開き直したときは残す (送信中に別の行へ
+    // 移ってから戻ると、届いた結果を見られないまま消してしまうため)
+    setRowNotice((cur) => (cur?.tutorId === t.id ? cur : null));
     setEditName(t.displayName);
     setLinkEmail("");
   }
@@ -467,7 +500,7 @@ export function TutorManager({
                                       () => resendInvite({ profileId: t.id }),
                                       "招待メールを再送しました。前に送ったリンクは使えなくなります。",
                                       undefined,
-                                      false,
+                                      { refreshOnSuccess: false, rowId: t.id },
                                     )
                                   }
                                 >
@@ -494,7 +527,7 @@ export function TutorManager({
                                       () => sendPasswordReset({ profileId: t.id }),
                                       "パスワード再設定メールを送りました。",
                                       undefined,
-                                      false,
+                                      { refreshOnSuccess: false, rowId: t.id },
                                     )
                                   }
                                 >
@@ -507,6 +540,26 @@ export function TutorManager({
                                     : "招待を受け取り済みの講師にだけ送信されます。"}
                                 </span>
                               </div>
+                            )}
+                            {/* 再送・再設定の結果 (#312)。失敗のあと読み直しで
+                                ボタン自体が消えても残るよう、ボタンの外に置く */}
+                            {rowNotice?.tutorId === t.id && (
+                              <p
+                                role="status"
+                                className={cn(
+                                  "flex items-center gap-1 text-sm",
+                                  rowNotice.type === "ok"
+                                    ? "text-primary"
+                                    : "text-destructive",
+                                )}
+                              >
+                                {rowNotice.type === "ok" ? (
+                                  <CheckCircle2 className="size-4 shrink-0" />
+                                ) : (
+                                  <AlertCircle className="size-4 shrink-0" />
+                                )}
+                                {rowNotice.text}
+                              </p>
                             )}
                             <div className="flex items-center gap-2">
                               <Button
