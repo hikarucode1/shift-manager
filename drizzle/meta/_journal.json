@@ -281,6 +281,13 @@
       "when": 1794645670839,
       "tag": "0039_fixed_shift_preferred_students",
       "breakpoints": true
+    },
+    {
+      "idx": 40,
+      "version": "7",
+      "when": 1794647257952,
+      "tag": "0040_training_test_summer_ranges",
+      "breakpoints": true
     }
   ]
 }

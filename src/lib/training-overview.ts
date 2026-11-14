@@ -5,6 +5,7 @@ import {
   courseConfirmations,
   periods,
   profiles,
+  trainingPeriodNotes,
   trainingPreferences,
 } from "@/db/schema";
 import { getSlotMeta, slotNumbers } from "@/lib/slot-meta";
@@ -223,4 +224,47 @@ export async function getHeatmapData(
     submittedTutorCount: submitted.size,
     totalTutorCount: totalRow[0]?.c ?? 0,
   };
+}
+
+/** #319: 教室長の講習画面に出す、講師ごとの備考とテスト期間・夏休み */
+export type TrainingTutorNote = {
+  tutorId: string;
+  name: string;
+  note: string;
+  testFrom: string | null;
+  testTo: string | null;
+  summerFrom: string | null;
+  summerTo: string | null;
+};
+
+/**
+ * 講習期間の、何か書いてある講師だけを名前順に返す。備考はこれまで講師が
+ * 書けるだけで教室長の画面に出ていなかったので、テスト期間・夏休みと並べて出す
+ */
+export async function getTrainingTutorNotes(
+  periodId: string,
+): Promise<TrainingTutorNote[]> {
+  const rows = await db
+    .select({
+      tutorId: trainingPeriodNotes.tutorId,
+      name: profiles.displayName,
+      note: trainingPeriodNotes.note,
+      testFrom: trainingPeriodNotes.testFrom,
+      testTo: trainingPeriodNotes.testTo,
+      summerFrom: trainingPeriodNotes.summerFrom,
+      summerTo: trainingPeriodNotes.summerTo,
+    })
+    .from(trainingPeriodNotes)
+    .innerJoin(profiles, eq(profiles.id, trainingPeriodNotes.tutorId))
+    .where(
+      and(
+        eq(trainingPeriodNotes.periodId, periodId),
+        arrayContains(profiles.roles, ["tutor"]),
+        eq(profiles.isActive, true),
+      ),
+    )
+    .orderBy(asc(profiles.displayName));
+  return rows.filter(
+    (r) => r.note.trim() !== "" || r.testFrom !== null || r.summerFrom !== null,
+  );
 }

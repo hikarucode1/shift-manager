@@ -17,7 +17,15 @@ import { isIndeterminate, toFailedResult } from "@/lib/action-failure";
 import { cn } from "@/lib/utils";
 import { shortDate } from "@/lib/week";
 import {
+  checkDateRange,
+  TRAINING_RANGE_LABEL,
+  type DateRange,
+  type TrainingRangeKind,
+} from "@/lib/training-ranges";
+import { Input } from "@/components/ui/input";
+import {
   saveTrainingNote,
+  saveTrainingRange,
   setTrainingSlot,
   setTrainingSlotsBulk,
 } from "./actions";
@@ -54,6 +62,7 @@ export type TrainingEditorProps = {
     days: Day[];
     selected: string[];
     note: string;
+    ranges: Record<TrainingRangeKind, DateRange>;
   };
 };
 
@@ -227,6 +236,41 @@ export function TrainingEditor({ data }: TrainingEditorProps) {
     noteTimer.current = setTimeout(() => void flushNote(), 800);
   }
 
+  // #319: テスト期間 / 夏休み。開始・終了がそろった (または両方消した) ときに保存する
+  const [ranges, setRanges] = useState(data.ranges);
+  const savedRanges = useRef(data.ranges);
+
+  // 保存は 1 本ずつ順に投げる。日付欄は年を打つ途中でも change が起きるため、
+  // 並べて投げると古い値の保存があとから着いて上書きしうる
+  const rangeQueue = useRef<Promise<void>>(Promise.resolve());
+
+  function onRangeChange(kind: TrainingRangeKind, patch: Partial<DateRange>) {
+    const next = { ...ranges[kind], ...patch };
+    setRanges((prev) => ({ ...prev, [kind]: next }));
+    if (!editable || !checkDateRange(next).ok) return;
+    rangeQueue.current = rangeQueue.current.then(() => saveRange(kind, next));
+  }
+
+  async function saveRange(kind: TrainingRangeKind, next: DateRange) {
+    const saved = savedRanges.current[kind];
+    if (saved.from === next.from && saved.to === next.to) return;
+    setSavingCount((c) => c + 1);
+    const res = await saveTrainingRange({
+      periodId: period.id,
+      kind,
+      ...next,
+    }).catch(toFailedResult);
+    if (!mounted.current) return;
+    setSavingCount((c) => c - 1);
+    if (res.ok) {
+      savedRanges.current = { ...savedRanges.current, [kind]: next };
+      setNotice({ type: "ok", text: "保存しました" });
+    } else {
+      setNotice({ type: "error", text: res.error });
+      if (isIndeterminate(res)) router.refresh();
+    }
+  }
+
   const selectedCount = selected.size;
 
   return (
@@ -348,6 +392,59 @@ export function TrainingEditor({ data }: TrainingEditorProps) {
           ))}
         </ul>
       </details>
+
+      {/* #319: 提出シフトのエクセルにある「テスト期間」「夏休み」 */}
+      <Card>
+        <CardHeader>
+          <CardTitle className="text-base">テスト期間・夏休み（任意）</CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          {(["test", "summer"] as const).map((kind) => {
+            const r = ranges[kind];
+            const check = checkDateRange(r);
+            const label = TRAINING_RANGE_LABEL[kind];
+            return (
+              <div key={kind} className="space-y-1">
+                <p className="text-sm font-medium">{label}</p>
+                <div className="flex items-center gap-2">
+                  <Input
+                    type="date"
+                    aria-label={`${label}の開始日`}
+                    value={r.from ?? ""}
+                    disabled={!editable}
+                    onChange={(e) =>
+                      onRangeChange(kind, { from: e.target.value || null })
+                    }
+                    className="min-w-0 flex-1"
+                  />
+                  <span className="text-muted-foreground">〜</span>
+                  <Input
+                    type="date"
+                    aria-label={`${label}の終了日`}
+                    value={r.to ?? ""}
+                    min={r.from ?? undefined}
+                    disabled={!editable}
+                    onChange={(e) =>
+                      onRangeChange(kind, { to: e.target.value || null })
+                    }
+                    className="min-w-0 flex-1"
+                  />
+                </div>
+                {!check.ok && (
+                  <p className="text-xs text-destructive">
+                    {check.reason === "partial"
+                      ? "開始日と終了日の両方を入れると保存されます（消すときは両方消してください）。"
+                      : "終了日は開始日以降にしてください。"}
+                  </p>
+                )}
+              </div>
+            );
+          })}
+          <p className="text-xs text-muted-foreground">
+            学校のテストや夏休みの期間があれば入れてください。開始日と終了日の両方を入れると自動保存されます。
+          </p>
+        </CardContent>
+      </Card>
 
       <Card>
         <CardHeader>

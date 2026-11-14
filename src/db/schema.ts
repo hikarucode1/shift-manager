@@ -597,12 +597,29 @@ export const trainingPeriodNotes = pgTable(
       .notNull()
       .references(() => profiles.id, { onDelete: "cascade" }),
     note: text("note").notNull().default(""),
+    /** #319: テスト期間 (任意)。開始と終了は両方入っているか両方空 */
+    testFrom: date("test_from"),
+    testTo: date("test_to"),
+    /** #319: 夏休み (任意)。開始と終了は両方入っているか両方空 */
+    summerFrom: date("summer_from"),
+    summerTo: date("summer_to"),
     updatedAt: timestamp("updated_at", { withTimezone: true })
       .notNull()
       .defaultNow(),
   },
   (t) => ({
     uniq: unique("training_period_notes_unique").on(t.periodId, t.tutorId),
+    // #319: checkDateRange (src/lib/training-ranges.ts) と同じ条件
+    testRange: check(
+      "training_period_notes_test_range_chk",
+      sql`(${t.testFrom} IS NULL AND ${t.testTo} IS NULL)
+        OR (${t.testFrom} IS NOT NULL AND ${t.testTo} IS NOT NULL AND ${t.testFrom} <= ${t.testTo})`,
+    ),
+    summerRange: check(
+      "training_period_notes_summer_range_chk",
+      sql`(${t.summerFrom} IS NULL AND ${t.summerTo} IS NULL)
+        OR (${t.summerFrom} IS NOT NULL AND ${t.summerTo} IS NOT NULL AND ${t.summerFrom} <= ${t.summerTo})`,
+    ),
   }),
 );
 

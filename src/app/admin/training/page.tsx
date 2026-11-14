@@ -1,7 +1,12 @@
 import Link from "next/link";
 import { ChevronRight } from "lucide-react";
 import { requireRole } from "@/lib/auth";
-import { getHeatmapData, getHeatmapPeriods } from "@/lib/training-overview";
+import {
+  getHeatmapData,
+  getHeatmapPeriods,
+  getTrainingTutorNotes,
+} from "@/lib/training-overview";
+import { formatDateRange } from "@/lib/training-ranges";
 import {
   Card,
   CardContent,
@@ -21,7 +26,10 @@ export default async function AdminTrainingPage({
   const { period } = await searchParams;
 
   if (period) {
-    const data = await getHeatmapData(period);
+    const [data, tutorNotes] = await Promise.all([
+      getHeatmapData(period),
+      getTrainingTutorNotes(period),
+    ]);
     if (data) {
       return (
         <div className="space-y-6">
@@ -42,6 +50,49 @@ export default async function AdminTrainingPage({
             </div>
           </div>
           <TrainingHeatmap data={data} />
+          {/* #319: 講師ごとの備考・テスト期間・夏休み */}
+          <Card>
+            <CardHeader>
+              <CardTitle className="text-base">講師ごとの備考・予定</CardTitle>
+              <CardDescription>
+                備考かテスト期間・夏休みを入れた講師だけを表示します。
+              </CardDescription>
+            </CardHeader>
+            <CardContent>
+              {tutorNotes.length === 0 ? (
+                <p className="text-sm text-muted-foreground">
+                  まだ誰も入れていません。
+                </p>
+              ) : (
+                <ul className="divide-y text-sm">
+                  {tutorNotes.map((n) => (
+                    <li key={n.tutorId} className="space-y-0.5 py-2">
+                      <div className="font-medium">{n.name}</div>
+                      {(n.testFrom || n.summerFrom) && (
+                        <div className="text-xs text-muted-foreground">
+                          {n.testFrom && n.testTo && (
+                            <span className="mr-3">
+                              テスト期間 {formatDateRange(n.testFrom, n.testTo)}
+                            </span>
+                          )}
+                          {n.summerFrom && n.summerTo && (
+                            <span>
+                              夏休み {formatDateRange(n.summerFrom, n.summerTo)}
+                            </span>
+                          )}
+                        </div>
+                      )}
+                      {n.note.trim() && (
+                        <p className="whitespace-pre-wrap text-xs text-muted-foreground">
+                          {n.note}
+                        </p>
+                      )}
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </CardContent>
+          </Card>
         </div>
       );
     }

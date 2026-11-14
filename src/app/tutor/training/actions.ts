@@ -8,6 +8,7 @@ import { trainingPeriodNotes, trainingPreferences } from "@/db/schema";
 import { assertTrainingEditable, validSlotNumbers } from "@/lib/training";
 import { pgErrorCode } from "@/lib/db-errors";
 import { isValidIsoDate } from "@/lib/week";
+import { checkDateRange } from "@/lib/training-ranges";
 
 type ActionResult = { ok: true } | { ok: false; error: string };
 
@@ -157,6 +158,58 @@ export async function saveTrainingNote(
         trainingPeriodNotes.tutorId,
       ],
       set: { note, updatedAt: new Date() },
+    });
+
+  return { ok: true };
+}
+
+const RangeInput = z.object({
+  periodId: z.string().uuid(),
+  kind: z.enum(["test", "summer"]),
+  from: z.string().refine(isValidIsoDate, "日付が不正です。").nullable(),
+  to: z.string().refine(isValidIsoDate, "日付が不正です。").nullable(),
+});
+
+/**
+ * #319: テスト期間 / 夏休みを保存 (upsert)。両方空なら消す。
+ * 備考と同じ行 (講師 × 講習期間) に持つ。片方だけ・開始が終了より後は断る
+ * (DB の CHECK も同じ条件)
+ */
+export async function saveTrainingRange(input: unknown): Promise<ActionResult> {
+  const { profile } = await requireRole("tutor");
+
+  const parsed = RangeInput.safeParse(input);
+  if (!parsed.success) {
+    return {
+      ok: false,
+      error: parsed.error.issues[0]?.message ?? "入力が不正です。",
+    };
+  }
+  const { periodId, kind, from, to } = parsed.data;
+  const check = checkDateRange({ from, to });
+  if (!check.ok) {
+    return {
+      ok: false,
+      error:
+        check.reason === "partial"
+          ? "開始日と終了日の両方を入れてください。"
+          : "終了日は開始日以降にしてください。",
+    };
+  }
+
+  const gate = await assertTrainingEditable(periodId);
+  if (!gate.ok) return { ok: false, error: gate.reason };
+
+  const values =
+    kind === "test"
+      ? { testFrom: from, testTo: to }
+      : { summerFrom: from, summerTo: to };
+  await db
+    .insert(trainingPeriodNotes)
+    .values({ periodId, tutorId: profile.id, ...values })
+    .onConflictDoUpdate({
+      target: [trainingPeriodNotes.periodId, trainingPeriodNotes.tutorId],
+      set: { ...values, updatedAt: new Date() },
     });
 
   return { ok: true };

@@ -211,5 +211,6 @@ function serializeData(d: TrainingEditorData) {
     days: d.days,
     selected: [...d.selected],
     note: d.note,
+    ranges: d.ranges,
   };
 }

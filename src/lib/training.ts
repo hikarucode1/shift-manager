@@ -8,6 +8,7 @@ import {
 } from "@/db/schema";
 import { getSlotMeta, slotNumbers } from "@/lib/slot-meta";
 import { jstToday, weekdayOf } from "@/lib/week";
+import type { DateRange, TrainingRangeKind } from "@/lib/training-ranges";
 
 export type TrainingPeriodSummary = {
   id: string;
@@ -43,6 +44,8 @@ export type TrainingEditorData = {
   /** 選択済み "date|slot" の集合 */
   selected: Set<string>;
   note: string;
+  /** #319: テスト期間 / 夏休み (どちらも任意) */
+  ranges: Record<TrainingRangeKind, DateRange>;
 };
 
 const DAY_MS = 24 * 60 * 60 * 1000;
@@ -199,7 +202,13 @@ export async function getTrainingEditorData(
         ),
       ),
     db
-      .select({ note: trainingPeriodNotes.note })
+      .select({
+        note: trainingPeriodNotes.note,
+        testFrom: trainingPeriodNotes.testFrom,
+        testTo: trainingPeriodNotes.testTo,
+        summerFrom: trainingPeriodNotes.summerFrom,
+        summerTo: trainingPeriodNotes.summerTo,
+      })
       .from(trainingPeriodNotes)
       .where(
         and(
@@ -229,6 +238,13 @@ export async function getTrainingEditorData(
     days,
     selected,
     note: noteRow[0]?.note ?? "",
+    ranges: {
+      test: { from: noteRow[0]?.testFrom ?? null, to: noteRow[0]?.testTo ?? null },
+      summer: {
+        from: noteRow[0]?.summerFrom ?? null,
+        to: noteRow[0]?.summerTo ?? null,
+      },
+    },
   };
 }
 
