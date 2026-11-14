@@ -768,8 +768,7 @@ export const absenceRequests = pgTable(
     /**
      * 閉じ方の種類 (#292)。`cancelled` の行にだけ入る。種類の判定はこの列だけで
      * 行い、`decision_note` の文言や `decided_by` の有無を見ないこと。
-     * 0037 で既存の行を埋めた。「cancelled なら必ず入る」制約は、反映の間に
-     * 古いコードが書いた行を埋め終えてから別に足す (docs/runbooks/absence-close-kind.md)
+     * 0037 で既存の行を埋め、0041 で「cancelled なら必ず入る」制約を足した (#309)
      */
     closeKind: absenceCloseKindEnum("close_kind"),
     createdAt: timestamp("created_at", { withTimezone: true })
@@ -790,6 +789,12 @@ export const absenceRequests = pgTable(
     activeUniq: uniqueIndex("absence_requests_active_uniq")
       .on(t.tutorId, t.date, t.slotNumber)
       .where(sql`${t.status} in ('pending','approved')`),
+    // #309: 取り消し済みなら閉じ方が必ず入っている。逆 (取り消し以外なら空) は
+    // 縛らない。取り消しから戻す経路ができたときに、ここで落ちないように
+    cancelledHasCloseKind: check(
+      "absence_requests_cancelled_close_kind_chk",
+      sql`${t.status} <> 'cancelled' OR ${t.closeKind} IS NOT NULL`,
+    ),
   }),
 );
 
@@ -836,7 +841,7 @@ export const swapRequests = pgTable(
     /**
      * 閉じ方の種類 (#293)。`cancelled` の行にだけ入る。種類の判定はこの列だけで
      * 行い、`decided_by` や `approved_applicant_id` の有無では判定しない。
-     * 0038 で既存の行を埋めた (docs/runbooks/swap-close-kind.md)
+     * 0038 で既存の行を埋め、0041 で「cancelled なら必ず入る」制約を足した (#309)
      */
     closeKind: swapCloseKindEnum("close_kind"),
     createdAt: timestamp("created_at", { withTimezone: true })
@@ -853,6 +858,11 @@ export const swapRequests = pgTable(
     activeUniq: uniqueIndex("swap_requests_active_uniq")
       .on(t.requesterId, t.date, t.slotNumber)
       .where(sql`${t.status} = 'pending'`),
+    // #309: absence_requests と同じ (取り消し済みなら閉じ方が必ず入っている)
+    cancelledHasCloseKind: check(
+      "swap_requests_cancelled_close_kind_chk",
+      sql`${t.status} <> 'cancelled' OR ${t.closeKind} IS NOT NULL`,
+    ),
   }),
 );
 

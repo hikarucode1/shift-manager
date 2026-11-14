@@ -1,0 +1,2 @@
+ALTER TABLE "absence_requests" ADD CONSTRAINT "absence_requests_cancelled_close_kind_chk" CHECK ("absence_requests"."status" <> 'cancelled' OR "absence_requests"."close_kind" IS NOT NULL);--> statement-breakpoint
+ALTER TABLE "swap_requests" ADD CONSTRAINT "swap_requests_cancelled_close_kind_chk" CHECK ("swap_requests"."status" <> 'cancelled' OR "swap_requests"."close_kind" IS NOT NULL);
