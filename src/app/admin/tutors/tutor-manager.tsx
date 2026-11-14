@@ -189,7 +189,9 @@ export function TutorManager({
 
   function startEdit(t: TutorRow) {
     setEditingId(t.id);
-    setRowNotice(null);
+    // 別の行を開いたら消す。同じ行を開き直したときは残す (送信中に別の行へ
+    // 移ってから戻ると、届いた結果を見られないまま消してしまうため)
+    setRowNotice((cur) => (cur?.tutorId === t.id ? cur : null));
     setEditName(t.displayName);
     setLinkEmail("");
   }
