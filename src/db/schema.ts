@@ -5,6 +5,7 @@ import {
   date,
   index,
   integer,
+  jsonb,
   pgEnum,
   pgTable,
   primaryKey,
@@ -15,6 +16,7 @@ import {
   uniqueIndex,
   uuid,
 } from "drizzle-orm/pg-core";
+import type { PreferredStudent } from "@/lib/preferred-students";
 
 /* ------------------------------------------------------------------ */
 /*  Enums                                                              */
@@ -365,6 +367,15 @@ export const fixedShiftSubmissions = pgTable(
     desiredSlots: smallint("desired_slots"),
     /** Issue #59: フリースペース */
     note: text("note"),
+    /**
+     * #319: 担当したい生徒・教科 (任意)。[{ student, subject }] の配列。
+     * 生徒名で検索・集計する予定が無く、提出単位で丸ごと読み書きするので
+     * 別テーブルにせず jsonb にした。読むときは parseStoredPreferredStudents を通す
+     */
+    preferredStudents: jsonb("preferred_students")
+      .$type<PreferredStudent[]>()
+      .notNull()
+      .default(sql`'[]'::jsonb`),
     /** Issue #72 (β): 紐付く期 (任意, null = 未紐付け = アドホック提出)。旧 monthly_submission_periods 参照から regular_shift_periods 参照へ差し替え。 */
     periodId: uuid("period_id").references(() => regularShiftPeriods.id, {
       onDelete: "set null",
@@ -405,6 +416,11 @@ export const fixedShiftSubmissions = pgTable(
     ),
     // #165: 同種テーブル (regular_assignments 等) と揃えて期間の整合を DB 層でも
     // 保証。アプリ (saveFixedShifts) でも検証済みだが最終防御。
+    // #319: jsonb は何でも入るので、最低限「配列であること」だけ DB で保証する
+    preferredStudentsArray: check(
+      "fixed_shift_submissions_preferred_students_array_chk",
+      sql`jsonb_typeof(${t.preferredStudents}) = 'array'`,
+    ),
     effectiveRange: check(
       "fixed_shift_submissions_effective_range_chk",
       sql`${t.effectiveTo} IS NULL OR ${t.effectiveTo} >= ${t.effectiveFrom}`,

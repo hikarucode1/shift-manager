@@ -22,6 +22,10 @@ import {
   saveMonthlyConfirmation,
   saveRegularConfirmation,
 } from "./confirm-actions";
+import {
+  formatPreferredStudents,
+  type PreferredStudent,
+} from "@/lib/preferred-students";
 
 type Assignment = {
   tutorId: string;
@@ -42,6 +46,8 @@ type SubmissionView = {
   desiredDays: number | null;
   desiredSlots: number | null;
   note: string | null;
+  /** #319: 担当したい生徒・教科 */
+  preferredStudents: PreferredStudent[];
   status: "draft" | "submitted" | "frozen";
   submittedAt: string | null;
   lastStatusChangedAt: string | null;
@@ -460,6 +466,12 @@ export function AdminSubmissionsOverview({
                     </Button>
                   )}
                 </div>
+                {t.submission && t.submission.preferredStudents.length > 0 && (
+                  <p className="mt-1 w-full text-xs text-muted-foreground">
+                    担当したい生徒:{" "}
+                    {formatPreferredStudents(t.submission.preferredStudents)}
+                  </p>
+                )}
                 {t.submission?.note && (
                   <p className="mt-1 w-full whitespace-pre-wrap text-xs text-muted-foreground">
                     📝 {t.submission.note}

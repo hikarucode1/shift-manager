@@ -1,0 +1,2 @@
+ALTER TABLE "fixed_shift_submissions" ADD COLUMN "preferred_students" jsonb DEFAULT '[]'::jsonb NOT NULL;--> statement-breakpoint
+ALTER TABLE "fixed_shift_submissions" ADD CONSTRAINT "fixed_shift_submissions_preferred_students_array_chk" CHECK (jsonb_typeof("fixed_shift_submissions"."preferred_students") = 'array');

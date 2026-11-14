@@ -10,6 +10,13 @@ import { isIndeterminate, toFailedResult } from "@/lib/action-failure";
 import { cn } from "@/lib/utils";
 import { INPUT_WEEKDAYS, type InputWeekday } from "@/lib/shift-constants";
 import {
+  MAX_PREFERRED_STUDENTS,
+  MAX_STUDENT_NAME,
+  MAX_SUBJECT,
+  type PreferredStudent,
+} from "@/lib/preferred-students";
+import { regularSubmissionNotes } from "@/lib/regular-submission-notes";
+import {
   revertSubmissionToDraft,
   saveFixedShifts,
   submitFixedShifts,
@@ -41,6 +48,8 @@ export type FixedShiftSubmissionMeta = {
   desiredDays: number | null;
   desiredSlots: number | null;
   note: string | null;
+  /** #319: 担当したい生徒・教科 */
+  preferredStudents: PreferredStudent[];
   status: UiSubmissionStatus;
   submittedAt: string | null;
 };
@@ -88,6 +97,7 @@ export function FixedShiftEditor({
   periodLocked = false,
   periodLabel = null,
   prefilledFrom = null,
+  periodEndDate = null,
 }: {
   slots: Slot[];
   initialEntries: Entry[];
@@ -104,6 +114,8 @@ export function FixedShiftEditor({
    * effective_from ("YYYY-MM-DD")。未保存の間だけ引き継ぎバナーを表示する。
    */
   prefilledFrom?: string | null;
+  /** #319: 受付中の期の終了日。注意書きの「いつまでを想定しているか」に出す */
+  periodEndDate?: string | null;
 }) {
   const [cellStates, setCellStates] = useState<Map<string, Availability>>(
     () => new Map(initialEntries.map((e) => [cellKey(e.weekday, e.slotNumber), e.availability])),
@@ -117,6 +129,9 @@ export function FixedShiftEditor({
     initialMeta.desiredSlots != null ? String(initialMeta.desiredSlots) : "",
   );
   const [note, setNote] = useState<string>(initialMeta.note ?? "");
+  const [preferredStudents, setPreferredStudents] = useState<PreferredStudent[]>(
+    initialMeta.preferredStudents,
+  );
   const [status, setStatus] = useState<UiSubmissionStatus>(initialMeta.status);
   const router = useRouter();
   const [submittedAt, setSubmittedAt] = useState<string | null>(
@@ -185,6 +200,12 @@ export function FixedShiftEditor({
     });
   }
 
+  function updateStudent(index: number, patch: Partial<PreferredStudent>) {
+    setPreferredStudents((prev) =>
+      prev.map((r, i) => (i === index ? { ...r, ...patch } : r)),
+    );
+  }
+
   function handleSave() {
     setMessage(null);
     startTransition(async () => {
@@ -194,6 +215,7 @@ export function FixedShiftEditor({
         desiredDays: numberOrNull(desiredDays),
         desiredSlots: numberOrNull(desiredSlots),
         note: note.trim() === "" ? null : note,
+        preferredStudents,
         entries,
       }).catch(toFailedResult);
       if (result.ok) {
@@ -256,6 +278,18 @@ export function FixedShiftEditor({
           内容を確認し、必要に応じて修正してから保存・提出してください。
         </div>
       )}
+
+      {/* #319: レギュラーエクセルの注意書き。新しく入った講師にも伝える */}
+      <div className="rounded-md border bg-muted/40 px-3 py-2 text-xs text-muted-foreground">
+        <p className="mb-1 font-semibold text-foreground">提出の前に</p>
+        <ul className="list-disc space-y-0.5 pl-4">
+          {regularSubmissionNotes(periodEndDate).map((line, i) => (
+            <li key={i} className={cn(i === 0 && "font-semibold text-foreground")}>
+              {line}
+            </li>
+          ))}
+        </ul>
+      </div>
 
       {/* Issue #61: 状態バッジ */}
       <div className="flex flex-wrap items-center gap-2">
@@ -443,6 +477,62 @@ export function FixedShiftEditor({
               目安として 1 ヶ月で出勤したいコマ数を記入 (整数)。
             </p>
           </div>
+        </div>
+
+        {/* #319: 担当したい生徒・教科。1 行 = 生徒名 + 教科 */}
+        <div className="space-y-2">
+          <p className="text-sm font-medium">担当したい生徒 (任意)</p>
+          {preferredStudents.length > 0 && (
+            <ul className="space-y-2">
+              {preferredStudents.map((r, i) => (
+                <li key={i} className="flex items-center gap-2">
+                  <Input
+                    aria-label={`担当したい生徒 ${i + 1} の生徒名`}
+                    value={r.student}
+                    maxLength={MAX_STUDENT_NAME}
+                    onChange={(e) => updateStudent(i, { student: e.target.value })}
+                    placeholder="生徒名"
+                    className="min-w-0 flex-[3]"
+                  />
+                  <Input
+                    aria-label={`担当したい生徒 ${i + 1} の教科`}
+                    value={r.subject}
+                    maxLength={MAX_SUBJECT}
+                    onChange={(e) => updateStudent(i, { subject: e.target.value })}
+                    placeholder="教科"
+                    className="min-w-0 flex-[2]"
+                  />
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="sm"
+                    className="shrink-0 px-2 text-muted-foreground"
+                    aria-label={`担当したい生徒 ${i + 1} を消す`}
+                    onClick={() =>
+                      setPreferredStudents((prev) => prev.filter((_, j) => j !== i))
+                    }
+                  >
+                    消す
+                  </Button>
+                </li>
+              ))}
+            </ul>
+          )}
+          {preferredStudents.length < MAX_PREFERRED_STUDENTS && (
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              onClick={() =>
+                setPreferredStudents((prev) => [...prev, { student: "", subject: "" }])
+              }
+            >
+              ＋ 生徒を追加
+            </Button>
+          )}
+          <p className="text-xs text-muted-foreground">
+            担当したい生徒がいれば、生徒名と教科を書いてください（{MAX_PREFERRED_STUDENTS} 人まで）。どちらか片方だけでも構いません。
+          </p>
         </div>
 
         <div className="space-y-2">

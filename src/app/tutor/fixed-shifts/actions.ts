@@ -15,6 +15,11 @@ import {
   resolveSaveScope,
   resolveServerEffectiveFrom,
 } from "@/lib/regular-submission-target";
+import {
+  normalizePreferredStudents,
+  parseStoredPreferredStudents,
+  PreferredStudentsInputSchema,
+} from "@/lib/preferred-students";
 
 // 日曜は教室休校 (Issue #56) のため入力対象外。サーバ側でも拒否する。
 // 'no' は「行不在」で表現するため Entry には含めない (Issue #55)。
@@ -36,6 +41,8 @@ const InputSchema = z
     desiredSlots: z.number().int().min(0).max(200).nullable().optional(),
     // Issue #59: フリースペース (任意, 文字数上限)
     note: z.string().max(1000).nullable().optional(),
+    // #319: 担当したい生徒・教科 (任意)
+    preferredStudents: PreferredStudentsInputSchema.optional(),
     entries: z.array(EntrySchema).max(200),
   })
   .refine(
@@ -146,6 +153,7 @@ export async function saveFixedShifts(
     desiredDays = null,
     desiredSlots = null,
     note = null,
+    preferredStudents = [],
     entries,
   } = parsed.data;
 
@@ -281,6 +289,7 @@ export async function saveFixedShifts(
         desiredDays,
         desiredSlots,
         note: trimmedNote,
+        preferredStudents: normalizePreferredStudents(preferredStudents),
         periodId,
         lastStatusChangedAt: now,
         lastStatusChangedBy: profile.id,
@@ -335,6 +344,7 @@ export async function submitFixedShifts(): Promise<SubmitFixedShiftsResult> {
       desiredSlots: fixedShiftSubmissions.desiredSlots,
       note: fixedShiftSubmissions.note,
       effectiveTo: fixedShiftSubmissions.effectiveTo,
+      preferredStudents: fixedShiftSubmissions.preferredStudents,
     })
     .from(fixedShiftSubmissions)
     .where(eq(fixedShiftSubmissions.tutorId, profile.id))
@@ -373,7 +383,9 @@ export async function submitFixedShifts(): Promise<SubmitFixedShiftsResult> {
     current.desiredDays != null ||
     current.desiredSlots != null ||
     current.effectiveTo != null ||
-    (current.note != null && current.note.trim() !== "");
+    (current.note != null && current.note.trim() !== "") ||
+    // #319: 担当したい生徒だけを書いた提出も空ではない
+    parseStoredPreferredStudents(current.preferredStudents).length > 0;
   if (!hasEntries && !hasMeta) {
     return {
       ok: false,
