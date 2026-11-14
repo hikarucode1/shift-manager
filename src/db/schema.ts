@@ -1103,3 +1103,44 @@ export const notificationsRelations = relations(notifications, ({ one }) => ({
 
 /* keep sql import used for future defaults (e.g. gen_random_uuid()) */
 export const _sql = sql;
+
+/* ------------------------------------------------------------------ */
+/*  inquiries — アプリ内の「お問い合わせ」(#320)                        */
+/* ------------------------------------------------------------------ */
+/*  講師・教室長が送った質問・不具合の報告・要望。開発者へのメールが     */
+/*  落ちても消えないよう、先にここへ保存してからメールを送る。           */
+
+export const inquiryKindEnum = pgEnum("inquiry_kind", [
+  "question",
+  "bug",
+  "request",
+]);
+
+export const inquiries = pgTable(
+  "inquiries",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    /** 送った人。退職などで profile が消えても問い合わせは残す */
+    senderId: uuid("sender_id").references(() => profiles.id, {
+      onDelete: "set null",
+    }),
+    /** 送った時点の名前・メール・役割 (後で profile が変わっても当時のまま) */
+    senderName: text("sender_name").notNull(),
+    senderEmail: text("sender_email").notNull(),
+    senderRoles: text("sender_roles").array().notNull(),
+    kind: inquiryKindEnum("kind").notNull(),
+    body: text("body").notNull(),
+    /** どの画面から開いたか (アプリ内のパス)。分からなければ null */
+    pagePath: text("page_path"),
+    wantsReply: boolean("wants_reply").notNull().default(false),
+    userAgent: text("user_agent"),
+    /** 開発者へのメールが送れた時刻。null = 未送信 (未設定・失敗) */
+    emailSentAt: timestamp("email_sent_at", { withTimezone: true }),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (t) => ({
+    createdIdx: index("inquiries_created_idx").on(t.createdAt),
+  }),
+);
