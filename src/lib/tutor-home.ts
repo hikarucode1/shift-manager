@@ -19,7 +19,7 @@ import {
 } from "@/db/schema";
 import { getActiveTrainingPeriods } from "@/lib/training";
 import { getTutorWeekSchedule, type ScheduleSlot } from "@/lib/tutor-schedule";
-import { jstToday, nextWeek, weekOf } from "@/lib/week";
+import { homeWeekOf, jstToday, nextWeek } from "@/lib/week";
 
 const DAY_MS = 86_400_000;
 const JST_OFFSET_MS = 9 * 60 * 60 * 1000;
@@ -91,6 +91,8 @@ export type TutorHomeData = {
   /** 今週の確定コマ数 (欠勤を除く) */
   weekSlotCount: number;
   weekPublished: boolean;
+  /** 「今週」の期間 (月〜日)。画面に期間を添えるため (#337) */
+  weekRange: { start: string; end: string };
   nextShift: HomeNextShift | null;
   weekRows: HomeShiftRow[];
   /** 編集可能な提出締切 (残り日数の近い順) */
@@ -106,7 +108,8 @@ export async function getTutorHomeData(tutorId: string): Promise<TutorHomeData> 
   const tomorrow = addDayIso(today);
   const now = new Date();
   const nowHm = nowHmJst(now);
-  const thisRange = weekOf();
+  // #337: 日曜は翌日からの週を「今週」にする
+  const thisRange = homeWeekOf(today);
   const nextRange = nextWeek(thisRange);
 
   const [thisWeek, nextWk, trainingPeriods, regularRows] = await Promise.all([
@@ -237,6 +240,7 @@ export async function getTutorHomeData(tutorId: string): Promise<TutorHomeData> 
   return {
     weekSlotCount,
     weekPublished: thisWeek.published,
+    weekRange: thisRange,
     nextShift,
     weekRows,
     deadlines,

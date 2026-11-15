@@ -104,6 +104,17 @@ export function weekOf(iso: string = jstToday()): WeekRange {
   return { start, end };
 }
 
+/**
+ * 講師ホームの「今週」(#337)。月〜土は今日を含む週。**日曜は翌日 (月) から
+ * 始まる週**を返す: 日曜は教室が休みで、講師が日曜に気にするのは翌日からの週
+ * なので (「今週」が今日で終わる週だと、来週のコマ数と取り違えた)。
+ * 公開・取り込みの単位 (月〜日の週) は変えない
+ */
+export function homeWeekOf(iso: string = jstToday()): WeekRange {
+  const range = weekOf(iso);
+  return parseIso(iso).getUTCDay() === 0 ? nextWeek(range) : range;
+}
+
 /** 翌週 */
 export function nextWeek(range: WeekRange): WeekRange {
   const start = addDays(range.start, 7);
@@ -126,4 +137,12 @@ export function shortDate(iso: string): string {
   assertIso(iso);
   const [, m, d] = iso.split("-");
   return `${Number(m)}/${Number(d)}`;
+}
+
+/**
+ * 週の期間の表示 (例: "11/9〜11/15")。#337: 日曜に講師ホームを開くと「今週」は
+ * 今日で終わる週を指し、翌日からの週と取り違えやすいので、期間を添えて出す
+ */
+export function weekRangeLabel(range: WeekRange): string {
+  return `${shortDate(range.start)}〜${shortDate(range.end)}`;
 }
