@@ -4,6 +4,7 @@ import { db } from "@/db/client";
 import {
   profiles,
   shiftAssignments,
+  shiftConfirmations,
   shiftUploads,
   students,
   swapRequests,
@@ -13,6 +14,7 @@ import type { ParsedShiftCsv } from "@/lib/shift-csv-parser";
 import { findMappingDuplicates } from "@/lib/mapping-validation";
 import { findNonTutorIds } from "@/lib/tutor-validation";
 import { substitutionNote } from "@/lib/substitution-note";
+import { changedTutorWeeks } from "@/lib/weekly-confirmation";
 import {
   planSwapReapplication,
   type InsertedShift,
@@ -62,6 +64,11 @@ export type CommitUploadResult = {
   }[];
   /** approved なのに代講者の記録が無い行 (復元しようがない) の数 */
   missingApplicantSwaps: number;
+  /**
+   * #317: 取り込み直しでコマが変わり、シフトの確認を外した講師 (と週)。
+   * 確認し直してもらうための通知に使う。確認していなかった講師は入らない
+   */
+  resetConfirmations: { tutorId: string; weekStart: string }[];
 };
 
 /**
@@ -214,6 +221,19 @@ export async function commitShiftUpload(
     //    いたため、truncated CSV で day-block が欠落した日の公開済みシフトまで
     //    巻き添え削除された。CSV に含まれる日付だけを置換対象にする。
     const uploadedDates = [...new Set(parsed.days.map((d) => d.date))];
+    // #317: 取り込む前のコマ。最後に取り込んだ後と比べ、コマが変わった講師の
+    // 確認だけを外す
+    const cellsBefore =
+      uploadedDates.length > 0
+        ? await tx
+            .select({
+              tutorId: weeklyShifts.tutorId,
+              date: weeklyShifts.date,
+              slotNumber: weeklyShifts.slotNumber,
+            })
+            .from(weeklyShifts)
+            .where(inArray(weeklyShifts.date, uploadedDates))
+        : [];
     if (uploadedDates.length > 0) {
       await tx.delete(weeklyShifts).where(inArray(weeklyShifts.date, uploadedDates));
     }
@@ -359,7 +379,36 @@ export async function commitShiftUpload(
         );
     }
 
+    // #317: コマ (日付 × 何限) が変わった講師の、その週の確認を外す。比べるのは
+    // 代講の再適用まで済んだあとのコマ (再適用で元に戻った担当は変わっていない)。
+    // 担当する生徒だけの変更は数えない
+    const cellsAfter =
+      uploadedDates.length > 0
+        ? await tx
+            .select({
+              tutorId: weeklyShifts.tutorId,
+              date: weeklyShifts.date,
+              slotNumber: weeklyShifts.slotNumber,
+            })
+            .from(weeklyShifts)
+            .where(inArray(weeklyShifts.date, uploadedDates))
+        : [];
+    const resetConfirmations: { tutorId: string; weekStart: string }[] = [];
+    for (const ch of changedTutorWeeks(cellsBefore, cellsAfter)) {
+      const removed = await tx
+        .delete(shiftConfirmations)
+        .where(
+          and(
+            eq(shiftConfirmations.tutorId, ch.tutorId),
+            eq(shiftConfirmations.weekStart, ch.weekStart),
+          ),
+        )
+        .returning({ id: shiftConfirmations.id });
+      if (removed.length > 0) resetConfirmations.push(ch);
+    }
+
     return {
+      resetConfirmations,
       uploadId,
       insertedShiftRows,
       insertedAssignmentRows,

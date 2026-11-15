@@ -309,6 +309,13 @@
       "when": 1794750734658,
       "tag": "0043_designated_substitute",
       "breakpoints": true
+    },
+    {
+      "idx": 44,
+      "version": "7",
+      "when": 1794753118015,
+      "tag": "0044_shift_confirmations",
+      "breakpoints": true
     }
   ]
 }

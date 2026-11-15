@@ -15,6 +15,7 @@ import { db } from "@/db/client";
 import {
   fixedShiftSubmissions,
   regularShiftPeriods,
+  shiftConfirmations,
   trainingPreferences,
 } from "@/db/schema";
 import { getActiveTrainingPeriods } from "@/lib/training";
@@ -93,6 +94,8 @@ export type TutorHomeData = {
   weekPublished: boolean;
   /** 「今週」の期間 (月〜日)。画面に期間を添えるため (#337) */
   weekRange: { start: string; end: string };
+  /** #317: 「今週」のシフトを確認した時刻 (ISO)。未確認なら null */
+  weekConfirmedAt: string | null;
   nextShift: HomeNextShift | null;
   weekRows: HomeShiftRow[];
   /** 編集可能な提出締切 (残り日数の近い順) */
@@ -112,7 +115,8 @@ export async function getTutorHomeData(tutorId: string): Promise<TutorHomeData> 
   const thisRange = homeWeekOf(today);
   const nextRange = nextWeek(thisRange);
 
-  const [thisWeek, nextWk, trainingPeriods, regularRows] = await Promise.all([
+  const [thisWeek, nextWk, trainingPeriods, regularRows, confirmation] =
+    await Promise.all([
     getTutorWeekSchedule(tutorId, thisRange),
     getTutorWeekSchedule(tutorId, nextRange),
     getActiveTrainingPeriods(),
@@ -134,6 +138,17 @@ export async function getTutorHomeData(tutorId: string): Promise<TutorHomeData> 
         ),
       )
       .orderBy(desc(regularShiftPeriods.startDate))
+      .limit(1),
+    // #317: 「今週」のシフトを確認したか
+    db
+      .select({ confirmedAt: shiftConfirmations.confirmedAt })
+      .from(shiftConfirmations)
+      .where(
+        and(
+          eq(shiftConfirmations.tutorId, tutorId),
+          eq(shiftConfirmations.weekStart, thisRange.start),
+        ),
+      )
       .limit(1),
   ]);
 
@@ -241,6 +256,7 @@ export async function getTutorHomeData(tutorId: string): Promise<TutorHomeData> 
     weekSlotCount,
     weekPublished: thisWeek.published,
     weekRange: thisRange,
+    weekConfirmedAt: confirmation[0]?.confirmedAt.toISOString() ?? null,
     nextShift,
     weekRows,
     deadlines,

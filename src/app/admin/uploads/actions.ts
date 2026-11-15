@@ -5,6 +5,8 @@ import { arrayContains, inArray, and } from "drizzle-orm";
 import iconv from "iconv-lite";
 import { z } from "zod";
 import { requireRole } from "@/lib/auth";
+import { notify } from "@/lib/notifications";
+import { weekOf, weekRangeLabel } from "@/lib/week";
 import { db } from "@/db/client";
 import { profiles } from "@/db/schema";
 import { pgErrorCode } from "@/lib/db-errors";
@@ -178,6 +180,17 @@ export async function commitUploadedCsv(
       fileBytes,
       uploadedBy: profile.id,
     });
+    // #317: コマが変わって確認が外れた講師に、確認し直してもらう。取り込み
+    // 自体は済んでいるので、通知の失敗で取り込みを失敗扱いにしない
+    // (notify は失敗を握り潰す)
+    for (const r of result.resetConfirmations) {
+      await notify([r.tutorId], {
+        type: "shifts_published",
+        title: "シフトが変わりました。もう一度確認してください",
+        body: `${weekRangeLabel(weekOf(r.weekStart))} の週のシフトが更新されました。ホームの「確認しました」をもう一度押してください`,
+        href: "/tutor",
+      });
+    }
     revalidatePath("/admin/uploads");
     revalidatePath("/admin/weekly");
     revalidatePath("/tutor");

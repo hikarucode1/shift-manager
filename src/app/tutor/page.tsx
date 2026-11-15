@@ -2,6 +2,7 @@ import Link from "next/link";
 import { AlertCircle, CalendarClock, ChevronRight, MapPin } from "lucide-react";
 import { requireRole } from "@/lib/auth";
 import { getTutorHomeData } from "@/lib/tutor-home";
+import { ConfirmWeekButton } from "./confirm-week-button";
 import { shortDate, weekRangeLabel } from "@/lib/week";
 import { cn } from "@/lib/utils";
 import { deadlineLabel } from "@/lib/deadline";
@@ -158,6 +159,13 @@ export default async function TutorHome() {
               ? "今週の確定シフトはありません。"
               : "確定シフトはまだ公開されていません。"}
           </div>
+        )}
+        {/* #317: LINE のスタンプの代わり。シフトがある週だけ出す */}
+        {data.weekRows.length > 0 && (
+          <ConfirmWeekButton
+            weekStart={data.weekRange.start}
+            confirmedAt={data.weekConfirmedAt}
+          />
         )}
       </section>
     </div>
