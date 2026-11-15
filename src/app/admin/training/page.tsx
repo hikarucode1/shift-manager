@@ -16,6 +16,7 @@ import {
 } from "@/components/ui/card";
 import { TrainingHeatmap } from "./training-heatmap";
 import { NotifyPublicationButton } from "./notify-publication-button";
+import { AdminShiftWishNav } from "@/components/admin-section-nav";
 
 export default async function AdminTrainingPage({
   searchParams,
@@ -33,6 +34,7 @@ export default async function AdminTrainingPage({
     if (data) {
       return (
         <div className="space-y-6">
+          <AdminShiftWishNav />
           <div>
             <Link
               href="/admin/training"
@@ -102,6 +104,7 @@ export default async function AdminTrainingPage({
 
   return (
     <div className="space-y-6">
+      <AdminShiftWishNav />
       <div>
         <h1 className="text-2xl font-semibold">シフト希望（講習）</h1>
         <p className="mt-1 text-sm text-muted-foreground">

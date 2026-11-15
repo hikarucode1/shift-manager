@@ -10,7 +10,7 @@ import { cn, underPath } from "@/lib/utils";
  * 共有レイアウトはクライアント遷移で再レンダリングされないため、active 判定は
  * usePathname() で行う (SegmentedNav / AdminTopNav と同方式)。
  *
- * 下部タブは 4 つ (デザイン準拠)。「欠勤」タブ (#329 で「申請」から改名) は
+ * 下部タブは 4 つ (デザイン準拠)。「欠勤等」タブ (#329 で「申請」から改名) は
  * 欠勤/交代/代講をまとめた active 範囲とし、ランディングは /tutor/absences。
  * 名前は塾での呼び方に揃えた (#329: シフト → レギュラー、希望提出 → 講習)。
  */
@@ -41,7 +41,7 @@ const TABS: {
   },
   {
     href: "/tutor/absences",
-    label: "欠勤",
+    label: "欠勤等",
     icon: Inbox,
     match: (p) =>
       ["/tutor/absences", "/tutor/swaps", "/tutor/open-swaps"].some((r) =>

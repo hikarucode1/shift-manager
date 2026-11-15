@@ -42,10 +42,14 @@ const NAV: {
       "/admin/periods",
       "/admin/submission-periods",
       "/admin/regular-periods",
-      "/admin/fixed-shifts",
     ]),
   },
-  { href: "/admin/training", label: "シフト希望" },
+  {
+    href: "/admin/training",
+    label: "シフト希望",
+    // #329: レギュラーの提出内容 (/admin/fixed-shifts) もここに入れた
+    match: startsWithAny(["/admin/training", "/admin/fixed-shifts"]),
+  },
   { href: "/admin/uploads", label: "Excel取り込み" },
   { href: "/admin/requests", label: "申請承認" },
 ];
