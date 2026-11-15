@@ -323,7 +323,7 @@ describe("取り消しの安全網 (#213 / #219 の引き継ぎ)", () => {
   it("欠勤と代講で副作用の説明が違う", () => {
     // 種別が混ざる一覧では「取り消す」だけだと何が起きるか分からない
     expect(toAbsenceLogEntry(absence()).cancelWarning).toContain(
-      "週次シフト表からこのコマの欠勤表示が消えます",
+      "登録済みシフトからこのコマの欠勤表示が消えます",
     );
     expect(toSwapLogEntry(swap()).cancelWarning).toContain(
       "担当を 山田 さんに戻し、佐藤 さんの代講記録を消します",

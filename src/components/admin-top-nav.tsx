@@ -29,7 +29,7 @@ const NAV: {
     label: "ダッシュボード",
     match: (p) => p === "/admin",
   },
-  { href: "/admin/weekly", label: "週次シフト" },
+  { href: "/admin/weekly", label: "登録済みシフト" },
   {
     href: "/admin/tutors",
     label: "講師管理",
@@ -42,10 +42,14 @@ const NAV: {
       "/admin/periods",
       "/admin/submission-periods",
       "/admin/regular-periods",
-      "/admin/fixed-shifts",
     ]),
   },
-  { href: "/admin/training", label: "講習希望" },
+  {
+    href: "/admin/training",
+    label: "シフト希望",
+    // #329: レギュラーの提出内容 (/admin/fixed-shifts) もここに入れた
+    match: startsWithAny(["/admin/training", "/admin/fixed-shifts"]),
+  },
   { href: "/admin/uploads", label: "Excel取り込み" },
   { href: "/admin/requests", label: "申請承認" },
 ];

@@ -17,8 +17,9 @@ export function AdminTutorsNav() {
 
 /**
  * 管理者「期間管理」グループのサブナビ (#120)。
- * トップナビ「期間管理」配下に 講習期間 / 月別提出期間 / レギュラー期間 /
- * 固定シフト俯瞰 を統合 (固定シフト俯瞰はレギュラー提出の俯瞰として同居)。
+ * トップナビ「期間管理」配下に 講習期間 / 月別提出期間 / レギュラー期間 を統合。
+ * #329: 期間管理は期間の設定だけにした。レギュラーの提出内容 (旧「固定シフト俯瞰」)
+ * は「シフト希望」グループへ移した (AdminShiftWishNav)。
  */
 export function AdminPeriodsNav() {
   return (
@@ -27,7 +28,22 @@ export function AdminPeriodsNav() {
         { href: "/admin/periods", label: "講習期間" },
         { href: "/admin/submission-periods", label: "月別提出期間" },
         { href: "/admin/regular-periods", label: "レギュラー期間" },
-        { href: "/admin/fixed-shifts", label: "固定シフト俯瞰" },
+      ]}
+    />
+  );
+}
+
+/**
+ * 管理者「シフト希望」グループのサブナビ (#329)。講師が出した希望を見る画面を
+ * まとめる: 講習 (ヒートマップ) / レギュラー (提出内容の一覧、旧「固定シフト俯瞰」)。
+ * URL は変えていない。
+ */
+export function AdminShiftWishNav() {
+  return (
+    <SegmentedNav
+      items={[
+        { href: "/admin/training", label: "講習" },
+        { href: "/admin/fixed-shifts", label: "レギュラー" },
       ]}
     />
   );

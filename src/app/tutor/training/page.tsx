@@ -125,7 +125,7 @@ export default async function TutorTrainingPage({
     <div className="space-y-5">
       {/* ネイビー hero (#130/#131 と統一) */}
       <section className="rounded-xl bg-primary p-4 text-primary-foreground">
-        <h1 className="text-xl font-bold">講習希望提出</h1>
+        <h1 className="text-xl font-bold">講習シフト提出</h1>
         <p className="mt-1 text-xs text-primary-foreground/80">
           講習期間ごとに勤務できるコマを選びます。締切までは何度でも変更できます。
         </p>

@@ -12,7 +12,7 @@ import {
 import { DEFAULT_SLOTS } from "@/lib/shift-constants";
 import { lastDayOfMonth } from "@/lib/shift-period";
 import { jstMonthStart } from "@/lib/week";
-import { AdminPeriodsNav } from "@/components/admin-section-nav";
+import { AdminShiftWishNav } from "@/components/admin-section-nav";
 import { AdminSubmissionsOverview } from "./submissions-overview";
 import { parseStoredPreferredStudents } from "@/lib/preferred-students";
 
@@ -222,9 +222,9 @@ export default async function AdminFixedShiftsOverviewPage({
 
   return (
     <div className="space-y-6">
-      <AdminPeriodsNav />
+      <AdminShiftWishNav />
       <div>
-        <h1 className="text-2xl font-semibold">固定シフト俯瞰 (C1)</h1>
+        <h1 className="text-2xl font-semibold">シフト希望（レギュラー）</h1>
         <p className="mt-1 text-sm text-muted-foreground">
           対象月を選んで講師ごとの提出状況・希望コマを一覧します。教室長は提出を凍結
           (frozen) して以降の編集を止めたり、凍結を解除して下書きに戻したりできます。

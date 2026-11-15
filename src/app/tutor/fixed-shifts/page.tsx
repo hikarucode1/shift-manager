@@ -334,7 +334,7 @@ export default async function FixedShiftPage() {
         <p className="text-xs text-primary-foreground/70">
           {activePeriod ? activePeriod.label : "通常期間"}
         </p>
-        <h1 className="mt-0.5 text-xl font-bold">固定シフト登録</h1>
+        <h1 className="mt-0.5 text-xl font-bold">レギュラーシフト提出</h1>
         <p className="mt-1 text-xs text-primary-foreground/80">
           出勤できるコマをタップして登録します
         </p>

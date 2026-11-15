@@ -671,7 +671,7 @@ export async function cancelApprovedSwap(
 
       if (restored.length === 0) {
         throw new SwapBizError(
-          "このコマの担当が既に変わっているため取り消せません。週次シフトを確認してください。",
+          "このコマの担当が既に変わっているため取り消せません。登録済みシフトを確認してください。",
         );
       }
 
