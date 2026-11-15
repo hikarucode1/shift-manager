@@ -1,8 +1,19 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
+import { arrayContains, inArray, and } from "drizzle-orm";
 import iconv from "iconv-lite";
+import { z } from "zod";
 import { requireRole } from "@/lib/auth";
+import { db } from "@/db/client";
+import { profiles } from "@/db/schema";
+import { pgErrorCode } from "@/lib/db-errors";
+import {
+  MAX_STUB_TUTORS,
+  MAX_TUTOR_NAME,
+  planStubTutors,
+  stubEmail,
+} from "@/lib/stub-tutors";
 import type { SkipReason } from "@/lib/swap-reapplication";
 import {
   parseShiftCsvBuffer,
@@ -194,5 +205,114 @@ export async function commitUploadedCsv(
       error:
         "取り込みに失敗しました。CSV の内容と講師の割り当てをご確認ください。解決しない場合は管理者へご連絡ください。",
     };
+  }
+}
+
+/* ------------------------------------------------------------------ */
+/*  未登録の講師を「ログイン未連携」で作る                               */
+/* ------------------------------------------------------------------ */
+
+const StubTutorsInput = z.object({
+  names: z
+    .array(z.string().trim().min(1).max(MAX_TUTOR_NAME))
+    .min(1)
+    .max(MAX_STUB_TUTORS),
+});
+
+export type CreateStubTutorsResult =
+  | {
+      ok: true;
+      /** 名前 → 講師 id。新しく作った人と、同名で既にいた人の両方 */
+      tutors: { name: string; id: string; email: string }[];
+    }
+  | { ok: false; error: string };
+
+/**
+ * CSV の講師名のうち、講師アカウントが無いものを「ログイン未連携」で作る。
+ * 作る前に画面で名前を見せ、教室長が押したときだけ呼ばれる (打ち間違いで
+ * 別人が増えないよう、取り込みのときに黙って作ることはしない)。
+ *
+ * 同名の有効な講師がいれば作らずにその id を返す。同名の講師が無効化されて
+ * いれば、表示名の一意制約に当たるので作らずに断る (有効化を案内する)。
+ */
+export async function createStubTutors(
+  input: unknown,
+): Promise<CreateStubTutorsResult> {
+  await requireRole("admin");
+
+  const parsed = StubTutorsInput.safeParse(input);
+  if (!parsed.success) {
+    return { ok: false, error: "講師名が正しくありません（1 人 50 文字まで）。" };
+  }
+
+  try {
+    const result = await db.transaction(async (tx) => {
+      const names = [...new Set(parsed.data.names)];
+      const same = await tx
+        .select({
+          id: profiles.id,
+          displayName: profiles.displayName,
+          email: profiles.email,
+          isActive: profiles.isActive,
+        })
+        .from(profiles)
+        .where(
+          and(
+            arrayContains(profiles.roles, ["tutor"]),
+            inArray(profiles.displayName, names),
+          ),
+        );
+      const plan = planStubTutors(names, same);
+      if (!plan.ok) return plan;
+
+      const created =
+        plan.toCreate.length === 0
+          ? []
+          : await tx
+              .insert(profiles)
+              .values(
+                plan.toCreate.map((displayName) => {
+                  const id = crypto.randomUUID();
+                  return { id, displayName, email: stubEmail(id), isActive: true };
+                }),
+              )
+              .returning({
+                id: profiles.id,
+                name: profiles.displayName,
+                email: profiles.email,
+              });
+      const emailById = new Map(same.map((t) => [t.id, t.email]));
+      return {
+        ok: true as const,
+        tutors: [
+          ...plan.existing.map((e) => ({
+            name: e.name,
+            id: e.id,
+            email: emailById.get(e.id) ?? "",
+          })),
+          ...created,
+        ],
+      };
+    });
+
+    if (!result.ok) {
+      return {
+        ok: false,
+        error: `同じ名前の講師が無効化されています: ${result.inactiveNames.join("、")}。講師一覧で有効化してから対応付けてください。`,
+      };
+    }
+    revalidatePath("/admin/uploads");
+    revalidatePath("/admin/tutors");
+    return result;
+  } catch (err) {
+    // 同時に同じ名前を作ったとき (表示名の一意制約)
+    if (pgErrorCode(err) === "23505") {
+      return {
+        ok: false,
+        error: "同じ名前の講師が同時に作られました。画面を読み直してから、もう一度お試しください。",
+      };
+    }
+    console.error("createStubTutors failed", err);
+    return { ok: false, error: "講師を作れませんでした。時間をおいてもう一度お試しください。" };
   }
 }
