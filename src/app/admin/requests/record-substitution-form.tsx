@@ -109,7 +109,7 @@ export function RecordSubstitutionForm({ today }: { today: string }) {
         if (isIndeterminate(res)) router.refresh();
         return;
       }
-      const parts = ["記録しました。週次シフト表の担当を差し替えました。"];
+      const parts = ["記録しました。登録済みシフトの担当を差し替えました。"];
       if (res.expiredAbsences > 0) {
         parts.push(EXPIRED_ABSENCE_NOTICE);
       }
@@ -143,7 +143,7 @@ export function RecordSubstitutionForm({ today }: { today: string }) {
       <CardContent className="space-y-3 p-4 text-sm">
         <p className="flex items-start gap-1.5 text-xs text-muted-foreground">
           <Info className="mt-0.5 size-3.5 shrink-0" aria-hidden />
-          「このコマは実際に誰が入ったか」を記録します。週次シフト表の担当が
+          「このコマは実際に誰が入ったか」を記録します。登録済みシフトの担当が
           その場で差し替わります。実施済みのコマも、これから入ることが決まっている
           コマも記録できます。間違えた場合は「記録」タブから取り消せます。
         </p>

@@ -60,7 +60,7 @@ describe("updateRegularPeriod の締切バリデーション (#221)", () => {
     });
     expect(r).toEqual({
       ok: false,
-      error: "提出締切は期の終了日までにしてください。",
+      error: "提出締切は適用期の終了日までにしてください。",
     });
     // ⚠️ **ここが本体**。DB まで行くと 23514 になり、原因と無関係な
     // 「範囲外の確定枠を削除しろ」に化ける (#221)
@@ -109,7 +109,7 @@ describe("updateRegularPeriod の 23514 の帰属 (#221)", () => {
     );
     await expect(updateRegularPeriod(base)).resolves.toEqual({
       ok: false,
-      error: "提出締切は期の終了日までにしてください。",
+      error: "提出締切は適用期の終了日までにしてください。",
     });
   });
 

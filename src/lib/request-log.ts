@@ -293,7 +293,7 @@ export function toAbsenceLogEntry(i: AbsenceLogInput): RequestLogEntry {
     i.isProxy,
     "欠勤",
     "この欠勤を取り消す",
-    "取り消すと、週次シフト表からこのコマの欠勤表示が消えます。実際に休んだ場合は取り消さないでください。",
+    "取り消すと、登録済みシフトからこのコマの欠勤表示が消えます。実際に休んだ場合は取り消さないでください。",
     // 講師の createAbsenceRequest は過去日を弾くので、戻すには代理登録が要る
     i.isPastDate
       ? "このコマは過去日のため、講師は自分で登録し直せません。必要なら「代理で欠勤を登録する」から登録してください。"

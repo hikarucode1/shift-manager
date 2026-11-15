@@ -103,7 +103,7 @@ export default async function AdminTrainingPage({
   return (
     <div className="space-y-6">
       <div>
-        <h1 className="text-2xl font-semibold">講習希望（俯瞰）</h1>
+        <h1 className="text-2xl font-semibold">シフト希望（講習）</h1>
         <p className="mt-1 text-sm text-muted-foreground">
           講習期間ごとに、各日・各コマの希望者数をヒートマップで確認します。
         </p>

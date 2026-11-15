@@ -53,7 +53,7 @@ const dueWithinPeriod = (v: {
 };
 
 const DUE_WITHIN_PERIOD_MESSAGE =
-  "提出締切は期の終了日までにしてください。";
+  "提出締切は適用期の終了日までにしてください。";
 
 const PeriodInput = z
   .object({
@@ -64,7 +64,7 @@ const PeriodInput = z
     submissionDueAt: isoDateTime,
   })
   .refine((v) => v.startDate <= v.endDate, {
-    message: "期の終了日は開始日以降にしてください。",
+    message: "適用期の終了日は開始日以降にしてください。",
     path: ["endDate"],
   })
   .refine(
@@ -121,7 +121,7 @@ const UpdateInput = z
     submissionDueAt: isoDateTime,
   })
   .refine((v) => v.startDate <= v.endDate, {
-    message: "期の終了日は開始日以降にしてください。",
+    message: "適用期の終了日は開始日以降にしてください。",
     path: ["endDate"],
   })
   .refine(

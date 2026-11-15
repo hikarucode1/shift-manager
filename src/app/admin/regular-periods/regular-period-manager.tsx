@@ -229,7 +229,7 @@ export function RegularPeriodManager({
               />
             </div>
             <div className="space-y-1">
-              <Label htmlFor="rp-start">期の開始日</Label>
+              <Label htmlFor="rp-start">適用期の開始日</Label>
               <Input
                 id="rp-start"
                 type="date"
@@ -239,7 +239,7 @@ export function RegularPeriodManager({
               />
             </div>
             <div className="space-y-1">
-              <Label htmlFor="rp-end">期の終了日</Label>
+              <Label htmlFor="rp-end">適用期の終了日</Label>
               <Input
                 id="rp-end"
                 type="date"

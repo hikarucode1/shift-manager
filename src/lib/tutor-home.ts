@@ -78,7 +78,7 @@ export type HomeShiftRow = {
 
 export type HomeDeadline = {
   kind: "training" | "regular";
-  /** 例: "夏期講習の希望提出" */
+  /** 例: "夏期講習のシフト提出" */
   label: string;
   href: string;
   /** 例: "6/25 23:59" */
@@ -193,7 +193,7 @@ export async function getTutorHomeData(tutorId: string): Promise<TutorHomeData> 
       );
     deadlines.push({
       kind: "training",
-      label: `${tp.name}の希望提出`,
+      label: `${tp.name}のシフト提出`,
       href: "/tutor/training",
       dueLabel: fmtDeadline(tp.submissionDeadline),
       daysLeft: tp.daysLeft,

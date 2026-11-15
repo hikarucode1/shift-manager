@@ -85,7 +85,7 @@ export default async function AdminHome() {
         <KpiCard label="今週の確定コマ" value={`${total}`} />
         <KpiCard label="未承認の申請" value={`${pendingTotal}`} />
         <KpiCard
-          label="講習希望 提出"
+          label="シフト希望 提出"
           value={
             heatmap
               ? `${heatmap.submittedTutorCount} / ${heatmap.totalTutorCount}`
