@@ -6,8 +6,14 @@ import { and, eq, not } from "drizzle-orm";
 import { requireRole } from "@/lib/auth";
 import { notify } from "@/lib/notifications";
 import { db } from "@/db/client";
-import { absenceRequests, swapRequests, weeklyShifts } from "@/db/schema";
-import { findPendingSwap } from "@/lib/swaps";
+import {
+  absenceRequests,
+  profiles,
+  swapRequests,
+  weeklyShifts,
+} from "@/db/schema";
+import { findPendingSwap, hasSlotEnded } from "@/lib/swaps";
+import { designeeError } from "@/lib/designee-check";
 import { isUniqueViolation } from "@/lib/db-errors";
 import { slotLabelSafe } from "@/lib/slot-meta";
 import { isValidIsoDate, weekdayOf } from "@/lib/week";
@@ -374,6 +380,122 @@ export async function closeUnassignedAbsence(
     type: "absence_result",
     title: "欠勤申請は不要になりました（担当が変わったか、コマが無くなったため）",
     body: `対象日: ${date}（${label}）${slotLabel} ／ このコマは今はあなたの担当ではありません。`,
+    href: "/tutor/absences",
+  });
+
+  revalidatePath("/admin/requests");
+  revalidatePath("/tutor/absences");
+  return { ok: true };
+}
+
+/* ------------------------------------------------------------------ */
+/*  #331 断られたあとに、代講を頼む相手を指定し直す                     */
+/* ------------------------------------------------------------------ */
+
+const RedesignateInput = z.object({
+  absenceId: z.string().uuid(),
+  designatedSubstituteId: z.string().uuid("講師を選んでください。"),
+});
+
+/**
+ * 教室長: 指定した相手に断られた欠勤で、代講を頼む相手を指定し直す (#331)。
+ * 休む講師の「欠勤等」に、新しい相手への依頼ボタンがまた出る
+ * (`designationState` は今の指定相手への依頼だけを見るため)。
+ */
+export async function redesignateSubstitute(
+  input: unknown,
+): Promise<ActionResult> {
+  await requireRole("admin");
+  const parsed = RedesignateInput.safeParse(input);
+  if (!parsed.success) {
+    return {
+      ok: false,
+      error: parsed.error.issues[0]?.message ?? "入力が不正です。",
+    };
+  }
+  const { absenceId, designatedSubstituteId } = parsed.data;
+
+  const [absence] = await db
+    .select({
+      tutorId: absenceRequests.tutorId,
+      date: absenceRequests.date,
+      slotNumber: absenceRequests.slotNumber,
+    })
+    .from(absenceRequests)
+    .where(
+      and(
+        eq(absenceRequests.id, absenceId),
+        eq(absenceRequests.status, "approved"),
+      ),
+    )
+    .limit(1);
+  if (!absence) {
+    return { ok: false, error: "対象の欠勤が見つかりません（取り消された可能性があります）。" };
+  }
+  if (await hasSlotEnded(absence.date, absence.slotNumber)) {
+    return { ok: false, error: "終了したコマです。実際に入った代講は「代講を記録する」から記録してください。" };
+  }
+  const error = await designeeError({
+    absentTutorId: absence.tutorId,
+    designeeId: designatedSubstituteId,
+    date: absence.date,
+    slotNumber: absence.slotNumber,
+  });
+  if (error) return { ok: false, error };
+  // 返事待ちの依頼があるあいだは指定を変えない (相手が引き受けられなくなる)
+  const [pendingLinked] = await db
+    .select({ id: swapRequests.id })
+    .from(swapRequests)
+    .where(
+      and(
+        eq(swapRequests.absenceRequestId, absenceId),
+        eq(swapRequests.status, "pending"),
+      ),
+    )
+    .limit(1);
+  if (pendingLinked) {
+    return { ok: false, error: "今の相手の返事を待っている依頼があります。" };
+  }
+  // 一度断った講師は選べない。`designationState` はその講師への依頼の結果を
+  // 見るので、選ぶと「断られた」のまま依頼ボタンが出なくなる
+  const [declinedBefore] = await db
+    .select({ id: swapRequests.id })
+    .from(swapRequests)
+    .where(
+      and(
+        eq(swapRequests.absenceRequestId, absenceId),
+        eq(swapRequests.nominatedTutorId, designatedSubstituteId),
+        eq(swapRequests.closeKind, "nominee_declined"),
+      ),
+    )
+    .limit(1);
+  if (declinedBefore) {
+    return {
+      ok: false,
+      error: "この講師にはこの欠勤の代講を一度断られています。別の講師を選んでください。",
+    };
+  }
+
+  await db
+    .update(absenceRequests)
+    .set({ designatedSubstituteId, updatedAt: new Date() })
+    .where(
+      and(
+        eq(absenceRequests.id, absenceId),
+        eq(absenceRequests.status, "approved"),
+      ),
+    );
+
+  const [nominee] = await db
+    .select({ name: profiles.displayName })
+    .from(profiles)
+    .where(eq(profiles.id, designatedSubstituteId))
+    .limit(1);
+  const slotLabel = await slotLabelSafe(absence.slotNumber);
+  await notify([absence.tutorId], {
+    type: "absence_result",
+    title: "代講を頼む相手が変わりました",
+    body: `対象: ${absence.date} ${slotLabel} ／ ${nominee?.name ?? "指定された講師"}さんに代講を依頼してください`,
     href: "/tutor/absences",
   });
 

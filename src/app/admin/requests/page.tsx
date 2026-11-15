@@ -1,6 +1,9 @@
 import Link from "next/link";
 import { requireRole } from "@/lib/auth";
-import { getPendingAbsenceRequests } from "@/lib/absences";
+import {
+  getPendingAbsenceRequests,
+  getUnfilledDesignatedAbsences,
+} from "@/lib/absences";
 import { getPendingSwapRequests } from "@/lib/swaps";
 import { fetchActiveTutors } from "@/lib/upload-commit";
 import { getRequestLog } from "@/lib/request-log-query";
@@ -15,6 +18,7 @@ import { AbsenceOnBehalfForm } from "./absence-on-behalf-form";
 import { OpenSwapOnBehalfForm } from "./swap-on-behalf-form";
 import { RecordSubstitutionForm } from "./record-substitution-form";
 import { RequestsPanel } from "./requests-panel";
+import { UnfilledAbsencesPanel } from "./unfilled-absences-panel";
 import { SwapRequestsPanel } from "./swap-requests-panel";
 import { RequestLogPanel } from "./request-log-panel";
 
@@ -45,7 +49,8 @@ export default async function AdminRequestsPage({
   const view = parseRequestsSearchParams(sp);
   const { tab, period, type, state } = view;
 
-  const [pendingAbsences, pendingSwaps, log, activeTutors] = await Promise.all([
+  const [pendingAbsences, pendingSwaps, log, activeTutors, unfilled] =
+    await Promise.all([
     getPendingAbsenceRequests(),
     getPendingSwapRequests(),
     // 未対応タブでも件数バッジのために引く…のは無駄なので、記録タブのときだけ
@@ -54,9 +59,16 @@ export default async function AdminRequestsPage({
       : Promise.resolve({ rows: [], truncated: false }),
     // #331: 欠勤を承認するときに選ぶ「代講を頼む相手」
     fetchActiveTutors(),
+    // #331: 指定した相手に断られ、代講が決まっていない欠勤
+    getUnfilledDesignatedAbsences(),
   ]);
+  const tutorOptions = activeTutors.map((t) => ({
+    id: t.id,
+    name: t.displayName,
+  }));
 
-  const pendingCount = pendingAbsences.length + pendingSwaps.length;
+  const pendingCount =
+    pendingAbsences.length + pendingSwaps.length + unfilled.length;
   const today = jstToday();
   // 未対応 ⇄ 記録 を行き来してもフィルタを捨てない (両方のリンクに載せる)
   const pendingHref = requestsHref({ ...view, tab: "pending" });
@@ -95,14 +107,16 @@ export default async function AdminRequestsPage({
         <div className="space-y-6">
           <section className="space-y-3">
             <h2 className="text-sm font-semibold text-muted-foreground">欠勤申請</h2>
-            <RequestsPanel
-              pending={pendingAbsences}
-              tutors={activeTutors.map((t) => ({
-                id: t.id,
-                name: t.displayName,
-              }))}
-            />
+            <RequestsPanel pending={pendingAbsences} tutors={tutorOptions} />
           </section>
+          {unfilled.length > 0 && (
+            <section className="space-y-3">
+              <h2 className="text-sm font-semibold text-muted-foreground">
+                代講が決まっていない欠勤
+              </h2>
+              <UnfilledAbsencesPanel absences={unfilled} tutors={tutorOptions} />
+            </section>
+          )}
           <section className="space-y-3">
             <h2 className="text-sm font-semibold text-muted-foreground">交代・代講</h2>
             <SwapRequestsPanel pending={pendingSwaps} />
