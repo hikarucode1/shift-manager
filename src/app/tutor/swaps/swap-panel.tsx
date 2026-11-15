@@ -49,7 +49,6 @@ export function SwapPanel({
   >(null);
 
   const [target, setTarget] = useState("");
-  const [kind, setKind] = useState<"named" | "open">("open");
   const [nominee, setNominee] = useState("");
 
   // #181: 選択中のコマに出勤予定の講師。指名先の候補から外す。
@@ -101,7 +100,7 @@ export function SwapPanel({
     }
     // #181 の最終ガード。UI の disable はあくまで先出しなので、state の同期に
     // 穴が空いてもここで止める (サーバーは別途 isTutorBusyAt で弾く)。
-    if (kind === "named" && !effectiveNominee) {
+    if (!effectiveNominee) {
       setNotice({ type: "error", text: "指名する講師を選択してください。" });
       return;
     }
@@ -117,8 +116,8 @@ export function SwapPanel({
           date: sel.date,
           slotNumber: sel.slotNumber,
           reason: trimmedReason,
-          kind,
-          nominatedTutorId: kind === "named" ? effectiveNominee : null,
+          kind: "named",
+          nominatedTutorId: effectiveNominee,
         }),
       "交代申請を送信しました。",
       () => {
@@ -148,7 +147,7 @@ export function SwapPanel({
         <CardHeader>
           <CardTitle className="text-base">新しい交代申請</CardTitle>
           <CardDescription>
-            指名はその講師の応募（承諾）後、代講募集は応募者の中から教室長が承認します。
+            代わってほしい講師を指名します。その講師が承諾すると成立します。代講の募集は教室長が出します（休む場合は欠勤申請をしてください）。
           </CardDescription>
         </CardHeader>
         <CardContent>
@@ -204,65 +203,29 @@ export function SwapPanel({
                 </div>
               </fieldset>
 
-              {/* 2. 種別 (代講募集 / 指名) */}
-              <fieldset className="space-y-2">
-                <legend className="mb-2 text-sm font-medium">交代の方法</legend>
-                <div className="flex flex-wrap gap-2">
-                  {(
-                    [
-                      { value: "open", label: "代講を募集する" },
-                      { value: "named", label: "指名する" },
-                    ] as const
-                  ).map((k) => {
-                    const on = kind === k.value;
+              {/* 2. 指名する講師。講師が出せる交代は指名だけ (#330: 代講の募集は
+                  教室長が出す) */}
+              <div className="space-y-1.5">
+                <Label htmlFor="sw-nominee">指名する講師</Label>
+                <select
+                  id="sw-nominee"
+                  value={effectiveNominee}
+                  onChange={(e) => setNominee(e.target.value)}
+                  required
+                  className="h-9 w-full rounded-md border bg-background px-2 text-sm focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+                >
+                  <option value="">— 選択してください —</option>
+                  {tutors.map((t) => {
+                    const busy = busyTutorIds.includes(t.id);
                     return (
-                      <label
-                        key={k.value}
-                        className={cn(
-                          "cursor-pointer rounded-full border px-3.5 py-1.5 text-sm transition-colors focus-within:ring-1 focus-within:ring-ring",
-                          on
-                            ? "border-primary bg-primary text-primary-foreground"
-                            : "border-input bg-background hover:bg-muted",
-                        )}
-                      >
-                        <input
-                          type="radio"
-                          name="sw-kind"
-                          value={k.value}
-                          checked={on}
-                          onChange={() => setKind(k.value)}
-                          className="sr-only"
-                        />
-                        {k.label}
-                      </label>
+                      <option key={t.id} value={t.id} disabled={busy}>
+                        {t.name}
+                        {busy ? "（同じコマに出勤予定）" : ""}
+                      </option>
                     );
                   })}
-                </div>
-              </fieldset>
-
-              {kind === "named" && (
-                <div className="space-y-1.5">
-                  <Label htmlFor="sw-nominee">指名する講師</Label>
-                  <select
-                    id="sw-nominee"
-                    value={effectiveNominee}
-                    onChange={(e) => setNominee(e.target.value)}
-                    required
-                    className="h-9 w-full rounded-md border bg-background px-2 text-sm focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
-                  >
-                    <option value="">— 選択してください —</option>
-                    {tutors.map((t) => {
-                      const busy = busyTutorIds.includes(t.id);
-                      return (
-                        <option key={t.id} value={t.id} disabled={busy}>
-                          {t.name}
-                          {busy ? "（同じコマに出勤予定）" : ""}
-                        </option>
-                      );
-                    })}
-                  </select>
-                </div>
-              )}
+                </select>
+              </div>
 
               {/* 3. 理由 */}
               <div className="space-y-1.5">
@@ -284,7 +247,7 @@ export function SwapPanel({
                 <p className="flex items-start gap-2 text-foreground">
                   <Info className="mt-0.5 size-4 shrink-0 text-accent" />
                   <span>
-                    指名はその講師の承諾後に成立します。代講募集は応募者の中から教室長が承認します。
+                    指名はその講師の承諾後に成立します。誰に頼めばいいか分からないときは、欠勤申請をすると教室長が代講を探します。
                   </span>
                 </p>
               </div>

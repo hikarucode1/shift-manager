@@ -30,7 +30,7 @@ export default async function TutorSwapsPage() {
       <section className="rounded-xl bg-primary p-4 text-primary-foreground">
         <h1 className="text-xl font-bold">交代申請</h1>
         <p className="mt-1 text-xs text-primary-foreground/80">
-          確定シフトを別の講師に代わってもらう申請をします。指名するか、代講を募集できます。
+          確定シフトを、指名した講師に代わってもらう申請をします。
         </p>
       </section>
 

@@ -18,7 +18,6 @@ import {
 import { isUniqueViolation } from "@/lib/db-errors";
 import {
   getActiveApplicantIds,
-  getEligibleApplicantIds,
   hasSlotEnded,
   isTutorBusyAt,
 } from "@/lib/swaps";
@@ -59,8 +58,17 @@ export async function createSwapRequest(
     };
   }
   const { date, slotNumber, reason, kind } = parsed.data;
-  const nominatedTutorId =
-    kind === "named" ? parsed.data.nominatedTutorId ?? null : null;
+  // #330: 代講の募集は教室長だけが出す (代理募集 #227)。講師の画面からは
+  // 入口を消したが、action を直接呼ばれても作らない。講師が休むときは欠勤
+  // 申請 → 教室長が必要なら代理募集、の流れにする
+  if (kind === "open") {
+    return {
+      ok: false,
+      error:
+        "代講の募集は教室長が出します。休む場合は欠勤申請をしてください。",
+    };
+  }
+  const nominatedTutorId = parsed.data.nominatedTutorId ?? null;
 
   // #178: 新規の募集だけはコマ単位で弾く。終了したコマを今から募集しても
   // 代わってもらう相手が居ないため (既に済んだ分の記録は承認側で扱う)。
@@ -108,8 +116,8 @@ export async function createSwapRequest(
     };
   }
 
-  // 指名先の妥当性
-  if (kind === "named") {
+  // 指名先の妥当性 (schema の refine で named には必ず入っている)
+  if (nominatedTutorId) {
     if (nominatedTutorId === profile.id) {
       return { ok: false, error: "自分自身は指名できません。" };
     }
@@ -118,7 +126,7 @@ export async function createSwapRequest(
       .from(profiles)
       .where(
         and(
-          eq(profiles.id, nominatedTutorId as string),
+          eq(profiles.id, nominatedTutorId),
           arrayContains(profiles.roles, ["tutor"]),
           eq(profiles.isActive, true),
         ),
@@ -130,7 +138,7 @@ export async function createSwapRequest(
     // 指名先が同じコマに既に出勤予定だと applyToSwap の clash ガードで応募でき
     // ないため、作成時点で弾く。これで申請者にその場で理由が伝わり、一覧に
     // 応募不能な dead-end 行が出るのも防げる (通知先は下の named 分岐で確定)。
-    if (await isTutorBusyAt(date, slotNumber, nominatedTutorId as string)) {
+    if (await isTutorBusyAt(date, slotNumber, nominatedTutorId)) {
       return {
         ok: false,
         error: "その講師は同じコマに出勤予定のため指名できません。",
@@ -163,24 +171,14 @@ export async function createSwapRequest(
   // un-awaited promise と違いサーバーレスでも完了が保証される)。
   after(async () => {
     try {
-      // open は「応募資格のある講師 (現役 tutor・自分以外・同コマ未出勤)」全員へ。
-      // named は指名先 1 名へ (作成時に role/active + 同コマ clash を検証済みなので
-      // ここでの資格再判定は不要)。
+      // 指名先 1 名へ (作成時に role/active + 同コマ clash を検証済みなので
+      // ここでの資格再判定は不要)。講師が出せるのは指名だけ (#330)
       const slotLabel =
         (await getSlotMeta()).get(slotNumber)?.label ?? `${slotNumber}限`;
-      const recipientIds =
-        kind === "open"
-          ? await getEligibleApplicantIds(date, slotNumber, profile.id)
-          : nominatedTutorId
-            ? [nominatedTutorId]
-            : [];
-      await notify(recipientIds, {
+      await notify(nominatedTutorId ? [nominatedTutorId] : [], {
         type: "swap_posted",
-        title:
-          kind === "open"
-            ? "代講募集が追加されました"
-            : "交代の指名がありました",
-        body: `対象: ${date} ${slotLabel}${kind === "named" ? "（あなた宛の指名）" : ""}`,
+        title: "交代の指名がありました",
+        body: `対象: ${date} ${slotLabel}（あなた宛の指名）`,
         href: "/tutor/open-swaps",
       });
     } catch (e) {
