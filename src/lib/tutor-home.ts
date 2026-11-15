@@ -19,7 +19,7 @@ import {
 } from "@/db/schema";
 import { getActiveTrainingPeriods } from "@/lib/training";
 import { getTutorWeekSchedule, type ScheduleSlot } from "@/lib/tutor-schedule";
-import { jstToday, nextWeek, weekOf } from "@/lib/week";
+import { homeWeekOf, jstToday, nextWeek } from "@/lib/week";
 
 const DAY_MS = 86_400_000;
 const JST_OFFSET_MS = 9 * 60 * 60 * 1000;
@@ -108,7 +108,8 @@ export async function getTutorHomeData(tutorId: string): Promise<TutorHomeData> 
   const tomorrow = addDayIso(today);
   const now = new Date();
   const nowHm = nowHmJst(now);
-  const thisRange = weekOf();
+  // #337: 日曜は翌日からの週を「今週」にする
+  const thisRange = homeWeekOf(today);
   const nextRange = nextWeek(thisRange);
 
   const [thisWeek, nextWk, trainingPeriods, regularRows] = await Promise.all([
