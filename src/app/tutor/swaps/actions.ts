@@ -307,12 +307,21 @@ export async function applyToSwap(input: unknown): Promise<ActionResult> {
       status: swapRequests.status,
       date: swapRequests.date,
       slotNumber: swapRequests.slotNumber,
+      absenceRequestId: swapRequests.absenceRequestId,
     })
     .from(swapRequests)
     .where(eq(swapRequests.id, swapRequestId))
     .limit(1);
   if (reqRows.length === 0) {
     return { ok: false, error: "募集が見つかりません。" };
+  }
+  // #331: 欠勤で教室長が指定した相手への依頼は、「引き受ける / 断る」で返事
+  // する (引き受けるとその場で成立)。応募にすると教室長の承認待ちに化ける
+  if (reqRows[0].absenceRequestId !== null) {
+    return {
+      ok: false,
+      error: "この依頼は「引き受ける」か「断る」で返事してください。",
+    };
   }
   const r = reqRows[0];
   if (r.status !== "pending") {

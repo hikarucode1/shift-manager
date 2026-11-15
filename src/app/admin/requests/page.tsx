@@ -2,6 +2,7 @@ import Link from "next/link";
 import { requireRole } from "@/lib/auth";
 import { getPendingAbsenceRequests } from "@/lib/absences";
 import { getPendingSwapRequests } from "@/lib/swaps";
+import { fetchActiveTutors } from "@/lib/upload-commit";
 import { getRequestLog } from "@/lib/request-log-query";
 import {
   parseRequestsSearchParams,
@@ -44,13 +45,15 @@ export default async function AdminRequestsPage({
   const view = parseRequestsSearchParams(sp);
   const { tab, period, type, state } = view;
 
-  const [pendingAbsences, pendingSwaps, log] = await Promise.all([
+  const [pendingAbsences, pendingSwaps, log, activeTutors] = await Promise.all([
     getPendingAbsenceRequests(),
     getPendingSwapRequests(),
     // 未対応タブでも件数バッジのために引く…のは無駄なので、記録タブのときだけ
     tab === "log"
       ? getRequestLog({ period, type, state })
       : Promise.resolve({ rows: [], truncated: false }),
+    // #331: 欠勤を承認するときに選ぶ「代講を頼む相手」
+    fetchActiveTutors(),
   ]);
 
   const pendingCount = pendingAbsences.length + pendingSwaps.length;
@@ -92,7 +95,13 @@ export default async function AdminRequestsPage({
         <div className="space-y-6">
           <section className="space-y-3">
             <h2 className="text-sm font-semibold text-muted-foreground">欠勤申請</h2>
-            <RequestsPanel pending={pendingAbsences} />
+            <RequestsPanel
+              pending={pendingAbsences}
+              tutors={activeTutors.map((t) => ({
+                id: t.id,
+                name: t.displayName,
+              }))}
+            />
           </section>
           <section className="space-y-3">
             <h2 className="text-sm font-semibold text-muted-foreground">交代・代講</h2>

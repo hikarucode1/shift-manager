@@ -146,6 +146,13 @@ export function SwapRequestsPanel({
                       <span className="font-medium">{r.requesterName}</span>
                       <Badge variant="accent">未対応</Badge>
                       {r.isProxy && <Badge variant="secondary">代理募集</Badge>}
+                      {/* #331: 欠勤で指定した相手への依頼。相手が引き受けると
+                          その場で成立するので、承認は要らない */}
+                      {r.designated && (
+                        <Badge variant="secondary">
+                          欠勤の代講依頼・相手の返事待ち
+                        </Badge>
+                      )}
                       <Badge variant="outline">
                         {r.kind === "named"
                           ? `指名: ${r.nominatedName ?? "—"}`

@@ -11,7 +11,17 @@ import {
   type SQL,
 } from "drizzle-orm";
 import { db } from "@/db/client";
-import { absenceRequests, profiles, weeklyShifts } from "@/db/schema";
+import {
+  absenceRequests,
+  profiles,
+  swapRequests,
+  weeklyShifts,
+} from "@/db/schema";
+import {
+  designationState,
+  type DesignationState,
+  type LinkedSwap,
+} from "@/lib/designated-substitution";
 import { absenceCloseFlags } from "@/lib/absence-close-kind";
 import { getSlotMeta } from "@/lib/slot-meta";
 import { isSlotPast } from "@/lib/slot-time";
@@ -64,6 +74,14 @@ export type AbsenceRequestRow = {
    * **本人申告であることの証明にはならない**。
    */
   isProxy: boolean;
+};
+
+/** 講師の「欠勤等」の 1 行。#331 の代講依頼の状態を足したもの */
+export type TutorAbsenceRow = AbsenceRequestRow & {
+  /** 教室長が指定した代講の相手への依頼の状態 (#331) */
+  designation: DesignationState;
+  /** 指定された相手の名前 (指定が無ければ null) */
+  designatedName: string | null;
 };
 
 export type PendingAbsence = AbsenceRequestRow & {
@@ -178,7 +196,7 @@ export async function getTutorUpcomingShifts(
 
 export async function getTutorAbsenceRequests(
   tutorId: string,
-): Promise<AbsenceRequestRow[]> {
+): Promise<TutorAbsenceRow[]> {
   const meta = await getSlotMeta();
   const rows = await db
     .select()
@@ -186,7 +204,54 @@ export async function getTutorAbsenceRequests(
     .where(eq(absenceRequests.tutorId, tutorId))
     .orderBy(desc(absenceRequests.createdAt));
 
+  // #331: 指定された相手の名前と、欠勤に紐づく依頼
+  const designatedIds = [
+    ...new Set(
+      rows.map((r) => r.designatedSubstituteId).filter((v): v is string => !!v),
+    ),
+  ];
+  const [nameRows, linked] = await Promise.all([
+    designatedIds.length > 0
+      ? db
+          .select({ id: profiles.id, name: profiles.displayName })
+          .from(profiles)
+          .where(inArray(profiles.id, designatedIds))
+      : Promise.resolve([]),
+    rows.length > 0
+      ? db
+          .select({
+            absenceRequestId: swapRequests.absenceRequestId,
+            status: swapRequests.status,
+            nominatedTutorId: swapRequests.nominatedTutorId,
+            closeKind: swapRequests.closeKind,
+          })
+          .from(swapRequests)
+          .where(
+            inArray(
+              swapRequests.absenceRequestId,
+              rows.map((r) => r.id),
+            ),
+          )
+      : Promise.resolve([]),
+  ]);
+  const nameById = new Map(nameRows.map((n) => [n.id, n.name]));
+
   return rows.map((r) => ({
+    designatedName: r.designatedSubstituteId
+      ? (nameById.get(r.designatedSubstituteId) ?? "不明")
+      : null,
+    designation: designationState({
+      absenceStatus: r.status as AbsenceStatus,
+      designatedId: r.designatedSubstituteId,
+      linkedSwaps: linked
+        .filter((l) => l.absenceRequestId === r.id)
+        .map((l) => ({
+          status: l.status as LinkedSwap["status"],
+          nominatedTutorId: l.nominatedTutorId,
+          closeKind: l.closeKind,
+        })),
+      isEnded: isSlotPast(r.date, slotLabelOf(meta, r.slotNumber).end),
+    }),
     id: r.id,
     isProxy: r.createdBy !== null && r.createdBy !== r.tutorId,
     ...absenceCloseFlags(r.closeKind),

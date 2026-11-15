@@ -2,14 +2,19 @@
 
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
-import { and, eq, inArray } from "drizzle-orm";
+import { and, arrayContains, eq, inArray } from "drizzle-orm";
 import { requireRole } from "@/lib/auth";
 import { notify } from "@/lib/notifications";
 import { db } from "@/db/client";
-import { absenceRequests, swapRequests, weeklyShifts } from "@/db/schema";
+import {
+  absenceRequests,
+  profiles,
+  swapRequests,
+  weeklyShifts,
+} from "@/db/schema";
 import { isUniqueViolation } from "@/lib/db-errors";
 import { isValidIsoDate, jstToday } from "@/lib/week";
-import { hasSlotEnded } from "@/lib/swaps";
+import { hasSlotEnded, isTutorBusyAt } from "@/lib/swaps";
 import { absenceTutorAssigned } from "@/lib/absences";
 import { pendingAbsenceActions } from "@/lib/pending-absence-actions";
 
@@ -181,6 +186,11 @@ const DecideInput = z.object({
   id: z.string().uuid(),
   decision: z.enum(["approved", "rejected"]),
   decisionNote: z.string().trim().max(500).optional().default(""),
+  /**
+   * #331: 承認するときに指定する「代講を頼む相手」(任意)。休む講師はこの
+   * 相手に代講を依頼し、相手が引き受けるとその場で成立する
+   */
+  designatedSubstituteId: z.string().uuid().nullable().optional(),
 });
 
 /**
@@ -233,6 +243,8 @@ export async function decideAbsenceRequest(
     };
   }
   const { id, decision, decisionNote } = parsed.data;
+  const designatedSubstituteId =
+    decision === "approved" ? (parsed.data.designatedSubstituteId ?? null) : null;
 
   if (decision === "rejected" && decisionNote.length === 0) {
     return { ok: false, error: "却下する場合は理由を入力してください。" };
@@ -257,6 +269,7 @@ export async function decideAbsenceRequest(
   if (decision === "approved") {
     const [target] = await db
       .select({
+        tutorId: absenceRequests.tutorId,
         date: absenceRequests.date,
         slotNumber: absenceRequests.slotNumber,
       })
@@ -271,6 +284,34 @@ export async function decideAbsenceRequest(
         error: "処理できませんでした（既に対応済みの可能性があります）。",
       };
     }
+    // #331: 指定する相手は、休む本人以外の有効な講師で、そのコマが空いている人
+    if (designatedSubstituteId !== null) {
+      if (designatedSubstituteId === target.tutorId) {
+        return { ok: false, error: "休む講師本人は代講の相手に指定できません。" };
+      }
+      const [nominee] = await db
+        .select({ id: profiles.id })
+        .from(profiles)
+        .where(
+          and(
+            eq(profiles.id, designatedSubstituteId),
+            arrayContains(profiles.roles, ["tutor"]),
+            eq(profiles.isActive, true),
+          ),
+        )
+        .limit(1);
+      if (!nominee) {
+        return { ok: false, error: "代講の相手に指定した講師が見つかりません。" };
+      }
+      if (
+        await isTutorBusyAt(target.date, target.slotNumber, designatedSubstituteId)
+      ) {
+        return {
+          ok: false,
+          error: "指定した講師は同じコマに出勤予定です。別の講師を選んでください。",
+        };
+      }
+    }
     requireAssigned = !pendingAbsenceActions({
       tutorAssigned: false,
       isEnded: await hasSlotEnded(target.date, target.slotNumber),
@@ -284,6 +325,7 @@ export async function decideAbsenceRequest(
       decidedBy: profile.id,
       decidedAt: new Date(),
       decisionNote: decisionNote.length > 0 ? decisionNote : null,
+      designatedSubstituteId,
       updatedAt: new Date(),
     })
     .where(
@@ -315,6 +357,16 @@ export async function decideAbsenceRequest(
     };
   }
 
+  // #331: 通知に指定した相手の名前を入れる (依頼は「欠勤等」の画面から)
+  const designatedName = designatedSubstituteId
+    ? ((
+        await db
+          .select({ name: profiles.displayName })
+          .from(profiles)
+          .where(eq(profiles.id, designatedSubstituteId))
+          .limit(1)
+      )[0]?.name ?? null)
+    : null;
   await notify([updated[0].tutorId], {
     type: "absence_result",
     title:
@@ -323,7 +375,8 @@ export async function decideAbsenceRequest(
         : "欠勤申請が却下されました",
     body:
       `対象日: ${updated[0].date}` +
-      (decisionNote.length > 0 ? ` ／ ${decisionNote}` : ""),
+      (decisionNote.length > 0 ? ` ／ ${decisionNote}` : "") +
+      (designatedName ? ` ／ ${designatedName}さんに代講を依頼してください` : ""),
     href: "/tutor/absences",
   });
 

@@ -5,6 +5,7 @@ import { profiles } from "@/db/schema";
 import { getAdminWeekSchedule } from "@/lib/admin-schedule";
 import { getPendingAbsenceRequests } from "@/lib/absences";
 import { getPendingSwapRequests } from "@/lib/swaps";
+import { fetchActiveTutors } from "@/lib/upload-commit";
 import { loadNotificationHealth } from "@/lib/notification-health-loader";
 import { NotificationHealthCard } from "@/components/notification-health-card";
 import { getHeatmapData, getHeatmapPeriods } from "@/lib/training-overview";
@@ -56,6 +57,7 @@ export default async function AdminHome() {
     unlinkedCount,
     heatmap,
     notificationHealth,
+    activeTutors,
   ] = await Promise.all([
     getAdminWeekSchedule(week),
     getPendingAbsenceRequests(),
@@ -63,6 +65,8 @@ export default async function AdminHome() {
     countUnlinkedTutors(),
     currentPeriod ? getHeatmapData(currentPeriod.id) : Promise.resolve(null),
     loadNotificationHealth(),
+    // #331: 欠勤を承認するときに選ぶ「代講を頼む相手」
+    fetchActiveTutors(),
   ]);
 
   const pendingTotal = pendingAbsences.length + pendingSwaps.length;
@@ -112,7 +116,13 @@ export default async function AdminHome() {
                 <SwapRequestsPanel pending={pendingSwaps} />
               )}
               {pendingAbsences.length > 0 && (
-                <RequestsPanel pending={pendingAbsences} />
+                <RequestsPanel
+                  pending={pendingAbsences}
+                  tutors={activeTutors.map((t) => ({
+                    id: t.id,
+                    name: t.displayName,
+                  }))}
+                />
               )}
             </>
           )}

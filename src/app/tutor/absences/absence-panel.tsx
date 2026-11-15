@@ -4,7 +4,7 @@ import { useEffect, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { AlertCircle, Info } from "lucide-react";
 import { isIndeterminate, toFailedResult } from "@/lib/action-failure";
-import type { AbsenceRequestRow, UpcomingShift } from "@/lib/absences";
+import type { TutorAbsenceRow, UpcomingShift } from "@/lib/absences";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
@@ -18,9 +18,10 @@ import {
 import { shortDate } from "@/lib/week";
 import { cn } from "@/lib/utils";
 import { cancelAbsenceRequest, createAbsenceRequest } from "./actions";
+import { requestDesignatedSubstitute } from "@/app/tutor/swaps/designated-actions";
 
 const STATUS_LABEL: Record<
-  AbsenceRequestRow["status"],
+  TutorAbsenceRow["status"],
   { text: string; variant: "secondary" | "destructive" | "outline" | "accent" }
 > = {
   pending: { text: "承認待ち", variant: "accent" },
@@ -37,7 +38,7 @@ export function AbsencePanel({
   history,
 }: {
   upcoming: UpcomingShift[];
-  history: AbsenceRequestRow[];
+  history: TutorAbsenceRow[];
 }) {
   const router = useRouter();
   const [isPending, startTransition] = useTransition();
@@ -278,7 +279,12 @@ export function AbsencePanel({
           ) : (
             <div className="divide-y">
               {history.map((h) => {
-                const st = STATUS_LABEL[h.status];
+                // #331: 指定した相手が引き受けて成立した欠勤は、自動失効で
+                // 「取消」になっているが、本人には「代講が決まった」と見せる
+                const designatedAccepted = h.designation.kind === "accepted";
+                const st = designatedAccepted
+                  ? { text: "代講決定", variant: "secondary" as const }
+                  : STATUS_LABEL[h.status];
                 return (
                   <div key={h.id} className="py-3">
                     <div className="flex flex-wrap items-center gap-2">
@@ -311,6 +317,7 @@ export function AbsencePanel({
                       理由: {h.reason}
                     </p>
                     {h.decisionNote &&
+                      !designatedAccepted &&
                       (h.autoExpired ? (
                         // ⚠️ 自動失効は誰の判断でもない (#225 で admin 側は
                         // decided_by を null にして誤帰属を消した)。ここで
@@ -339,6 +346,49 @@ export function AbsencePanel({
                           教室長より: {h.decisionNote}
                         </p>
                       ))}
+                    {/* #331: 教室長が指定した代講の相手への依頼 */}
+                    {h.designation.kind === "can-request" && (
+                      <div className="mt-2 space-y-2 rounded-lg bg-accent/10 p-3">
+                        <p className="text-sm">
+                          教室長が代講の相手に{" "}
+                          <span className="font-semibold">
+                            {h.designatedName}さん
+                          </span>{" "}
+                          を指定しました。依頼してください。
+                        </p>
+                        <Button
+                          size="sm"
+                          className="w-full"
+                          disabled={isPending}
+                          onClick={() =>
+                            run(
+                              () =>
+                                requestDesignatedSubstitute({ absenceId: h.id }),
+                              `${h.designatedName}さんに代講を依頼しました。`,
+                            )
+                          }
+                        >
+                          {h.designatedName}さんに代講を依頼する
+                        </Button>
+                      </div>
+                    )}
+                    {h.designation.kind === "requested" && (
+                      <p className="mt-1 text-sm text-muted-foreground">
+                        {h.designatedName}
+                        さんに代講を依頼しました。返事を待っています。
+                      </p>
+                    )}
+                    {h.designation.kind === "accepted" && (
+                      <p className="mt-1 text-sm text-primary">
+                        {h.designatedName}さんが代講を引き受けました。
+                      </p>
+                    )}
+                    {h.designation.kind === "declined" && (
+                      <p className="mt-1 text-sm text-muted-foreground">
+                        {h.designatedName}
+                        さんは都合がつきませんでした。教室長からの連絡を待ってください。
+                      </p>
+                    )}
                   </div>
                 );
               })}

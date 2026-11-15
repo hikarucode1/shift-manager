@@ -103,10 +103,20 @@ export type OpenSwap = {
   isEnded: boolean;
   /** 過去日で、応募がサーバー側で弾かれるか (#165)。ボタンを落とす印 */
   isPastDate: boolean;
+  /**
+   * #331: 欠勤で教室長が指定した相手 (= 自分) への依頼か。応募ではなく
+   * 「引き受ける / 断る」で返事し、引き受けるとその場で成立する
+   */
+  designated: boolean;
 };
 
 export type AdminSwapRequest = MySwapRequest & {
   requesterId: string;
+  /**
+   * #331: 欠勤で教室長が指定した相手への依頼か。相手が引き受けるとその場で
+   * 成立するので、教室長の承認は要らない (返事待ちとして出す)
+   */
+  designated?: boolean;
   /**
    * 決定 (承認 / 却下 / 取り消し / 記録) の時刻 (#233)。履歴タブはこれで並べる
    * ので、根拠を画面にも出す。決定前は null
@@ -604,6 +614,7 @@ export async function getOpenSwapsForTutor(
       date: swapRequests.date,
       slotNumber: swapRequests.slotNumber,
       reason: swapRequests.reason,
+      absenceRequestId: swapRequests.absenceRequestId,
     })
     .from(swapRequests)
     .innerJoin(profiles, eq(profiles.id, swapRequests.requesterId))
@@ -651,6 +662,7 @@ export async function getOpenSwapsForTutor(
     applied: appliedSet.has(r.id),
     isEnded: isSlotPast(r.date, labelOf(meta, r.slotNumber).end),
     isPastDate: r.date < today,
+    designated: r.absenceRequestId !== null,
   }));
 }
 
@@ -676,6 +688,7 @@ export async function getPendingSwapRequests(): Promise<AdminSwapRequest[]> {
       createdBy: swapRequests.createdBy,
       decidedAt: swapRequests.decidedAt,
       createdAt: swapRequests.createdAt,
+      absenceRequestId: swapRequests.absenceRequestId,
     })
     .from(swapRequests)
     .innerJoin(requester, eq(requester.id, swapRequests.requesterId))
@@ -713,6 +726,7 @@ export async function getPendingSwapRequests(): Promise<AdminSwapRequest[]> {
     closedUnassignable: false,
     applicants: applicants.get(r.id) ?? [],
     isProxy: r.createdBy !== null && r.createdBy !== r.requesterId,
+    designated: r.absenceRequestId !== null,
     decidedAt: r.decidedAt ? r.decidedAt.toISOString() : null,
     createdAt: r.createdAt.toISOString(),
   }));

@@ -54,7 +54,9 @@ export type RequestLogEvent =
    * 担当が変わって承認できなくなり、システムが締め切った (交代のみ。#293)。
    * 代講の記録で元講師の募集、代講の取り消しで代講者の募集
    */
-  | "closed-unassignable";
+  | "closed-unassignable"
+  /** 欠勤で教室長が指定した相手が、代講の依頼を断った (交代のみ。#331) */
+  | "declined-by-nominee";
 
 export type RequestLogEntry = {
   id: string;
@@ -126,6 +128,7 @@ export const EVENT_LABEL: Record<RequestLogEvent, string> = {
   "auto-expired": "失効（交代成立による）",
   "auto-expired-unassigned": "失効（担当でなくなったため）",
   "closed-unassignable": "締め切り（担当が変わったため）",
+  "declined-by-nominee": "指定した講師が断った",
 };
 
 export type LogStatus = "pending" | "approved" | "rejected" | "cancelled";
@@ -338,6 +341,8 @@ function swapCancelEvent(i: SwapLogInput): RequestLogEvent {
       return "withdrawn-by-admin";
     case "tutor_withdraw":
       return "cancelled-by-tutor";
+    case "nominee_declined":
+      return "declined-by-nominee";
     case null:
       return i.actorName === null
         ? "cancelled-by-tutor"
