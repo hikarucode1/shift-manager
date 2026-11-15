@@ -14,7 +14,14 @@ import { decideAbsenceRequest } from "@/app/tutor/absences/actions";
 import { pendingAbsenceActions } from "@/lib/pending-absence-actions";
 import { closeUnassignedAbsence } from "./absence-actions";
 
-export function RequestsPanel({ pending }: { pending: PendingAbsence[] }) {
+export function RequestsPanel({
+  pending,
+  tutors,
+}: {
+  pending: PendingAbsence[];
+  /** #331: 承認するときに「代講を頼む相手」に選べる講師 */
+  tutors: { id: string; name: string }[];
+}) {
   const router = useRouter();
   const [isPending, startTransition] = useTransition();
   const [notice, setNotice] = useState<{
@@ -24,6 +31,8 @@ export function RequestsPanel({ pending }: { pending: PendingAbsence[] }) {
   // 却下入力中の行 id → 理由
   const [rejectId, setRejectId] = useState<string | null>(null);
   const [rejectNote, setRejectNote] = useState("");
+  // #331: カードごとの「代講を頼む相手」(承認時に送る。空 = 指定しない)
+  const [designated, setDesignated] = useState<Record<string, string>>({});
 
   // 却下の入力中のカードが、読み直しで却下を出せなくなったら (担当でない,
   // #289)、入力内容を捨てる。どの操作の読み直しでも効くよう、描画のたびに
@@ -201,56 +210,94 @@ export function RequestsPanel({ pending }: { pending: PendingAbsence[] }) {
                     </div>
                   </div>
                 ) : (
-                  <div className="flex gap-2">
-                    {actions.canApprove && (
-                      <Button
-                        size="sm"
-                        disabled={isPending}
-                        onClick={() =>
-                          run(
-                            () =>
-                              decideAbsenceRequest({
-                                id: p.id,
-                                decision: "approved",
-                              }),
-                            "承認しました。",
-                            { refreshOnError: true },
-                          )
-                        }
-                      >
-                        承認
-                      </Button>
+                  <div className="space-y-2">
+                    {/* #331: 承認するときに、代講を頼む相手を指定できる (任意)。
+                      指定すると、休む講師の画面に依頼ボタンが出る */}
+                    {actions.canApprove && !p.isEnded && (
+                      <div className="flex flex-wrap items-center gap-2">
+                        <label
+                          htmlFor={`designate-${p.id}`}
+                          className="text-xs text-muted-foreground"
+                        >
+                          代講を頼む相手（任意）
+                        </label>
+                        <select
+                          id={`designate-${p.id}`}
+                          value={designated[p.id] ?? ""}
+                          onChange={(e) =>
+                            setDesignated((prev) => ({
+                              ...prev,
+                              [p.id]: e.target.value,
+                            }))
+                          }
+                          className="h-8 min-w-[10rem] rounded-md border bg-background px-2 text-sm focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+                        >
+                          <option value="">指定しない</option>
+                          {tutors
+                            .filter((t) => t.id !== p.tutorId)
+                            .map((t) => (
+                              <option key={t.id} value={t.id}>
+                                {t.name}
+                              </option>
+                            ))}
+                        </select>
+                      </div>
                     )}
-                    {actions.canReject && (
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        disabled={isPending}
-                        onClick={() => {
-                          setRejectId(p.id);
-                          setRejectNote("");
-                        }}
-                      >
-                        却下
-                      </Button>
-                    )}
-                    {actions.canClose && (
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        disabled={isPending}
-                        onClick={() =>
-                          run(
-                            () => closeUnassignedAbsence({ id: p.id }),
-                            "不要として閉じました。講師に通知が届きます。",
-                            // 今も担当で弾かれたら、読み直して承認 / 却下に戻す
-                            { refreshOnError: true },
-                          )
-                        }
-                      >
-                        不要として閉じる
-                      </Button>
-                    )}
+                    <div className="flex gap-2">
+                      {actions.canApprove && (
+                        <Button
+                          size="sm"
+                          disabled={isPending}
+                          onClick={() =>
+                            run(
+                              () =>
+                                decideAbsenceRequest({
+                                  id: p.id,
+                                  decision: "approved",
+                                  designatedSubstituteId:
+                                    designated[p.id] || null,
+                                }),
+                              designated[p.id]
+                                ? "承認しました。休む講師の画面に、代講の依頼ボタンが出ます。"
+                                : "承認しました。",
+                              { refreshOnError: true },
+                            )
+                          }
+                        >
+                          承認
+                        </Button>
+                      )}
+                      {actions.canReject && (
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          disabled={isPending}
+                          onClick={() => {
+                            setRejectId(p.id);
+                            setRejectNote("");
+                          }}
+                        >
+                          却下
+                        </Button>
+                      )}
+                      {actions.canClose && (
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          disabled={isPending}
+                          onClick={() =>
+                            run(
+                              () => closeUnassignedAbsence({ id: p.id }),
+                              "不要として閉じました。講師に通知が届きます。",
+                              // 今も担当で弾かれたら、読み直して承認 / 却下に戻す
+                              { refreshOnError: true },
+                            )
+                          }
+                        >
+                          不要として閉じる
+                        </Button>
+                      )}
+                    </div>
                   </div>
                 )}
               </div>

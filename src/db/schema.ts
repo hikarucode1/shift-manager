@@ -58,6 +58,8 @@ export const swapCloseKindEnum = pgEnum("swap_close_kind", [
   // 担当が変わって承認できなくなったので、システムが閉じた (#293)。代講の
   // 記録 (#253) で元講師の募集、代講の取り消し (#287) で代講者の募集
   "unassignable",
+  // 欠勤で教室長が指定した相手が、代講の依頼を断った (#331)
+  "nominee_declined",
 ]);
 
 export type SwapCloseKind = (typeof swapCloseKindEnum.enumValues)[number];
@@ -771,6 +773,15 @@ export const absenceRequests = pgTable(
      * 0037 で既存の行を埋め、0041 で「cancelled なら必ず入る」制約を足した (#309)
      */
     closeKind: absenceCloseKindEnum("close_kind"),
+    /**
+     * #331: 欠勤を承認するときに教室長が指定した「代講を頼む相手」(任意)。
+     * 休む講師はこの相手に代講を依頼し (swap_requests.absence_request_id で
+     * この欠勤に紐づく)、相手が引き受けるとその場で成立する
+     */
+    designatedSubstituteId: uuid("designated_substitute_id").references(
+      () => profiles.id,
+      { onDelete: "set null" },
+    ),
     createdAt: timestamp("created_at", { withTimezone: true })
       .notNull()
       .defaultNow(),
@@ -844,6 +855,15 @@ export const swapRequests = pgTable(
      * 0038 で既存の行を埋め、0041 で「cancelled なら必ず入る」制約を足した (#309)
      */
     closeKind: swapCloseKindEnum("close_kind"),
+    /**
+     * #331: 欠勤で教室長が指定した相手への代講依頼のとき、その欠勤。
+     * これがある named の依頼は、相手が引き受けた時点で成立する (教室長の
+     * 承認を待たない。相手は教室長が既に決めているため)
+     */
+    absenceRequestId: uuid("absence_request_id").references(
+      () => absenceRequests.id,
+      { onDelete: "set null" },
+    ),
     createdAt: timestamp("created_at", { withTimezone: true })
       .notNull()
       .defaultNow(),

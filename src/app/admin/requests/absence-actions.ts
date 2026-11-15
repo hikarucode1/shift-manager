@@ -6,7 +6,7 @@ import { and, eq, not } from "drizzle-orm";
 import { requireRole } from "@/lib/auth";
 import { notify } from "@/lib/notifications";
 import { db } from "@/db/client";
-import { absenceRequests, weeklyShifts } from "@/db/schema";
+import { absenceRequests, swapRequests, weeklyShifts } from "@/db/schema";
 import { findPendingSwap } from "@/lib/swaps";
 import { isUniqueViolation } from "@/lib/db-errors";
 import { slotLabelSafe } from "@/lib/slot-meta";
@@ -139,8 +139,41 @@ export async function cancelApprovedAbsence(
     href: "/tutor/absences",
   });
 
+  // #331: この欠勤から出した代講の依頼 (相手の返事待ち) を閉じる。休む講師が
+  // 出勤するので、指定された相手に引き受けさせてはいけない (引き受けは欠勤が
+  // 承認済みかも確かめて断るが、一覧に残ると押せそうに見える)
+  const closedRequests = await db
+    .update(swapRequests)
+    .set({
+      status: "cancelled",
+      closeKind: "admin_withdraw",
+      decidedBy: profile.id,
+      decidedAt: new Date(),
+      decisionNote: "欠勤の承認が取り消されたため",
+      updatedAt: new Date(),
+    })
+    .where(
+      and(
+        eq(swapRequests.absenceRequestId, id),
+        eq(swapRequests.status, "pending"),
+      ),
+    )
+    .returning({ nomineeId: swapRequests.nominatedTutorId });
+  const nominees = closedRequests
+    .map((r) => r.nomineeId)
+    .filter((v): v is string => v !== null);
+  if (nominees.length > 0) {
+    await notify(nominees, {
+      type: "swap_result",
+      title: "代講の依頼が取り消されました",
+      body: `対象日: ${updated[0].date} ／ 欠勤の承認が取り消されたため`,
+      href: "/tutor/open-swaps",
+    });
+  }
+
   revalidatePath("/admin/requests");
   revalidatePath("/tutor/absences");
+  revalidatePath("/tutor/open-swaps");
   return { ok: true };
 }
 

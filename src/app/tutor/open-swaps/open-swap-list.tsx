@@ -11,6 +11,10 @@ import { Card, CardContent } from "@/components/ui/card";
 import { shortDate } from "@/lib/week";
 import { cn } from "@/lib/utils";
 import { applyToSwap, withdrawApplication } from "@/app/tutor/swaps/actions";
+import {
+  acceptDesignatedSubstitution,
+  declineDesignatedSubstitution,
+} from "@/app/tutor/swaps/designated-actions";
 
 export function OpenSwapList({ swaps }: { swaps: OpenSwap[] }) {
   const router = useRouter();
@@ -18,6 +22,8 @@ export function OpenSwapList({ swaps }: { swaps: OpenSwap[] }) {
   const [notice, setNotice] = useState<
     { type: "ok" | "error"; text: string } | null
   >(null);
+  // #331: 「断る」を押した依頼。押し間違いで断らないよう、もう一度確かめる
+  const [declineId, setDeclineId] = useState<string | null>(null);
 
   useEffect(() => {
     if (!notice) return;
@@ -78,10 +84,16 @@ export function OpenSwapList({ swaps }: { swaps: OpenSwap[] }) {
                     </p>
                     <p className="mt-0.5 text-xs text-muted-foreground">
                       {s.requesterName} さんの代講
-                      {s.kind === "named" && "（あなたを指名）"}
+                      {s.designated
+                        ? "（教室長があなたを指定）"
+                        : s.kind === "named" && "（あなたを指名）"}
                     </p>
                   </div>
-                  {s.applied ? (
+                  {s.designated ? (
+                    <Badge variant="accent" className="shrink-0">
+                      返事待ち
+                    </Badge>
+                  ) : s.applied ? (
                     <Badge className="shrink-0 border-transparent bg-green-50 text-green-700 hover:bg-green-50">
                       応募済み・承認待ち
                     </Badge>
@@ -94,7 +106,73 @@ export function OpenSwapList({ swaps }: { swaps: OpenSwap[] }) {
 
                 <p className="text-sm text-foreground">理由: {s.reason}</p>
 
-                {s.applied ? (
+                {s.designated ? (
+                  // #331: 教室長が指定した相手への依頼。引き受けるとその場で成立
+                  declineId === s.id ? (
+                    <div className="space-y-2">
+                      <p className="text-sm">
+                        断ると、{s.requesterName}
+                        さんと教室長が次の相手を探します。断りますか？
+                      </p>
+                      <div className="flex gap-2">
+                        <Button
+                          variant="destructive"
+                          className="flex-1"
+                          disabled={isPending}
+                          onClick={() =>
+                            run(
+                              () =>
+                                declineDesignatedSubstitution({
+                                  swapRequestId: s.id,
+                                }),
+                              "断りました。",
+                            )
+                          }
+                        >
+                          断る
+                        </Button>
+                        <Button
+                          variant="ghost"
+                          className="flex-1"
+                          onClick={() => setDeclineId(null)}
+                        >
+                          やめる
+                        </Button>
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="space-y-2">
+                      <div className="flex gap-2">
+                        <Button
+                          className="flex-1"
+                          disabled={isPending || s.isPastDate}
+                          onClick={() =>
+                            run(
+                              () =>
+                                acceptDesignatedSubstitution({
+                                  swapRequestId: s.id,
+                                }),
+                              "引き受けました。代講が決まりました。",
+                            )
+                          }
+                        >
+                          引き受ける
+                        </Button>
+                        <Button
+                          variant="outline"
+                          className="flex-1"
+                          disabled={isPending}
+                          onClick={() => setDeclineId(s.id)}
+                        >
+                          断る
+                        </Button>
+                      </div>
+                      <p className="text-center text-xs text-muted-foreground">
+                        引き受けると、その場で代講が決まります
+                      </p>
+                    </div>
+                  )
+                ) : s.applied ? (
                   <Button
                     variant="outline"
                     className="w-full"

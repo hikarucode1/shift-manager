@@ -400,7 +400,7 @@ describe("代講の取り消し前の注意 (#291)", () => {
 });
 
 describe("eventLabel", () => {
-  it("11 種すべてを固定する", () => {
+  it("12 種すべてを固定する", () => {
     // 画面は eventLabel を並べるだけにする設計なので、ラベルは製品面そのもの。
     // 嘘が出やすいのは「取り消し」「失効」側なので全部固定する
     expect(EVENT_LABEL).toEqual({
@@ -415,6 +415,7 @@ describe("eventLabel", () => {
       "auto-expired": "失効（交代成立による）",
       "auto-expired-unassigned": "失効（担当でなくなったため）",
       "closed-unassignable": "締め切り（担当が変わったため）",
+      "declined-by-nominee": "指定した講師が断った",
     });
   });
 });
