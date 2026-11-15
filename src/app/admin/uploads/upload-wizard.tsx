@@ -26,7 +26,11 @@ import {
 import { WEEKDAYS } from "@/lib/shift-constants";
 import { findMappingDuplicates } from "@/lib/mapping-validation";
 import { cn } from "@/lib/utils";
-import { commitUploadedCsv, parseUploadedCsv } from "./actions";
+import {
+  commitUploadedCsv,
+  createStubTutors,
+  parseUploadedCsv,
+} from "./actions";
 
 type Tutor = { id: string; displayName: string; email: string };
 type Mappings = Record<string, string>; // teacherName -> tutorId or ""
@@ -116,8 +120,15 @@ const SKIP_TEXT: Record<SkipReason, string> = {
     "元の講師と代講者が両方そのコマに入っています。CSV から片方を消し忘れている可能性があります。",
 };
 
-export function UploadWizard({ tutors }: { tutors: Tutor[] }) {
+export function UploadWizard({ tutors: serverTutors }: { tutors: Tutor[] }) {
   const router = useRouter();
+  // 取り込み画面で作った未連携の講師。読み直しが届く前から候補に出すため、
+  // サーバーの一覧に足して使う (同じ id は一度だけ)
+  const [createdTutors, setCreatedTutors] = useState<Tutor[]>([]);
+  const tutors = useMemo(() => {
+    const ids = new Set(serverTutors.map((t) => t.id));
+    return [...serverTutors, ...createdTutors.filter((t) => !ids.has(t.id))];
+  }, [serverTutors, createdTutors]);
   const [stage, setStage] = useState<Stage>("idle");
   const [file, setFile] = useState<File | null>(null);
   const [bundle, setBundle] = useState<ParsedBundle | null>(null);
@@ -333,6 +344,22 @@ export function UploadWizard({ tutors }: { tutors: Tutor[] }) {
           onMappingChange={(name, id) =>
             setMappings((prev) => ({ ...prev, [name]: id }))
           }
+          onStubsCreated={(created) => {
+            setCreatedTutors((prev) => [
+              ...prev,
+              ...created.map((c) => ({
+                id: c.id,
+                displayName: c.name,
+                email: c.email,
+              })),
+            ]);
+            setMappings((prev) => {
+              const next = { ...prev };
+              for (const c of created) next[c.name] = c.id;
+              return next;
+            });
+            router.refresh();
+          }}
           onCancel={reset}
           onCommit={handleCommit}
           isPending={isCommitPending}
@@ -398,6 +425,7 @@ function PreviewStage({
   tutors,
   mappings,
   onMappingChange,
+  onStubsCreated,
   onCancel,
   onCommit,
   isPending,
@@ -407,6 +435,8 @@ function PreviewStage({
   tutors: Tutor[];
   mappings: Mappings;
   onMappingChange: (name: string, id: string) => void;
+  /** 未登録の講師を未連携で作ったあと (名前 → 新しい講師) */
+  onStubsCreated: (created: { name: string; id: string; email: string }[]) => void;
   onCancel: () => void;
   onCommit: () => void;
   isPending: boolean;
@@ -470,6 +500,27 @@ function PreviewStage({
   }, [duplicates]);
   const hasDuplicates = duplicates.length > 0;
 
+  // 未登録の講師 (同名が複数いて選べないだけの名前は除く)。教室長が名前を
+  // 確かめてから、ボタンで「ログイン未連携」の講師として作る
+  const unregisteredNames = parsed.uniqueTeacherNames.filter(
+    (n) => !mappings[n] && !ambiguousCsvNames.has(n),
+  );
+  const [isStubPending, startStub] = useTransition();
+  const [stubError, setStubError] = useState<string | null>(null);
+  function handleCreateStubs() {
+    setStubError(null);
+    startStub(async () => {
+      const res = await createStubTutors({ names: unregisteredNames }).catch(
+        toFailedResult,
+      );
+      if (!res.ok) {
+        setStubError(res.error);
+        return;
+      }
+      onStubsCreated(res.tutors);
+    });
+  }
+
   return (
     <div className="space-y-4">
       <Card>
@@ -521,8 +572,7 @@ function PreviewStage({
         <CardContent>
           {tutors.length === 0 ? (
             <div className="rounded-md border border-dashed p-4 text-sm text-muted-foreground">
-              講師アカウントが登録されていません。
-              先に Supabase の <code>profiles</code> テーブル (role = tutor) に登録してください。
+              講師アカウントがまだありません。下の「未連携の講師として作る」で作るか、講師一覧から招待してください。
             </div>
           ) : (
             <div className="divide-y">
@@ -586,6 +636,44 @@ function PreviewStage({
           )}
         </CardContent>
       </Card>
+
+      {unregisteredNames.length > 0 && (
+        <Card className="border-amber-300">
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2 text-base">
+              <AlertCircle className="size-4 text-amber-600" />
+              講師アカウントが無い名前があります（{unregisteredNames.length} 名）
+            </CardTitle>
+            <CardDescription>
+              下の名前で「ログイン未連携」の講師を作り、そのまま対応付けます。名前に打ち間違いが無いか確かめてから押してください（間違っていれば Excel を直して読み込み直してください）。メールは、あとで講師一覧の「ログイン連携（招待メール送信）」から紐付けられます。
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-3">
+            <ul className="flex flex-wrap gap-2 text-sm">
+              {unregisteredNames.map((n) => (
+                <li key={n} className="rounded-md bg-muted px-2 py-1 font-medium">
+                  {n}
+                </li>
+              ))}
+            </ul>
+            <Button
+              variant="outline"
+              onClick={handleCreateStubs}
+              disabled={isStubPending || isPending}
+            >
+              {isStubPending
+                ? "作成中..."
+                : `${unregisteredNames.length} 名を未連携の講師として作る`}
+            </Button>
+            {stubError && (
+              <p role="alert" className="flex items-center gap-1 text-sm text-destructive">
+                <AlertCircle className="size-4 shrink-0" />
+                {stubError}
+              </p>
+            )}
+          </CardContent>
+        </Card>
+      )}
 
       {hasDuplicates && (
         <Card className="border-destructive/40">
