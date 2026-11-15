@@ -220,7 +220,7 @@ export async function updatePeriod(input: unknown): Promise<ActionResult> {
       return {
         ok: false,
         error:
-          "期間内に範囲外の確定枠または講習希望が存在します。先に該当分を削除してから期間を変更してください。",
+          "期間内に範囲外の確定枠または講習のシフト希望が存在します。先に該当分を削除してから期間を変更してください。",
       };
     }
     return { ok: false, error: "更新に失敗しました。" };

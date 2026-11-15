@@ -113,7 +113,7 @@ export function AbsenceOnBehalfForm({ today }: { today: string }) {
         <p className="flex items-start gap-1.5 text-xs text-muted-foreground">
           <Info className="mt-0.5 size-3.5 shrink-0" aria-hidden />
           電話・LINE・直接など、サイト外で受けた欠勤連絡を記録します。承認済みとして
-          登録され、週次シフト表にすぐ反映されます。過去の日付も選べます。
+          登録され、登録済みシフトにすぐ反映されます。過去の日付も選べます。
         </p>
 
         {notice && (

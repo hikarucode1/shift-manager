@@ -19,7 +19,7 @@ export default async function AdminWeeklyPage({
   return (
     <div className="weekly-print space-y-6">
       <div>
-        <h1 className="text-2xl font-semibold">週次シフト</h1>
+        <h1 className="text-2xl font-semibold">登録済みシフト</h1>
         <p className="mt-1 text-sm text-muted-foreground">
           公開済みの座席表を週ごとに俯瞰します。
         </p>
