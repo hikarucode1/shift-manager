@@ -1,7 +1,8 @@
 import Link from "next/link";
-import { LogOut } from "lucide-react";
+import { CircleHelp, LogOut } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { NotificationBell } from "@/components/notification-bell";
+import { ContactLink } from "@/components/contact/contact-link";
 import { TutorBottomNav } from "@/components/tutor-bottom-nav";
 import type { SessionProfile } from "@/lib/auth";
 
@@ -29,6 +30,14 @@ export function TutorShell({
           </Link>
           <div className="flex items-center gap-2">
             <NotificationBell />
+            {/* #320: お問い合わせ */}
+            <ContactLink
+              base="/tutor"
+              ariaLabel="お問い合わせ"
+              className="flex size-8 items-center justify-center rounded-md hover:bg-primary-foreground/10"
+            >
+              <CircleHelp className="size-5" />
+            </ContactLink>
             <span className="max-w-[40vw] truncate text-sm text-primary-foreground/80">
               {profile.displayName}
             </span>
