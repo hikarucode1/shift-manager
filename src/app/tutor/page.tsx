@@ -2,7 +2,7 @@ import Link from "next/link";
 import { AlertCircle, CalendarClock, ChevronRight, MapPin } from "lucide-react";
 import { requireRole } from "@/lib/auth";
 import { getTutorHomeData } from "@/lib/tutor-home";
-import { shortDate } from "@/lib/week";
+import { shortDate, weekRangeLabel } from "@/lib/week";
 import { cn } from "@/lib/utils";
 import { deadlineLabel } from "@/lib/deadline";
 import { Badge } from "@/components/ui/badge";
@@ -34,7 +34,11 @@ export default async function TutorHome() {
         </p>
         <div className="mt-3 grid grid-cols-2 gap-3">
           <div className="rounded-lg bg-primary-foreground/10 p-3">
-            <p className="text-xs text-primary-foreground/70">今週のコマ</p>
+            <p className="text-xs text-primary-foreground/70">
+              今週のコマ
+              {/* #337: 日曜は「今日で終わる週」を指すので期間を添える */}
+              <span className="ml-1">（{weekRangeLabel(data.weekRange)}）</span>
+            </p>
             <p className="mt-0.5 text-2xl font-bold">
               {data.weekSlotCount}
               <span className="ml-1 text-sm font-normal">コマ</span>
@@ -119,7 +123,7 @@ export default async function TutorHome() {
       {/* 今週のシフト */}
       <section className="space-y-2">
         <h2 className="text-sm font-semibold text-muted-foreground">
-          今週のシフト
+          今週のシフト（{weekRangeLabel(data.weekRange)}）
         </h2>
         {data.weekRows.length > 0 ? (
           <ul className="divide-y rounded-xl border">

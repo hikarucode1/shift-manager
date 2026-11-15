@@ -127,3 +127,11 @@ export function shortDate(iso: string): string {
   const [, m, d] = iso.split("-");
   return `${Number(m)}/${Number(d)}`;
 }
+
+/**
+ * 週の期間の表示 (例: "11/9〜11/15")。#337: 日曜に講師ホームを開くと「今週」は
+ * 今日で終わる週を指し、翌日からの週と取り違えやすいので、期間を添えて出す
+ */
+export function weekRangeLabel(range: WeekRange): string {
+  return `${shortDate(range.start)}〜${shortDate(range.end)}`;
+}
