@@ -1164,3 +1164,32 @@ export const inquiries = pgTable(
     createdIdx: index("inquiries_created_idx").on(t.createdAt),
   }),
 );
+
+/* ------------------------------------------------------------------ */
+/*  shift_confirmations — 講師が公開済みの週のシフトを確認した記録 (#317) */
+/* ------------------------------------------------------------------ */
+/*  LINE のスタンプの代わり。講師 × 週 (月曜の日付) で 1 行。座席表を    */
+/*  取り込み直してコマ (日付 × 何限) が変わった講師の行だけ消し、確認し  */
+/*  直してもらう (担当する生徒だけの変更では消さない。本人の判断)。       */
+
+export const shiftConfirmations = pgTable(
+  "shift_confirmations",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    tutorId: uuid("tutor_id")
+      .notNull()
+      .references(() => profiles.id, { onDelete: "cascade" }),
+    /** 週の月曜 (YYYY-MM-DD) */
+    weekStart: date("week_start").notNull(),
+    confirmedAt: timestamp("confirmed_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (t) => ({
+    uniq: unique("shift_confirmations_tutor_week_unique").on(
+      t.tutorId,
+      t.weekStart,
+    ),
+    weekIdx: index("shift_confirmations_week_idx").on(t.weekStart),
+  }),
+);
