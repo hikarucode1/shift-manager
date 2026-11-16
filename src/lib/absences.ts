@@ -7,6 +7,7 @@ import {
   eq,
   gte,
   inArray,
+  isNotNull,
   sql,
   type SQL,
 } from "drizzle-orm";
@@ -364,4 +365,148 @@ export async function getApprovedAbsenceKeysAll(
   return new Set(
     rows.map((r) => `${r.tutorId}|${r.date}|${r.slotNumber}`),
   );
+}
+
+/** #331: 指定した相手に断られ、代講が決まっていない欠勤 (教室長の未対応) */
+export type UnfilledAbsence = {
+  id: string;
+  tutorId: string;
+  tutorName: string;
+  date: string;
+  slotNumber: number;
+  slotLabel: string;
+  weekdayLabel: string;
+  reason: string;
+  /** 断った相手 (今の指定) */
+  declinedName: string;
+  /** この欠勤の代講を断った講師全員 (指定し直しの候補から外す) */
+  declinedIds: string[];
+};
+
+/**
+ * 教室長が代講の相手を指定した承認済みの欠勤のうち、相手に断られて、
+ * まだ代講が決まっていないもの (#331)。次の相手を指定し直すか、代理募集に
+ * 出すための一覧。
+ *
+ * 出さないもの:
+ * - コマが終わった欠勤 (今から代わってもらう相手が居ない)
+ * - 休む講師がもう担当でないコマ
+ * - そのコマに出したままの交代申請がある (代理募集に出した・別の依頼中)
+ */
+export async function getUnfilledDesignatedAbsences(): Promise<
+  UnfilledAbsence[]
+> {
+  const meta = await getSlotMeta();
+  const today = jstToday();
+  const rows = await db
+    .select({
+      id: absenceRequests.id,
+      tutorId: absenceRequests.tutorId,
+      tutorName: profiles.displayName,
+      date: absenceRequests.date,
+      slotNumber: absenceRequests.slotNumber,
+      reason: absenceRequests.reason,
+      designatedId: absenceRequests.designatedSubstituteId,
+      tutorAssigned: absenceTutorAssigned(),
+    })
+    .from(absenceRequests)
+    .innerJoin(profiles, eq(profiles.id, absenceRequests.tutorId))
+    .where(
+      and(
+        eq(absenceRequests.status, "approved"),
+        isNotNull(absenceRequests.designatedSubstituteId),
+        gte(absenceRequests.date, today),
+      ),
+    )
+    .orderBy(asc(absenceRequests.date), asc(absenceRequests.slotNumber));
+  const candidates = rows.filter(
+    (r) =>
+      r.tutorAssigned &&
+      !isSlotPast(r.date, slotLabelOf(meta, r.slotNumber).end),
+  );
+  if (candidates.length === 0) return [];
+
+  const [linked, active, names] = await Promise.all([
+    db
+      .select({
+        absenceRequestId: swapRequests.absenceRequestId,
+        status: swapRequests.status,
+        nominatedTutorId: swapRequests.nominatedTutorId,
+        closeKind: swapRequests.closeKind,
+      })
+      .from(swapRequests)
+      .where(
+        inArray(
+          swapRequests.absenceRequestId,
+          candidates.map((c) => c.id),
+        ),
+      ),
+    // そのコマに出したままの交代申請 (代理募集など、欠勤に紐づかないものも)
+    db
+      .select({
+        requesterId: swapRequests.requesterId,
+        date: swapRequests.date,
+        slotNumber: swapRequests.slotNumber,
+      })
+      .from(swapRequests)
+      .where(
+        and(
+          inArray(swapRequests.status, ["pending", "approved"]),
+          gte(swapRequests.date, today),
+          inArray(
+            swapRequests.requesterId,
+            [...new Set(candidates.map((c) => c.tutorId))],
+          ),
+        ),
+      ),
+    db
+      .select({ id: profiles.id, name: profiles.displayName })
+      .from(profiles)
+      .where(
+        inArray(
+          profiles.id,
+          [...new Set(candidates.map((c) => c.designatedId as string))],
+        ),
+      ),
+  ]);
+  const activeKeys = new Set(
+    active.map((a) => `${a.requesterId}|${a.date}|${a.slotNumber}`),
+  );
+  const nameById = new Map(names.map((n) => [n.id, n.name]));
+
+  return candidates
+    .filter(
+      (c) =>
+        !activeKeys.has(`${c.tutorId}|${c.date}|${c.slotNumber}`) &&
+        designationState({
+          absenceStatus: "approved",
+          designatedId: c.designatedId,
+          linkedSwaps: linked
+            .filter((l) => l.absenceRequestId === c.id)
+            .map((l) => ({
+              status: l.status as LinkedSwap["status"],
+              nominatedTutorId: l.nominatedTutorId,
+              closeKind: l.closeKind,
+            })),
+          isEnded: false,
+        }).kind === "declined",
+    )
+    .map((c) => ({
+      id: c.id,
+      tutorId: c.tutorId,
+      tutorName: c.tutorName,
+      date: c.date,
+      slotNumber: c.slotNumber,
+      slotLabel: slotLabelOf(meta, c.slotNumber).label,
+      weekdayLabel: weekdayOf(c.date).label,
+      reason: c.reason,
+      declinedName: nameById.get(c.designatedId as string) ?? "不明",
+      declinedIds: linked
+        .filter(
+          (l) =>
+            l.absenceRequestId === c.id && l.closeKind === "nominee_declined",
+        )
+        .map((l) => l.nominatedTutorId)
+        .filter((v): v is string => v !== null),
+    }));
 }

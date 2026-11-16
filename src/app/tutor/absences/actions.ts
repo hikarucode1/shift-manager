@@ -2,7 +2,7 @@
 
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
-import { and, arrayContains, eq, inArray } from "drizzle-orm";
+import { and, eq, inArray } from "drizzle-orm";
 import { requireRole } from "@/lib/auth";
 import { notify } from "@/lib/notifications";
 import { db } from "@/db/client";
@@ -14,7 +14,8 @@ import {
 } from "@/db/schema";
 import { isUniqueViolation } from "@/lib/db-errors";
 import { isValidIsoDate, jstToday } from "@/lib/week";
-import { hasSlotEnded, isTutorBusyAt } from "@/lib/swaps";
+import { hasSlotEnded } from "@/lib/swaps";
+import { designeeError } from "@/lib/designee-check";
 import { absenceTutorAssigned } from "@/lib/absences";
 import { pendingAbsenceActions } from "@/lib/pending-absence-actions";
 
@@ -286,31 +287,13 @@ export async function decideAbsenceRequest(
     }
     // #331: 指定する相手は、休む本人以外の有効な講師で、そのコマが空いている人
     if (designatedSubstituteId !== null) {
-      if (designatedSubstituteId === target.tutorId) {
-        return { ok: false, error: "休む講師本人は代講の相手に指定できません。" };
-      }
-      const [nominee] = await db
-        .select({ id: profiles.id })
-        .from(profiles)
-        .where(
-          and(
-            eq(profiles.id, designatedSubstituteId),
-            arrayContains(profiles.roles, ["tutor"]),
-            eq(profiles.isActive, true),
-          ),
-        )
-        .limit(1);
-      if (!nominee) {
-        return { ok: false, error: "代講の相手に指定した講師が見つかりません。" };
-      }
-      if (
-        await isTutorBusyAt(target.date, target.slotNumber, designatedSubstituteId)
-      ) {
-        return {
-          ok: false,
-          error: "指定した講師は同じコマに出勤予定です。別の講師を選んでください。",
-        };
-      }
+      const error = await designeeError({
+        absentTutorId: target.tutorId,
+        designeeId: designatedSubstituteId,
+        date: target.date,
+        slotNumber: target.slotNumber,
+      });
+      if (error) return { ok: false, error };
     }
     requireAssigned = !pendingAbsenceActions({
       tutorAssigned: false,
