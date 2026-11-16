@@ -1,7 +1,14 @@
 import Link from "next/link";
-import { AlertCircle, CalendarClock, ChevronRight, MapPin } from "lucide-react";
+import {
+  AlertCircle,
+  CalendarClock,
+  ChevronRight,
+  ExternalLink,
+  MapPin,
+} from "lucide-react";
 import { requireRole } from "@/lib/auth";
 import { getTutorHomeData } from "@/lib/tutor-home";
+import { getProgressSheetUrl } from "@/lib/progress-sheet-db";
 import { ConfirmWeekButton } from "./confirm-week-button";
 import { shortDate, weekRangeLabel } from "@/lib/week";
 import { cn } from "@/lib/utils";
@@ -21,7 +28,11 @@ function dayLabel(s: {
 
 export default async function TutorHome() {
   const { profile } = await requireRole("tutor");
-  const data = await getTutorHomeData(profile.id);
+  const [data, progressSheetUrl] = await Promise.all([
+    getTutorHomeData(profile.id),
+    // #339: 教室長が登録した進行表 (スプレッドシート)
+    getProgressSheetUrl(),
+  ]);
 
   // hero の締切 / アラートはどちらも「編集可能・未提出」の最も近い締切を使う
   const alertDeadline = data.deadlines.find((d) => !d.submitted) ?? null;
@@ -168,6 +179,20 @@ export default async function TutorHome() {
           />
         )}
       </section>
+
+      {/* #339: 進行表 (教室長が登録したときだけ出す) */}
+      {progressSheetUrl && (
+        <a
+          href={progressSheetUrl}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="flex items-center gap-3 rounded-xl border p-3 transition-colors hover:bg-muted/50"
+        >
+          <ExternalLink className="size-5 shrink-0 text-primary" />
+          <span className="flex-1 text-sm font-medium">進行表を開く</span>
+          <ChevronRight className="size-4 text-muted-foreground" />
+        </a>
+      )}
     </div>
   );
 }
