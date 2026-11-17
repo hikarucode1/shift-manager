@@ -90,6 +90,9 @@ export async function xlsxToShiftCsvText(buf: Buffer): Promise<string> {
         text.trim() !== "研修" &&
         first !== "座番" &&
         first !== "日付" &&
+        // 全体研修の行は講師名が並ぶだけ (赤字でも体験ではない)
+        first !== "全体研修" &&
+        cellText(row.getCell(2).value, false).trim() !== "全体研修" &&
         !/^\d+限$/.test(first) &&
         cellIsRed(cell)
       ) {

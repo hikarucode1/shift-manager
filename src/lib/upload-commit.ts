@@ -238,6 +238,23 @@ export async function commitShiftUpload(
       await tx.delete(weeklyShifts).where(inArray(weeklyShifts.date, uploadedDates));
     }
 
+    // #335: 「全体研修」のコマに入れる、在籍している講師全員
+    const groupTrainingTutorIds = parsed.days.some((d) =>
+      d.slots.some((s) => s.groupTraining),
+    )
+      ? (
+          await tx
+            .select({ id: profiles.id })
+            .from(profiles)
+            .where(
+              and(
+                arrayContains(profiles.roles, ["tutor"]),
+                eq(profiles.isActive, true),
+              ),
+            )
+        ).map((r) => r.id)
+      : [];
+
     // 4) Insert new weekly_shifts + shift_assignments
     let insertedShiftRows = 0;
     let insertedAssignmentRows = 0;
@@ -289,6 +306,36 @@ export async function commitShiftUpload(
             if (rows.length > 0) {
               await tx.insert(shiftAssignments).values(rows);
               insertedAssignmentRows += rows.length;
+            }
+          }
+        }
+
+        // #335: 全体研修。このコマに授業の行がある講師はそちらを優先する
+        if (slot.groupTraining) {
+          const assigned = new Set(
+            slot.assignments
+              .map((a) => scopedMappings[a.teacherName])
+              .filter(Boolean),
+          );
+          const rows = groupTrainingTutorIds
+            .filter((id) => !assigned.has(id))
+            .map((tutorId) => ({
+              uploadId,
+              tutorId,
+              date: day.date,
+              slotNumber: slot.slotNumber,
+              seatNumber: null,
+              isTraining: true,
+            }));
+          if (rows.length > 0) {
+            await tx.insert(weeklyShifts).values(rows);
+            insertedShiftRows += rows.length;
+            for (const r of rows) {
+              insertedShifts.push({
+                tutorId: r.tutorId,
+                date: r.date,
+                slotNumber: r.slotNumber,
+              });
             }
           }
         }

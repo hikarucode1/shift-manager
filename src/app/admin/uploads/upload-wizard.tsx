@@ -412,7 +412,7 @@ export function UploadWizard({ tutors: serverTutors }: { tutors: Tutor[] }) {
           座席表ファイルを選択
         </CardTitle>
         <CardDescription>
-          座席表の Excel (.xlsx) をそのまま選べます。体験授業の生徒は赤字、研修は生徒の欄に「研修」と書いておくと、アプリでも見分けます。これまでの CSV (Shift_JIS) も使えます。
+          座席表の Excel (.xlsx) をそのまま選べます。体験授業の生徒は赤字、研修は生徒の欄に「研修」(全員なら講師の欄に「全体研修」の 1 行) と書いておくと、アプリでも見分けます。これまでの CSV (Shift_JIS) も使えます。
         </CardDescription>
       </CardHeader>
       <CardContent>
@@ -482,8 +482,10 @@ function PreviewStage({
     let studentAssignments = 0;
     let trials = 0;
     let trainings = 0;
+    let groupTrainings = 0;
     for (const day of parsed.days) {
       for (const slot of day.slots) {
+        if (slot.groupTraining) groupTrainings++;
         teacherRows += slot.assignments.length;
         for (const a of slot.assignments) {
           studentAssignments += a.students.length;
@@ -497,6 +499,7 @@ function PreviewStage({
       studentAssignments,
       trials,
       trainings,
+      groupTrainings,
       holidays: parsed.days.filter((d) => d.isHoliday).length,
     };
   }, [parsed]);
@@ -578,9 +581,13 @@ function PreviewStage({
             <Stat label="休日" value={stats.holidays} suffix="日" />
           </div>
           {/* #335: 赤字の生徒 = 体験、生徒欄「研修」= 研修 */}
-          {(stats.trials > 0 || stats.trainings > 0) && (
+          {(stats.trials > 0 ||
+            stats.trainings > 0 ||
+            stats.groupTrainings > 0) && (
             <p className="mt-3 text-xs text-muted-foreground">
               体験授業 {stats.trials} 件・研修 {stats.trainings} 件を読み取りました。
+              {stats.groupTrainings > 0 &&
+                ` 全体研修が ${stats.groupTrainings} コマあり、在籍している講師全員を研修として入れます。`}
             </p>
           )}
           {parsed.activeTrainings.length > 0 && (

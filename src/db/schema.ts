@@ -688,7 +688,7 @@ export const weeklyShifts = pgTable(
     seatNumber: text("seat_number"),
     /** 代講・差替によって元と変わっている場合に true */
     isOverride: boolean("is_override").notNull().default(false),
-    /** #335: 研修のコマ (座席表の生徒の欄に「研修」)。給与は時給で別扱い */
+    /** #335: 研修のコマ (座席表の生徒の欄に「研修」、または「全体研修」の行) */
     isTraining: boolean("is_training").notNull().default(false),
     note: text("note"),
     createdAt: timestamp("created_at", { withTimezone: true })

@@ -112,3 +112,32 @@ describe("parseShiftCsvText 体験・研修 (#335)", () => {
     expect(assignments[0]).toMatchObject({ isTraining: true, students: [] });
   });
 });
+
+describe("parseShiftCsvText 全体研修 (#335)", () => {
+  it("講師の欄の「全体研修」はコマの印になり、講師としては数えない", () => {
+    const text = csv("2026/11/16〜2026/11/22", [
+      "日付,11月18日,水",
+      "7限,17:50〜19:15",
+      "座番,講師,生徒,生徒",
+      ",全体研修",
+      "8限,19:30〜20:55",
+      "座番,講師,生徒,生徒",
+      "1,山田太郎,佐藤花子(英)",
+    ]);
+    const parsed = parseShiftCsvText(text);
+    const [s7, s8] = parsed.days[0].slots;
+    expect(s7).toMatchObject({ groupTraining: true, assignments: [] });
+    expect(s8.groupTraining).toBe(false);
+    expect(parsed.uniqueTeacherNames).toEqual(["山田太郎"]);
+  });
+
+  it("座番の欄に書いても全体研修になる", () => {
+    const text = csv("2026/11/16〜2026/11/22", [
+      "日付,11月18日,水",
+      "7限,17:50〜19:15",
+      "座番,講師,生徒,生徒",
+      "全体研修",
+    ]);
+    expect(parseShiftCsvText(text).days[0].slots[0].groupTraining).toBe(true);
+  });
+});

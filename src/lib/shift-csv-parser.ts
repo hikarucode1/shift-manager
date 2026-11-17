@@ -32,7 +32,7 @@ export type ParsedAssignment = {
   seatNumber: string | null;
   teacherName: string;
   students: ParsedStudent[]; // 最大2
-  /** #335: 生徒の欄に「研修」と書かれたコマ (給与は時給で別扱い) */
+  /** #335: 生徒の欄に「研修」と書かれたコマ */
   isTraining: boolean;
 };
 
@@ -42,6 +42,11 @@ export type ParsedSlot = {
   startTime: string; // "09:30"
   endTime: string; // "10:55"
   assignments: ParsedAssignment[];
+  /**
+   * #335: 「全体研修」の行があるコマ。取り込み時に、在籍している講師全員
+   * (このコマに授業の行がある人を除く) を研修として入れる
+   */
+  groupTraining: boolean;
 };
 
 export type ParsedDay = {
@@ -119,6 +124,9 @@ const TRIAL_MARK = /^[【\[]体験[】\]]\s*/;
 
 /** #335: 生徒の欄に書かれていたら研修のコマ */
 const TRAINING_WORD = "研修";
+
+/** #335: 座番か講師の欄に書かれていたら、そのコマは在籍講師全員の研修 */
+export const GROUP_TRAINING_WORD = "全体研修";
 
 /** "炭田和凛(英)" → { name: "炭田和凛", subject: "英" } / "" → null */
 function parseStudentCell(src: string): ParsedStudent | null {
@@ -386,6 +394,7 @@ function collectDay(
         startTime: range?.[0] ?? "",
         endTime: range?.[1] ?? "",
         assignments: [],
+        groupTraining: false,
       };
       slots.push(currentSlot);
       cursor++;
@@ -394,6 +403,17 @@ function collectDay(
 
     // カラムヘッダー: "座番","講師","生徒","生徒","生徒","生徒"
     if (c0 === "座番") {
+      cursor++;
+      continue;
+    }
+
+    // #335: 全体研修の行 (座番か講師の欄に「全体研修」)。講師名は書かなくてよい
+    if (
+      currentSlot &&
+      (c0.trim() === GROUP_TRAINING_WORD ||
+        (row[1] ?? "").trim() === GROUP_TRAINING_WORD)
+    ) {
+      currentSlot.groupTraining = true;
       cursor++;
       continue;
     }
