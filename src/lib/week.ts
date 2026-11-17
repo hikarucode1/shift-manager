@@ -60,7 +60,8 @@ function formatIso(d: Date): string {
   return d.toISOString().slice(0, 10);
 }
 
-function addDays(iso: string, days: number): string {
+/** ISO 日付に日数を足す (負なら引く) */
+export function addDays(iso: string, days: number): string {
   const d = parseIso(iso);
   d.setUTCDate(d.getUTCDate() + days);
   return formatIso(d);

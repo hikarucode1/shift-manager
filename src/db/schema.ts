@@ -122,6 +122,10 @@ export const notificationTypeEnum = pgEnum("notification_type", [
   "shift_change_result",
   // #333: 教室長宛て。承認された変更を講師が出し直した / 終えた
   "shift_change_done",
+  // #360: 教室長宛て。講師が先の日の休み希望を出した
+  "day_off_requested",
+  // #360: 講師宛て。休み希望が承認・却下された
+  "day_off_result",
 ]);
 
 /* ------------------------------------------------------------------ */
@@ -1366,6 +1370,50 @@ export const shiftChangeRequests = pgTable(
     statusIdx: index("shift_change_requests_status_idx").on(
       t.status,
       t.createdAt,
+    ),
+  }),
+);
+
+/* ------------------------------------------------------------------ */
+/*  day_off_requests — 先の日の休み希望 (#360)                          */
+/* ------------------------------------------------------------------ */
+/*  確定シフトがまだ公開されていない日に「この日は休みたい」を出す。       */
+/*  欠勤 (absence_requests) はシフトのあるコマが対象で代講探しにつながる  */
+/*  ので分けた。承認済みの日は、シフトを作るとき教室長の画面に出す。       */
+
+export const dayOffRequests = pgTable(
+  "day_off_requests",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    tutorId: uuid("tutor_id")
+      .notNull()
+      .references(() => profiles.id, { onDelete: "cascade" }),
+    date: date("date").notNull(),
+    /** 休みたいコマ。空なら終日 */
+    slotNumbers: smallint("slot_numbers")
+      .array()
+      .notNull()
+      .default(sql`'{}'::smallint[]`),
+    reason: text("reason").notNull(),
+    status: requestStatusEnum("status").notNull().default("pending"),
+    decidedBy: uuid("decided_by").references(() => profiles.id, {
+      onDelete: "set null",
+    }),
+    decidedAt: timestamp("decided_at", { withTimezone: true }),
+    /** 教室長のコメント (却下のときは必須) */
+    decisionNote: text("decision_note"),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (t) => ({
+    tutorDateIdx: index("day_off_requests_tutor_date_idx").on(
+      t.tutorId,
+      t.date,
+    ),
+    statusDateIdx: index("day_off_requests_status_date_idx").on(
+      t.status,
+      t.date,
     ),
   }),
 );

@@ -2,6 +2,7 @@ import Link from "next/link";
 import {
   Bell,
   CalendarCheck,
+  CalendarOff,
   CalendarX,
   ClipboardCheck,
   ClipboardPen,
@@ -25,6 +26,9 @@ const TYPE_ICON: Record<NotificationType, typeof Bell> = {
   shift_change_requested: ClipboardPen,
   shift_change_result: ClipboardPen,
   shift_change_done: ClipboardCheck,
+  // #360: 先の日の休み希望
+  day_off_requested: CalendarOff,
+  day_off_result: CalendarOff,
 };
 
 function formatDateTime(d: Date): string {

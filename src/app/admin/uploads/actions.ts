@@ -28,6 +28,68 @@ import {
   UploadCommitError,
   type TeacherMapping,
 } from "@/lib/upload-commit";
+import { getApprovedDayOffs, getDayOffConflicts } from "@/lib/day-offs";
+import { dayOffSlotsLabel } from "@/lib/day-off-rule";
+import { getSlotMeta } from "@/lib/slot-meta";
+
+/** #360: 取り込む週の承認済みの休み (取り込む前に教室長に見せる) */
+export type DayOffNotice = {
+  tutorName: string;
+  date: string;
+  slotsLabel: string;
+};
+
+/** #360: 承認済みの休みの日に入ってしまったシフト */
+export type DayOffConflictNotice = {
+  tutorName: string;
+  date: string;
+  slotLabel: string;
+};
+
+/** 休みの表示は取り込みの本筋ではないので、失敗しても取り込みは止めない */
+async function loadDayOffNotices(range: {
+  start: string;
+  end: string;
+}): Promise<DayOffNotice[]> {
+  try {
+    const [dayOffs, meta] = await Promise.all([
+      getApprovedDayOffs(range),
+      getSlotMeta(),
+    ]);
+    return dayOffs.map((d) => ({
+      tutorName: d.tutorName,
+      date: d.date,
+      slotsLabel: dayOffSlotsLabel(
+        d.slotNumbers,
+        (n) => meta.get(n)?.label ?? `${n}限`,
+      ),
+    }));
+  } catch (e) {
+    console.error("loadDayOffNotices failed", e);
+    return [];
+  }
+}
+
+async function loadDayOffConflicts(
+  range: { start: string; end: string },
+  uploadId: string,
+): Promise<DayOffConflictNotice[]> {
+  try {
+    const [dayOffs, meta] = await Promise.all([
+      getApprovedDayOffs(range),
+      getSlotMeta(),
+    ]);
+    const conflicts = await getDayOffConflicts(range, dayOffs, uploadId);
+    return conflicts.map((c) => ({
+      tutorName: c.tutorName,
+      date: c.date,
+      slotLabel: meta.get(c.slotNumber)?.label ?? `${c.slotNumber}限`,
+    }));
+  } catch (e) {
+    console.error("loadDayOffConflicts failed", e);
+    return [];
+  }
+}
 
 /* ------------------------------------------------------------------ */
 /*  Parse (dry run) — no DB writes                                     */
@@ -41,6 +103,8 @@ export type ParseUploadResult =
       fileBytes: number;
       /** Shift_JIS → UTF-8 化された CSV テキスト。コミット時に再送 */
       rawContent: string;
+      /** #360: この週の承認済みの休み */
+      dayOffs: DayOffNotice[];
     }
   | { ok: false; error: string };
 
@@ -73,6 +137,10 @@ export async function parseUploadedCsv(
       originalFilename: file.name,
       fileBytes: buf.byteLength,
       rawContent,
+      dayOffs: await loadDayOffNotices({
+        start: parsed.weekStart,
+        end: parsed.weekEnd,
+      }),
     };
   } catch (err) {
     if (err instanceof ShiftCsvParseError) {
@@ -123,6 +191,8 @@ export type CommitUploadResponse =
       }[];
       /** #210: approved なのに代講者の記録が無い行の数 */
       missingApplicantSwaps: number;
+      /** #360: 承認済みの休みの日に入ってしまったシフト */
+      dayOffConflicts: DayOffConflictNotice[];
     }
   | { ok: false; error: string };
 
@@ -203,6 +273,10 @@ export async function commitUploadedCsv(
       reappliedSwaps: result.reappliedSwaps,
       unreappliedSwaps: result.unreappliedSwaps,
       missingApplicantSwaps: result.missingApplicantSwaps,
+      dayOffConflicts: await loadDayOffConflicts(
+        { start: parsed.weekStart, end: parsed.weekEnd },
+        result.uploadId,
+      ),
     };
   } catch (err) {
     console.error("commitUploadedCsv failed", err);

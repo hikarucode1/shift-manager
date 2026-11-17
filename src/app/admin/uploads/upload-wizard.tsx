@@ -6,6 +6,7 @@ import {
   AlertCircle,
   ArrowRight,
   Check,
+  CalendarOff,
   CheckCircle2,
   UploadCloud,
 } from "lucide-react";
@@ -30,7 +31,10 @@ import {
   commitUploadedCsv,
   createStubTutors,
   parseUploadedCsv,
+  type DayOffConflictNotice,
+  type DayOffNotice,
 } from "./actions";
+import { noticeDate } from "@/lib/week";
 
 type Tutor = { id: string; displayName: string; email: string };
 type Mappings = Record<string, string>; // teacherName -> tutorId or ""
@@ -102,6 +106,8 @@ type ParsedBundle = {
   rawContent: string;
   originalFilename: string;
   fileBytes: number;
+  /** #360: この週の承認済みの休み */
+  dayOffs: DayOffNotice[];
 };
 
 /**
@@ -149,6 +155,7 @@ export function UploadWizard({ tutors: serverTutors }: { tutors: Tutor[] }) {
         missingApplicantSwaps: number;
         insertedAssignmentRows: number;
         upsertedStudents: number;
+        dayOffConflicts: DayOffConflictNotice[];
       }
     | null
   >(null);
@@ -199,6 +206,7 @@ export function UploadWizard({ tutors: serverTutors }: { tutors: Tutor[] }) {
         rawContent: res.rawContent,
         originalFilename: res.originalFilename,
         fileBytes: res.fileBytes,
+        dayOffs: res.dayOffs,
       });
       setMappings(auto);
       setStage("parsed");
@@ -240,6 +248,7 @@ export function UploadWizard({ tutors: serverTutors }: { tutors: Tutor[] }) {
         missingApplicantSwaps: res.missingApplicantSwaps,
         insertedAssignmentRows: res.insertedAssignmentRows,
         upsertedStudents: res.upsertedStudents,
+        dayOffConflicts: res.dayOffConflicts,
       });
       setStage("done");
       router.refresh();
@@ -318,6 +327,29 @@ export function UploadWizard({ tutors: serverTutors }: { tutors: Tutor[] }) {
             </div>
           )}
 
+          {/* #360: 承認済みの休みの日に入れてしまったコマ */}
+          {result.dayOffConflicts.length > 0 && (
+            <div
+              role="alert"
+              className="space-y-1 rounded-md border border-destructive/40 bg-destructive/10 px-3 py-2 text-sm text-destructive"
+            >
+              <p className="font-medium">
+                承認済みの休みの日に入っているコマが{" "}
+                {result.dayOffConflicts.length} 件あります。
+              </p>
+              <ul className="list-disc pl-4 text-xs">
+                {result.dayOffConflicts.map((c) => (
+                  <li key={`${c.tutorName}|${c.date}|${c.slotLabel}`}>
+                    {c.tutorName} {noticeDate(c.date)} {c.slotLabel}
+                  </li>
+                ))}
+              </ul>
+              <p className="text-xs">
+                代講を探すか、本人と相談して直してください。
+              </p>
+            </div>
+          )}
+
           {result.missingApplicantSwaps > 0 && (
             <p role="alert" className="text-sm text-destructive">
               承認済みなのに代講者の記録が無い申請が{" "}
@@ -337,6 +369,7 @@ export function UploadWizard({ tutors: serverTutors }: { tutors: Tutor[] }) {
     return (
       <div className="space-y-4">
         <Stepper current={1} />
+        <DayOffNoticeCard dayOffs={bundle.dayOffs} />
         <PreviewStage
           bundle={bundle}
           tutors={tutors}
@@ -810,6 +843,29 @@ function Stat({
         {value}
         {suffix && <span className="ml-1 text-sm text-muted-foreground">{suffix}</span>}
       </div>
+    </div>
+  );
+}
+
+/** #360: 取り込む週の承認済みの休み。取り込む前に気付けるように出す */
+function DayOffNoticeCard({ dayOffs }: { dayOffs: DayOffNotice[] }) {
+  if (dayOffs.length === 0) return null;
+  return (
+    <div className="space-y-1 rounded-md border border-amber-300 bg-amber-50 px-3 py-2 text-sm text-amber-900 dark:border-amber-800 dark:bg-amber-950 dark:text-amber-100">
+      <p className="flex items-center gap-1.5 font-medium">
+        <CalendarOff className="size-4" />
+        この週の休み希望（承認済み） {dayOffs.length} 件
+      </p>
+      <ul className="list-disc pl-5 text-xs">
+        {dayOffs.map((d) => (
+          <li key={`${d.tutorName}|${d.date}|${d.slotsLabel}`}>
+            {d.tutorName} {noticeDate(d.date)} {d.slotsLabel}
+          </li>
+        ))}
+      </ul>
+      <p className="text-xs">
+        この日に入れていると、公開したあとに警告が出ます。
+      </p>
     </div>
   );
 }
