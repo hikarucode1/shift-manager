@@ -4,6 +4,13 @@ import "./globals.css";
 export const metadata: Metadata = {
   title: "Shift Manager | シフト管理",
   description: "個別指導塾向けのシフト管理システム",
+  // #318: iPhone でホーム画面に追加したとき、Safari の枠なしのアプリとして開く
+  // (manifest の display: standalone だけでは古い iOS が拾わない)
+  appleWebApp: {
+    capable: true,
+    title: "シフト管理",
+    statusBarStyle: "default",
+  },
 };
 
 // #122: スマホ表示の土台。themeColor は primary (ネイビー #1b2a64 = hsl(228 57% 25%))。
