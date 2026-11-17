@@ -24,6 +24,16 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { cn } from "@/lib/utils";
 import { deadlineLabel } from "@/lib/deadline";
 import {
+  closeExpiredGrants,
+  getActiveRegularGrant,
+  getRegularChangeState,
+} from "@/lib/shift-change";
+import { pickRegularChangeTarget } from "@/lib/shift-change-rule";
+import {
+  ChangeRequestCard,
+  type ChangeRequestView,
+} from "@/components/shift-change/change-request-card";
+import {
   parseStoredPreferredStudents,
   type PreferredStudent,
 } from "@/lib/preferred-students";
@@ -32,6 +42,8 @@ export default async function FixedShiftPage() {
   const { profile } = await requireRole("tutor");
   const today = jstToday();
   const now = new Date();
+  // #333: 期限が切れていたら閉じる (出し直さなかった下書きは承認前に戻す)
+  await closeExpiredGrants(profile.id, now);
 
   // Issue #72 (β): 現在受付中の期 (regular_shift_periods) を取得する。
   // submissionOpensAt <= now <= submissionDueAt の active な期を 1 件、
@@ -86,7 +98,55 @@ export default async function FixedShiftPage() {
         asc(regularAssignments.slotNumber),
       ),
   ]);
-  const activePeriod = activePeriodRows[0] ?? null;
+  const acceptingPeriod = activePeriodRows[0] ?? null;
+
+  // #333: 受付中の期が無いときは、教室長が承認した変更申請の期をその講師だけ
+  // 受付中として扱う (サーバー側 actions.ts の resolveEditablePeriod と同じ)
+  const [grant, changeState] = acceptingPeriod
+    ? [null, null]
+    : await Promise.all([
+        getActiveRegularGrant(profile.id, now),
+        getRegularChangeState(profile.id, now),
+      ]);
+  // 受付中の期が無いとき: 許可された期、無ければ変更申請の対象になる期
+  // (pickRegularChangeTarget) を表示する。締切後でも、自分が出した中身を
+  // 見られるように (編集できるかは editableNow で別に決める)
+  type PeriodRow = (typeof activePeriodRows)[number];
+  let grantPeriod: PeriodRow | null = null;
+  let viewPeriod: PeriodRow | null = null;
+  if (!acceptingPeriod) {
+    const rows = await db
+      .select({
+        id: regularShiftPeriods.id,
+        label: regularShiftPeriods.label,
+        startDate: regularShiftPeriods.startDate,
+        endDate: regularShiftPeriods.endDate,
+        submissionOpensAt: regularShiftPeriods.submissionOpensAt,
+        submissionDueAt: regularShiftPeriods.submissionDueAt,
+      })
+      .from(regularShiftPeriods)
+      .where(eq(regularShiftPeriods.isArchived, false));
+    grantPeriod = grant?.regularPeriodId
+      ? (rows.find((r) => r.id === grant.regularPeriodId) ?? null)
+      : null;
+    viewPeriod = grantPeriod ?? pickRegularChangeTarget(rows, now);
+  }
+  const activePeriod = acceptingPeriod ?? viewPeriod;
+  // #333: 受付中の期も、使える変更の許可も無ければ編集させない (以前は期の
+  // 無い日付なら自由に保存できた)。期のない状態で承認された許可は通す
+  const editableNow =
+    acceptingPeriod !== null ||
+    grantPeriod !== null ||
+    (grant !== null && grant.regularPeriodId === null);
+  const changeView: ChangeRequestView | null = acceptingPeriod
+    ? null
+    : changeState?.kind === "approved"
+      ? { kind: "approved", unlockedUntil: changeState.unlockedUntil.toISOString() }
+      : changeState?.kind === "pending"
+        ? { kind: "pending", id: changeState.id }
+        : changeState?.kind === "rejected"
+          ? { kind: "rejected", decisionNote: changeState.decisionNote }
+          : { kind: "none" };
 
   // #156: 既存提出/シフトの復元クエリ下限。通常は today だが、受付中の期の開始日が
   // 過去日 (期の開始後の遅れ提出) の場合は期初まで下げて取りこぼしを防ぐ。
@@ -197,25 +257,9 @@ export default async function FixedShiftPage() {
 
   // Issue #61 / PR #67 P1 #2: 締切超過は UI 上 frozen 表示に上書きする。
   // DB 状態 (draft/submitted) は触らないがフォームを完全 read-only にし、保存・提出ボタンを隠す。
-  // サーバアクション側 (actions.ts:fetchPeriodWindow) でも同じ境界で拒否される。
-  // Issue #72 (β): 月別 period から期 (regular_shift_periods) へ参照先変更。
-  // effective_from が範囲に含まれる active な期を検索する。
-  let isPastDeadline = false;
-  if (submissionRow) {
-    const dueRows = await db
-      .select({ submissionDueAt: regularShiftPeriods.submissionDueAt })
-      .from(regularShiftPeriods)
-      .where(
-        and(
-          eq(regularShiftPeriods.isArchived, false),
-          lte(regularShiftPeriods.startDate, targetEffectiveFrom),
-          gte(regularShiftPeriods.endDate, targetEffectiveFrom),
-        ),
-      )
-      .limit(1);
-    const due = dueRows[0]?.submissionDueAt;
-    if (due && now > due) isPastDeadline = true;
-  }
+  // サーバアクション側 (actions.ts の windowBlockReason) でも同じ境界で拒否される。
+  // #333: 受付中の期も変更の許可も無いとき (締切後・期の外) はすべて read-only
+  const isPastDeadline = !editableNow;
   // #161: 新しい期を開いた直後 (当期のデータが一切ない) は、前期の提出内容を
   // プリフィルする。表示のみの初期値で、保存時はサーバーが当期の期初を強制する
   // (#160 の不変条件は維持)。
@@ -314,15 +358,17 @@ export default async function FixedShiftPage() {
   };
 
   // navy ヘッダー用: 受付中の期があれば締切までの残り日数を算出 (JST カレンダー日基準)
-  const headerDeadline = activePeriod
+  // #333: 締切は受付中の期だけ出す (締切後に許可で直しているときは、
+  // 変更申請のカードに期限を出す)
+  const headerDeadline = acceptingPeriod
     ? (() => {
-        const dueDate = jstToday(activePeriod.submissionDueAt);
+        const dueDate = jstToday(acceptingPeriod.submissionDueAt);
         const daysLeft = Math.round(
           (Date.parse(dueDate) - Date.parse(today)) / 86_400_000,
         );
         return {
           ...deadlineLabel(daysLeft),
-          dueAt: activePeriod.submissionDueAt,
+          dueAt: acceptingPeriod.submissionDueAt,
         };
       })()
     : null;
@@ -362,6 +408,11 @@ export default async function FixedShiftPage() {
           </p>
         )}
       </section>
+
+      {/* #333: 提出期間の外は「変更申請」から */}
+      {changeView && (
+        <ChangeRequestCard target={{ kind: "regular" }} state={changeView} />
+      )}
 
       {/* Issue #74 (δ): 自分の確定済みレギュラー枠 (期間範囲ごとに表示) */}
       {confirmedRows.length > 0 && (

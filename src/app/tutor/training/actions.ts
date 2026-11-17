@@ -35,7 +35,7 @@ async function applyTrainingSlots(
   slotNumbers: number[],
   on: boolean,
 ): Promise<ActionResult> {
-  const gate = await assertTrainingEditable(periodId);
+  const gate = await assertTrainingEditable(periodId, tutorId);
   if (!gate.ok) return { ok: false, error: gate.reason };
 
   // クライアントを信用しない: date が期間範囲内かをサーバーで検証
@@ -146,7 +146,7 @@ export async function saveTrainingNote(
   }
   const { periodId, note } = parsed.data;
 
-  const gate = await assertTrainingEditable(periodId);
+  const gate = await assertTrainingEditable(periodId, profile.id);
   if (!gate.ok) return { ok: false, error: gate.reason };
 
   await db
@@ -197,7 +197,7 @@ export async function saveTrainingRange(input: unknown): Promise<ActionResult> {
     };
   }
 
-  const gate = await assertTrainingEditable(periodId);
+  const gate = await assertTrainingEditable(periodId, profile.id);
   if (!gate.ok) return { ok: false, error: gate.reason };
 
   const values =

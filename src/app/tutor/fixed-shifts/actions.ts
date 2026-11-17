@@ -17,6 +17,7 @@ import {
 } from "@/lib/regular-submission-target";
 import { notifyAdmins } from "@/lib/notifications";
 import { regularSubmittedNotice } from "@/lib/submission-notice";
+import { closeGrant, getActiveRegularGrant } from "@/lib/shift-change";
 import {
   normalizePreferredStudents,
   parseStoredPreferredStudents,
@@ -110,6 +111,74 @@ async function fetchActiveAcceptingPeriod(
   return rows[0] ?? null;
 }
 
+/**
+ * #333: 今この講師が編集できる期。受付中の期があればそれ、無ければ教室長が
+ * 承認した変更申請の期 (その講師だけ、`unlocked_until` まで)。
+ */
+type RegularGrant = { id: string; regularPeriodId: string | null };
+
+async function resolveEditablePeriod(
+  tutorId: string,
+  now: Date,
+): Promise<{
+  period: { id: string; startDate: string; endDate: string } | null;
+  grant: RegularGrant | null;
+}> {
+  const [accepting, grant] = await Promise.all([
+    fetchActiveAcceptingPeriod(now),
+    getActiveRegularGrant(tutorId, now),
+  ]);
+  if (accepting) return { period: accepting, grant };
+  if (!grant?.regularPeriodId) return { period: null, grant };
+  const rows = await db
+    .select({
+      id: regularShiftPeriods.id,
+      startDate: regularShiftPeriods.startDate,
+      endDate: regularShiftPeriods.endDate,
+    })
+    .from(regularShiftPeriods)
+    .where(
+      and(
+        eq(regularShiftPeriods.id, grant.regularPeriodId),
+        eq(regularShiftPeriods.isArchived, false),
+      ),
+    )
+    .limit(1);
+  return { period: rows[0] ?? null, grant };
+}
+
+/**
+ * #333: 期の窓の外 (開始前・締切後・どの期にも入らない) を弾く理由。null = 編集可。
+ * 承認された変更申請の期は窓の外でも通す。どの期にも入らない日付 (以前の
+ * 「アドホック提出」) は、期の無い状態で承認された申請があるときだけ通す。
+ */
+function windowBlockReason(
+  w: { periodId: string | null; isBeforeOpen: boolean; isOverDue: boolean },
+  grant: RegularGrant | null,
+  action: "save" | "submit" | "revert",
+): string | null {
+  if (grant && w.periodId !== null && w.periodId === grant.regularPeriodId) {
+    return null;
+  }
+  if (w.periodId === null) {
+    if (grant && grant.regularPeriodId === null) return null;
+    return "提出期間外です。変更したいときは「変更申請」を出してください。";
+  }
+  if (w.isBeforeOpen) {
+    return action === "save"
+      ? "提出受付の開始前です。教室長が提出期間を開放するまでお待ちください。"
+      : "提出受付の開始前です。";
+  }
+  if (w.isOverDue) {
+    return action === "save"
+      ? "提出締切を過ぎているため保存できません。変更したいときは「変更申請」を出してください。"
+      : action === "submit"
+        ? "提出締切を過ぎているため提出できません。"
+        : "提出締切を過ぎているため下書きに戻せません。";
+  }
+  return null;
+}
+
 async function fetchPeriodWindow(
   effectiveFrom: string,
   now: Date,
@@ -167,7 +236,10 @@ export async function saveFixedShifts(
   // 保存すると、復元 (page.tsx の期初厳密一致) から漏れた孤児行ができ、admin の
   // submissionByTutor が「同月内で最大 effectiveFrom の行」を採る都合で表示と実体が
   // ねじれる。起点を期初に固定すれば delete-forward で孤児も掃除される。
-  const activePeriod = await fetchActiveAcceptingPeriod(now);
+  const { period: activePeriod, grant } = await resolveEditablePeriod(
+    profile.id,
+    now,
+  );
   const effectiveFrom = resolveServerEffectiveFrom({
     activePeriodStartDate: activePeriod?.startDate ?? null,
     clientEffectiveFrom: parsed.data.effectiveFrom,
@@ -185,22 +257,10 @@ export async function saveFixedShifts(
   // Issue #61 / R-1: 紐付き period の開始前・締切後は保存も拒否。これは period 側の
   // 確認なので transaction の外でやって問題ない (period の状態を保存中にロックする
   // 必要はなく、変わったら次の save で再チェックされる)。
-  const { periodId, isBeforeOpen, isOverDue } = await fetchPeriodWindow(
-    effectiveFrom,
-    now,
-  );
-  if (isBeforeOpen) {
-    return {
-      ok: false,
-      error: "提出受付の開始前です。教室長が提出期間を開放するまでお待ちください。",
-    };
-  }
-  if (isOverDue) {
-    return {
-      ok: false,
-      error: "提出締切を過ぎているため保存できません。教室長に連絡してください。",
-    };
-  }
+  const window = await fetchPeriodWindow(effectiveFrom, now);
+  const { periodId } = window;
+  const blocked = windowBlockReason(window, grant, "save");
+  if (blocked) return { ok: false, error: blocked };
 
   // PR #67 Round 3 P1-1: 状態チェックと delete を 1 transaction にまとめ、
   // SELECT ... FOR UPDATE で対象範囲の行をロックする。これにより、
@@ -395,16 +455,17 @@ export async function submitFixedShifts(): Promise<SubmitFixedShiftsResult> {
     };
   }
 
-  const { isBeforeOpen, isOverDue } = await fetchPeriodWindow(
-    current.effectiveFrom,
-    now,
-  );
-  if (isBeforeOpen) {
-    return { ok: false, error: "提出受付の開始前です。" };
-  }
-  if (isOverDue) {
-    return { ok: false, error: "提出締切を過ぎているため提出できません。" };
-  }
+  const grant = await getActiveRegularGrant(profile.id, now);
+  const submitWindow = await fetchPeriodWindow(current.effectiveFrom, now);
+  const submitBlocked = windowBlockReason(submitWindow, grant, "submit");
+  if (submitBlocked) return { ok: false, error: submitBlocked };
+  // 受付中の期ではなく、承認された変更申請で出し直した
+  const viaGrant =
+    grant !== null &&
+    (submitWindow.periodId === null
+      ? grant.regularPeriodId === null
+      : submitWindow.periodId === grant.regularPeriodId) &&
+    (submitWindow.isOverDue || submitWindow.isBeforeOpen || submitWindow.periodId === null);
 
   // B-1: status='draft' を WHERE に含め returning で空チェック。状態列が draft で
   // ないまま遷移する race / 改竄を遮断する。
@@ -433,12 +494,27 @@ export async function submitFixedShifts(): Promise<SubmitFixedShiftsResult> {
     };
   }
 
-  // #338: 教室長のベルに知らせる。下書きに戻して出し直したときも、中身が
-  // 変わっている可能性があるので毎回知らせる。失敗しても提出は成功のまま
-  await notifyAdmins(
-    regularSubmittedNotice(profile.displayName, current.effectiveFrom),
-    { exceptProfileId: profile.id },
-  );
+  if (viaGrant) {
+    // #333: 承認された変更を出し直した。許可はここで閉じる (もう一度変えるなら
+    // 申請し直す)。教室長には「変更を出し直した」と知らせる
+    await closeGrant(grant.id, now);
+    await notifyAdmins(
+      {
+        type: "shift_change_done",
+        title: `${profile.displayName}さんがレギュラーの希望を変更しました`,
+        body: "変更申請が承認されたあとの出し直しです。提出状況で中身を確認してください",
+        href: "/admin/fixed-shifts",
+      },
+      { exceptProfileId: profile.id },
+    );
+  } else {
+    // #338: 教室長のベルに知らせる。下書きに戻して出し直したときも、中身が
+    // 変わっている可能性があるので毎回知らせる。失敗しても提出は成功のまま
+    await notifyAdmins(
+      regularSubmittedNotice(profile.displayName, current.effectiveFrom),
+      { exceptProfileId: profile.id },
+    );
+  }
 
   revalidatePath("/tutor/fixed-shifts");
   // R-5: クライアントの new Date() ではなくサーバが実際に書いた値を返す
@@ -480,13 +556,12 @@ export async function revertSubmissionToDraft(): Promise<RevertSubmissionResult>
     };
   }
 
-  const { isOverDue } = await fetchPeriodWindow(current.effectiveFrom, now);
-  if (isOverDue) {
-    return {
-      ok: false,
-      error: "提出締切を過ぎているため下書きに戻せません。",
-    };
-  }
+  const revertBlocked = windowBlockReason(
+    await fetchPeriodWindow(current.effectiveFrom, now),
+    await getActiveRegularGrant(profile.id, now),
+    "revert",
+  );
+  if (revertBlocked) return { ok: false, error: revertBlocked };
 
   const updated = await db
     .update(fixedShiftSubmissions)

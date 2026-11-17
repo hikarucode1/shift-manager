@@ -21,6 +21,11 @@ import { jstToday } from "@/lib/week";
 import { deadlineLabel } from "@/lib/deadline";
 import { cn } from "@/lib/utils";
 import { TrainingEditor } from "./training-editor";
+import { getTrainingChangeStates } from "@/lib/shift-change";
+import {
+  ChangeRequestCard,
+  type ChangeRequestView,
+} from "@/components/shift-change/change-request-card";
 
 function formatDeadlineDate(iso: string): string {
   return new Date(iso).toLocaleDateString("ja-JP", {
@@ -40,6 +45,22 @@ export default async function TutorTrainingPage({
     const data = await getTrainingEditorData(profile.id, period);
     if (data) {
       const dl = deadlineLabel(data.period.daysLeft);
+      // #333: 締切後 (全体の再開なし) は「変更申請」を出す。承認されていれば
+      // その講師だけ編集できる (data.period.changeUnlockedUntil)
+      let changeView: ChangeRequestView | null = null;
+      if (!data.period.editable || data.period.changeUnlockedUntil) {
+        const st = (
+          await getTrainingChangeStates(profile.id, [data.period.id], new Date())
+        ).get(data.period.id);
+        changeView =
+          st?.kind === "approved"
+            ? { kind: "approved", unlockedUntil: st.unlockedUntil.toISOString() }
+            : st?.kind === "pending"
+              ? { kind: "pending", id: st.id }
+              : st?.kind === "rejected"
+                ? { kind: "rejected", decisionNote: st.decisionNote }
+                : { kind: "none" };
+      }
       return (
         <div className="space-y-5">
           <Link
@@ -72,6 +93,13 @@ export default async function TutorTrainingPage({
               </span>
             </p>
           </section>
+
+          {changeView && (
+            <ChangeRequestCard
+              target={{ kind: "training", trainingPeriodId: data.period.id }}
+              state={changeView}
+            />
+          )}
 
           <TrainingEditor data={serializeData(data)} />
         </div>

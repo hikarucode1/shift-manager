@@ -312,7 +312,7 @@ export function FixedShiftEditor({
         )}
         {isFrozen && (
           <span className="text-xs text-muted-foreground">
-            締切後または教室長による凍結。解除は教室長へ依頼してください。
+            提出期間外か、教室長による凍結です。変えたいときは上の「変更申請」から申請してください。
           </span>
         )}
       </div>

@@ -21,6 +21,11 @@ import { RequestsPanel } from "./requests-panel";
 import { UnfilledAbsencesPanel } from "./unfilled-absences-panel";
 import { SwapRequestsPanel } from "./swap-requests-panel";
 import { RequestLogPanel } from "./request-log-panel";
+import { ShiftChangePanel } from "./shift-change-panel";
+import {
+  closeExpiredGrants,
+  getPendingChangeRequests,
+} from "@/lib/shift-change";
 
 /**
  * 申請承認 (#224)。
@@ -44,13 +49,21 @@ export default async function AdminRequestsPage({
   }>;
 }) {
   await requireRole("admin");
+  // #333: 期限の切れた変更許可を閉じる (出し直さなかったレギュラーは元に戻す)
+  await closeExpiredGrants(null, new Date());
   const sp = await searchParams;
 
   const view = parseRequestsSearchParams(sp);
   const { tab, period, type, state } = view;
 
-  const [pendingAbsences, pendingSwaps, log, activeTutors, unfilled] =
-    await Promise.all([
+  const [
+    pendingAbsences,
+    pendingSwaps,
+    log,
+    activeTutors,
+    unfilled,
+    pendingChanges,
+  ] = await Promise.all([
     getPendingAbsenceRequests(),
     getPendingSwapRequests(),
     // 未対応タブでも件数バッジのために引く…のは無駄なので、記録タブのときだけ
@@ -61,6 +74,8 @@ export default async function AdminRequestsPage({
     fetchActiveTutors(),
     // #331: 指定した相手に断られ、代講が決まっていない欠勤
     getUnfilledDesignatedAbsences(),
+    // #333: 提出期間外のシフト変更申請
+    getPendingChangeRequests(),
   ]);
   const tutorOptions = activeTutors.map((t) => ({
     id: t.id,
@@ -68,7 +83,10 @@ export default async function AdminRequestsPage({
   }));
 
   const pendingCount =
-    pendingAbsences.length + pendingSwaps.length + unfilled.length;
+    pendingAbsences.length +
+    pendingSwaps.length +
+    unfilled.length +
+    pendingChanges.length;
   const today = jstToday();
   // 未対応 ⇄ 記録 を行き来してもフィルタを捨てない (両方のリンクに載せる)
   const pendingHref = requestsHref({ ...view, tab: "pending" });
@@ -120,6 +138,27 @@ export default async function AdminRequestsPage({
           <section className="space-y-3">
             <h2 className="text-sm font-semibold text-muted-foreground">交代・代講</h2>
             <SwapRequestsPanel pending={pendingSwaps} />
+          </section>
+          <section className="space-y-3">
+            <h2 className="text-sm font-semibold text-muted-foreground">
+              シフトの変更申請（提出期間外）
+            </h2>
+            <ShiftChangePanel
+              pending={pendingChanges.map((c) => ({
+                id: c.id,
+                tutorName: c.tutorName,
+                kind: c.kind,
+                targetLabel: c.targetLabel,
+                reason: c.reason,
+                createdAtLabel: c.createdAt.toLocaleString("ja-JP", {
+                  timeZone: "Asia/Tokyo",
+                  month: "numeric",
+                  day: "numeric",
+                  hour: "2-digit",
+                  minute: "2-digit",
+                }),
+              }))}
+            />
           </section>
         </div>
       ) : (

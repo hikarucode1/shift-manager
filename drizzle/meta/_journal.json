@@ -344,6 +344,20 @@
       "when": 1794881745971,
       "tag": "0048_push_subscriptions",
       "breakpoints": true
+    },
+    {
+      "idx": 49,
+      "version": "7",
+      "when": 1794883785791,
+      "tag": "0049_shift_change_requests",
+      "breakpoints": true
+    },
+    {
+      "idx": 50,
+      "version": "7",
+      "when": 1794884923184,
+      "tag": "0050_shift_change_snapshot",
+      "breakpoints": true
     }
   ]
 }
