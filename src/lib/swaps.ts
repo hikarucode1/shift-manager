@@ -5,7 +5,6 @@ import {
   asc,
   desc,
   eq,
-  gte,
   inArray,
   isNull,
   isNotNull,
@@ -41,15 +40,6 @@ import { jstToday, weekdayOf } from "@/lib/week";
  */
 export type SwapKind = (typeof swapKindEnum.enumValues)[number];
 export type SwapStatus = "pending" | "approved" | "rejected" | "cancelled";
-
-export type SwappableShift = {
-  date: string;
-  slotNumber: number;
-  slotLabel: string;
-  startTime: string;
-  endTime: string;
-  weekdayLabel: string;
-};
 
 export type SwapApplicant = {
   applicationId: string;
@@ -195,74 +185,6 @@ export async function hasSlotEnded(
 ): Promise<boolean> {
   const meta = await getSlotMeta();
   return isSlotPast(date, meta.get(slotNumber)?.end ?? "");
-}
-
-/** 講師: 交代申請できる「今日以降の自分の確定シフト」(有効な申請があるものは除外) */
-export async function getTutorSwappableShifts(
-  tutorId: string,
-): Promise<SwappableShift[]> {
-  const today = jstToday();
-  const [meta, shifts, active] = await Promise.all([
-    getSlotMeta(),
-    db
-      .select({ date: weeklyShifts.date, slotNumber: weeklyShifts.slotNumber })
-      .from(weeklyShifts)
-      .where(
-        and(eq(weeklyShifts.tutorId, tutorId), gte(weeklyShifts.date, today)),
-      )
-      .orderBy(asc(weeklyShifts.date), asc(weeklyShifts.slotNumber)),
-    db
-      .select({
-        date: swapRequests.date,
-        slotNumber: swapRequests.slotNumber,
-      })
-      .from(swapRequests)
-      .where(
-        and(
-          eq(swapRequests.requesterId, tutorId),
-          eq(swapRequests.status, "pending"),
-        ),
-      ),
-  ]);
-  const blocked = new Set(active.map((a) => `${a.date}|${a.slotNumber}`));
-  const seen = new Set<string>();
-  const out: SwappableShift[] = [];
-  for (const s of shifts) {
-    const k = `${s.date}|${s.slotNumber}`;
-    if (blocked.has(k) || seen.has(k)) continue;
-    seen.add(k);
-    const l = labelOf(meta, s.slotNumber);
-    // #178: gte(date, today) だと**今日の終了済みコマ**まで候補に残る。
-    // 選んで送信して初めて弾かれるので、ここで落とす。
-    if (isSlotPast(s.date, l.end)) continue;
-    out.push({
-      date: s.date,
-      slotNumber: s.slotNumber,
-      slotLabel: l.label,
-      startTime: l.start,
-      endTime: l.end,
-      weekdayLabel: weekdayOf(s.date).label,
-    });
-  }
-  return out;
-}
-
-/** 指名先候補: 自分以外の有効な講師 */
-export async function getActiveTutorsExcept(
-  excludeId: string,
-): Promise<{ id: string; name: string }[]> {
-  const rows = await db
-    .select({ id: profiles.id, name: profiles.displayName })
-    .from(profiles)
-    .where(
-      and(
-        arrayContains(profiles.roles, ["tutor"]),
-        eq(profiles.isActive, true),
-        ne(profiles.id, excludeId),
-      ),
-    )
-    .orderBy(asc(profiles.displayName));
-  return rows;
 }
 
 /** db 本体・transaction のどちらでも受けられる executor 型 */
