@@ -82,3 +82,33 @@ describe("parseShiftCsvText 表示期間の検証 (#165 H2)", () => {
     expect(parseShiftCsvText(text).weekStart).toBe("2026-04-20");
   });
 });
+
+describe("parseShiftCsvText 体験・研修 (#335)", () => {
+  it("【体験】付きの生徒は isTrial、名前から印は外す", () => {
+    const text = csv("2026/11/16〜2026/11/22", [
+      "日付,11月18日,水",
+      "8限,19:30〜20:55",
+      "座番,講師,生徒,生徒",
+      "1,山田太郎,【体験】川口花子(数B),佐藤花子(英)",
+    ]);
+    const a = parseShiftCsvText(text).days[0].slots[0].assignments[0];
+    expect(a.isTraining).toBe(false);
+    expect(a.students).toEqual([
+      expect.objectContaining({ name: "川口花子", isTrial: true }),
+      expect.objectContaining({ name: "佐藤花子", isTrial: false }),
+    ]);
+  });
+
+  it("生徒欄が「研修」の行は生徒 0 人でも研修として残す", () => {
+    const text = csv("2026/11/16〜2026/11/22", [
+      "日付,11月18日,水",
+      "8限,19:30〜20:55",
+      "座番,講師,生徒,生徒",
+      "1,山田太郎,研修",
+      "2,鈴木一郎,",
+    ]);
+    const assignments = parseShiftCsvText(text).days[0].slots[0].assignments;
+    expect(assignments).toHaveLength(1);
+    expect(assignments[0]).toMatchObject({ isTraining: true, students: [] });
+  });
+});

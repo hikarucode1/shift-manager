@@ -17,8 +17,8 @@ import {
   stubEmail,
 } from "@/lib/stub-tutors";
 import type { SkipReason } from "@/lib/swap-reapplication";
+import { looksLikeXlsx, xlsxToShiftCsvText } from "@/lib/shift-xlsx";
 import {
-  parseShiftCsvBuffer,
   parseShiftCsvText,
   ShiftCsvParseError,
   type ParsedShiftCsv,
@@ -123,13 +123,28 @@ export async function parseUploadedCsv(
 
   const buf = Buffer.from(await file.arrayBuffer());
   try {
-    const parsed = parseShiftCsvBuffer(buf);
-
-    // BOM 付き UTF-8 だった場合も考慮して、raw を UTF-8 として正規化
-    const looksUtf8Bom = buf[0] === 0xef && buf[1] === 0xbb && buf[2] === 0xbf;
-    const rawContent = looksUtf8Bom
-      ? buf.subarray(3).toString("utf-8")
-      : iconv.decode(buf, "shift_jis");
+    // #335: Excel はそのまま受け取り、CSV と同じ形の文字列にする (赤字の生徒には
+    // 体験の印が付く)。確定時はこの文字列を解析し直すので、体験も研修も残る
+    let rawContent: string;
+    if (looksLikeXlsx(buf)) {
+      try {
+        rawContent = await xlsxToShiftCsvText(buf);
+      } catch (e) {
+        console.error("xlsxToShiftCsvText failed", e);
+        return {
+          ok: false,
+          error: "Excel ファイルを読めませんでした。座席表の .xlsx か確認してください。",
+        };
+      }
+    } else {
+      // BOM 付き UTF-8 だった場合も考慮して、raw を UTF-8 として正規化
+      const looksUtf8Bom =
+        buf[0] === 0xef && buf[1] === 0xbb && buf[2] === 0xbf;
+      rawContent = looksUtf8Bom
+        ? buf.subarray(3).toString("utf-8")
+        : iconv.decode(buf, "shift_jis");
+    }
+    const parsed = parseShiftCsvText(rawContent);
 
     return {
       ok: true,

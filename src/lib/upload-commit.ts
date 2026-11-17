@@ -260,6 +260,7 @@ export async function commitShiftUpload(
               date: day.date,
               slotNumber: slot.slotNumber,
               seatNumber: a.seatNumber,
+              isTraining: a.isTraining,
             })
             .returning({ id: weeklyShifts.id });
 
@@ -281,6 +282,7 @@ export async function commitShiftUpload(
                   studentId: sid,
                   subject: s.subject,
                   position: (idx + 1) as 1 | 2,
+                  isTrial: s.isTrial,
                 };
               })
               .filter((r): r is NonNullable<typeof r> => r !== null);
