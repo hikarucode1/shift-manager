@@ -112,6 +112,10 @@ export const notificationTypeEnum = pgEnum("notification_type", [
   "swap_posted",
   // #344: 教室長宛て。欠勤で指定した代講の相手が引き受けた / 断った (#331)
   "substitute_response",
+  // #338: 教室長宛て。講師がレギュラーシフトを提出した
+  "shift_submitted",
+  // #338: 教室長宛て。講師が欠勤申請を出した (承認待ち)
+  "absence_requested",
 ]);
 
 /* ------------------------------------------------------------------ */

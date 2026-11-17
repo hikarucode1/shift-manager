@@ -4,7 +4,9 @@ import { revalidatePath } from "next/cache";
 import { z } from "zod";
 import { and, eq, inArray } from "drizzle-orm";
 import { requireRole } from "@/lib/auth";
-import { notify } from "@/lib/notifications";
+import { notify, notifyAdmins } from "@/lib/notifications";
+import { slotLabelSafe } from "@/lib/slot-meta";
+import { absenceRequestedNotice } from "@/lib/submission-notice";
 import { db } from "@/db/client";
 import {
   absenceRequests,
@@ -138,6 +140,17 @@ export async function createAbsenceRequest(
     console.error("createAbsenceRequest insert failed", e);
     return { ok: false, error: "申請に失敗しました。時間をおいてお試しください。" };
   }
+
+  // #338: 教室長のベルに知らせる (代講探しをすぐ始めるため)。失敗しても申請は成功のまま
+  await notifyAdmins(
+    absenceRequestedNotice(
+      profile.displayName,
+      date,
+      await slotLabelSafe(slotNumber),
+      reason,
+    ),
+    { exceptProfileId: profile.id },
+  );
 
   revalidatePath("/tutor/absences");
   revalidatePath("/admin/requests");

@@ -330,6 +330,13 @@
       "when": 1794876221308,
       "tag": "0046_notification_audience",
       "breakpoints": true
+    },
+    {
+      "idx": 47,
+      "version": "7",
+      "when": 1794877990153,
+      "tag": "0047_admin_request_notifications",
+      "breakpoints": true
     }
   ]
 }
