@@ -2,6 +2,7 @@ import Link from "next/link";
 import {
   Bell,
   CalendarCheck,
+  CalendarX,
   ClipboardCheck,
   Inbox,
   Repeat,
@@ -18,6 +19,7 @@ const TYPE_ICON: Record<NotificationType, typeof Bell> = {
   swap_posted: Repeat,
   substitute_response: UserCheck,
   shift_submitted: ClipboardCheck,
+  absence_requested: CalendarX,
 };
 
 function formatDateTime(d: Date): string {

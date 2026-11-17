@@ -1,5 +1,5 @@
 {
-  "id": "48a1b384-d9b7-4aef-8c26-9c26bec9c260",
+  "id": "0cdbff6c-ed30-4ae5-bde6-b222c4c4cede",
   "prevId": "5c6287e8-5b70-4a7d-8439-1db607c683a7",
   "version": "7",
   "dialect": "postgresql",
@@ -2781,7 +2781,8 @@
         "shifts_published",
         "swap_posted",
         "substitute_response",
-        "shift_submitted"
+        "shift_submitted",
+        "absence_requested"
       ]
     },
     "public.request_status": {

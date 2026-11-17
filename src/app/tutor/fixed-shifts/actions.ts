@@ -437,6 +437,7 @@ export async function submitFixedShifts(): Promise<SubmitFixedShiftsResult> {
   // 変わっている可能性があるので毎回知らせる。失敗しても提出は成功のまま
   await notifyAdmins(
     regularSubmittedNotice(profile.displayName, current.effectiveFrom),
+    { exceptProfileId: profile.id },
   );
 
   revalidatePath("/tutor/fixed-shifts");

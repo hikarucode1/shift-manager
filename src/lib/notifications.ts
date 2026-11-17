@@ -90,6 +90,8 @@ export async function notify(
  */
 export async function notifyAdmins(
   input: Omit<NotificationInput, "audience">,
+  /** 兼任の教室長が自分で出した申請・提出は、本人には知らせない */
+  opts: { exceptProfileId?: string } = {},
 ): Promise<void> {
   try {
     const admins = await db
@@ -102,7 +104,7 @@ export async function notifyAdmins(
         ),
       );
     await insertNotifications(
-      admins.map((a) => a.id),
+      admins.map((a) => a.id).filter((id) => id !== opts.exceptProfileId),
       { ...input, audience: "admin" },
     );
   } catch (e) {
