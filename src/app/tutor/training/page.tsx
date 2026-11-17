@@ -172,15 +172,15 @@ export default async function TutorTrainingPage({
             return (
             <Link key={p.id} href={`/tutor/training?period=${p.id}`}>
               <Card className="transition-colors hover:bg-muted/50">
-                <CardHeader className="flex-row items-center justify-between space-y-0">
-                  <div>
+                <CardHeader className="flex-row items-center justify-between gap-3 space-y-0">
+                  <div className="min-w-0">
                     <CardTitle className="text-base">{p.name}</CardTitle>
                     <CardDescription>
                       {p.startDate} 〜 {p.endDate} ／ 締切{" "}
                       {formatDeadlineDate(p.submissionDeadline)}
                     </CardDescription>
                   </div>
-                  <div className="flex items-center gap-2">
+                  <div className="flex shrink-0 items-center gap-2">
                     {p.isReopened ? (
                       <Badge variant="destructive">締切無視中（提出可）</Badge>
                     ) : p.editable ? (
