@@ -6,6 +6,7 @@ import {
   markAllRead,
   type NotificationAudience,
 } from "@/lib/notifications";
+import { notifyOverdueDesignations } from "@/lib/designation-overdue";
 import { createClient } from "@/lib/supabase/server";
 
 /** 取得できた (0 件を含む) か、取得できなかったか (#207) */
@@ -47,6 +48,10 @@ export async function unreadCountFor(
     if (!profile || !profile.isActive || !hasRole(profile, audience)) {
       return { ok: true, count: 0 };
     }
+
+    // #331 PR 3: 教室長のベルが来たときに、前日になっても返事が無い指定代講を
+    // 確かめて通知を作る (定期実行の代わり)。失敗しても未読数は返す
+    if (audience === "admin") await notifyOverdueDesignations();
 
     return { ok: true, count: await getUnreadCount(profile.id, audience) };
   } catch (e) {

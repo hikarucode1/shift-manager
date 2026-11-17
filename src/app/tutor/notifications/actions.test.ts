@@ -18,6 +18,8 @@ vi.mock("@/lib/auth", async (importOriginal) => ({
 }));
 const markAllRead = vi.fn();
 vi.mock("@/lib/notifications", () => ({ getUnreadCount, markAllRead }));
+const notifyOverdueDesignations = vi.fn();
+vi.mock("@/lib/designation-overdue", () => ({ notifyOverdueDesignations }));
 
 const { getUnreadCountAction, markAllReadAction } = await import(
   "@/app/tutor/notifications/actions"
@@ -82,6 +84,8 @@ describe("getUnreadCountAction", () => {
     });
     // #344: 講師のベルは講師向けの通知だけを数える
     expect(getUnreadCount).toHaveBeenCalledWith(tutor.id, "tutor");
+    // #331 PR 3: 返事の無い指定代講の確認は教室長のベルだけ
+    expect(notifyOverdueDesignations).not.toHaveBeenCalled();
   });
 
   it("無効化された講師には件数を返さない (多重防御)", async () => {
