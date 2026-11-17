@@ -1193,3 +1193,21 @@ export const shiftConfirmations = pgTable(
     weekIdx: index("shift_confirmations_week_idx").on(t.weekStart),
   }),
 );
+
+/* ------------------------------------------------------------------ */
+/*  app_settings — 教室全体の設定 (キーと値) (#339)                     */
+/* ------------------------------------------------------------------ */
+/*  最初の 1 つは進行表 (Google スプレッドシート) の URL。教室長が登録し、 */
+/*  講師のホームと教室長のダッシュボードから開く。                        */
+
+export const appSettings = pgTable("app_settings", {
+  key: text("key").primaryKey(),
+  value: text("value").notNull(),
+  /** 最後に変えた教室長。退職などで消えても設定は残す */
+  updatedBy: uuid("updated_by").references(() => profiles.id, {
+    onDelete: "set null",
+  }),
+  updatedAt: timestamp("updated_at", { withTimezone: true })
+    .notNull()
+    .defaultNow(),
+});

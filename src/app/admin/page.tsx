@@ -10,10 +10,12 @@ import { loadNotificationHealth } from "@/lib/notification-health-loader";
 import { NotificationHealthCard } from "@/components/notification-health-card";
 import { getHeatmapData, getHeatmapPeriods } from "@/lib/training-overview";
 import { weekOf } from "@/lib/week";
+import { getProgressSheetUrl } from "@/lib/progress-sheet-db";
 import { cn } from "@/lib/utils";
 import { Card, CardContent } from "@/components/ui/card";
 import { RequestsPanel } from "./requests/requests-panel";
 import { SwapRequestsPanel } from "./requests/swap-requests-panel";
+import { ProgressSheetCard } from "./progress-sheet-card";
 
 /** tutor ロールかつ auth 未連携・有効な講師の人数 (招待が必要な人数) */
 async function countUnlinkedTutors(): Promise<number> {
@@ -58,6 +60,7 @@ export default async function AdminHome() {
     heatmap,
     notificationHealth,
     activeTutors,
+    progressSheetUrl,
   ] = await Promise.all([
     getAdminWeekSchedule(week),
     getPendingAbsenceRequests(),
@@ -67,6 +70,8 @@ export default async function AdminHome() {
     loadNotificationHealth(),
     // #331: 欠勤を承認するときに選ぶ「代講を頼む相手」
     fetchActiveTutors(),
+    // #339: 進行表 (スプレッドシート) の URL
+    getProgressSheetUrl(),
   ]);
 
   const pendingTotal = pendingAbsences.length + pendingSwaps.length;
@@ -99,6 +104,9 @@ export default async function AdminHome() {
         <KpiCard label="未連携の講師" value={`${unlinkedCount}`} />
         <NotificationHealthCard view={notificationHealth} />
       </div>
+
+      {/* #339: 進行表を開く・URL を登録する */}
+      <ProgressSheetCard url={progressSheetUrl} />
 
       {/* 下段: 左=承認待ち / 右=今週の充足状況 */}
       <div className="grid gap-5 lg:grid-cols-[1.4fr_1fr]">
