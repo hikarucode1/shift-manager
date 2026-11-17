@@ -16,6 +16,7 @@ import { isUniqueViolation } from "@/lib/db-errors";
 import { hasSlotEnded, isTutorBusyAt } from "@/lib/swaps";
 import { slotLabelSafe } from "@/lib/slot-meta";
 import { approveSwapInTx, SwapBizError } from "@/lib/swap-approval";
+import { noticeDate } from "@/lib/week";
 
 /**
  * #331: 欠勤で教室長が指定した相手への代講依頼。
@@ -129,7 +130,7 @@ export async function requestDesignatedSubstitute(
   await notify([designatedId], {
     type: "swap_posted",
     title: "代講の依頼がありました（教室長の指定）",
-    body: `対象: ${absence.date} ${slotLabel} ／ ${profile.displayName}さんの代講。「代講」の画面から引き受けるか断るかを選んでください`,
+    body: `対象: ${noticeDate(absence.date)} ${slotLabel} ／ ${profile.displayName}さんの代講。「代講」の画面から引き受けるか断るかを選んでください`,
     href: "/tutor/open-swaps",
   });
 
@@ -226,20 +227,20 @@ export async function acceptDesignatedSubstitution(
     notify([info.requesterId], {
       type: "swap_result",
       title: "代講が決まりました",
-      body: `対象: ${info.date} ${slotLabel} ／ 代講: ${info.applicantName}さん`,
+      body: `対象: ${noticeDate(info.date)} ${slotLabel} ／ 代講: ${info.applicantName}さん`,
       href: "/tutor/absences",
     }),
     notify([info.applicantId], {
       type: "swap_result",
       title: "代講が確定しました",
-      body: `対象: ${info.date} ${slotLabel} (${info.requesterName}さんの代講)`,
+      body: `対象: ${noticeDate(info.date)} ${slotLabel} (${info.requesterName}さんの代講)`,
       href: "/tutor",
     }),
     // #344: 相手を指定した教室長にも知らせる (教室長のベル)
     notifyAdmins({
       type: "substitute_response",
       title: "指定した代講を引き受けてもらえました",
-      body: `対象: ${info.date} ${slotLabel} ／ ${info.requesterName}さんの代講: ${info.applicantName}さん`,
+      body: `対象: ${noticeDate(info.date)} ${slotLabel} ／ ${info.requesterName}さんの代講: ${info.applicantName}さん`,
       href: "/admin/weekly",
     }),
   ]);
@@ -291,14 +292,14 @@ export async function declineDesignatedSubstitution(
     notify([u.requesterId], {
       type: "swap_result",
       title: "代講の依頼が断られました",
-      body: `対象: ${u.date} ${slotLabel} ／ ${profile.displayName}さんが都合がつきませんでした。教室長からの連絡を待ってください`,
+      body: `対象: ${noticeDate(u.date)} ${slotLabel} ／ ${profile.displayName}さんが都合がつきませんでした。教室長からの連絡を待ってください`,
       href: "/tutor/absences",
     }),
     // #344: 教室長は指定し直すか募集に出す (#345) ので、申請承認へ案内する
     notifyAdmins({
       type: "substitute_response",
       title: "指定した代講が断られました",
-      body: `対象: ${u.date} ${slotLabel} ／ ${profile.displayName}さんが都合がつきません。指定し直すか、代講の募集に出してください`,
+      body: `対象: ${noticeDate(u.date)} ${slotLabel} ／ ${profile.displayName}さんが都合がつきません。指定し直すか、代講の募集に出してください`,
       href: "/admin/requests",
     }),
   ]);

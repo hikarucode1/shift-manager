@@ -146,3 +146,11 @@ export function shortDate(iso: string): string {
 export function weekRangeLabel(range: WeekRange): string {
   return `${shortDate(range.start)}〜${shortDate(range.end)}`;
 }
+
+/**
+ * 通知の本文に出す日付 (例: "11/19（木）")。スマホ通知 (#318) で
+ * "2026-11-19" のままだと読みにくかったため。年は出さない (通知は近い日付だけ)
+ */
+export function noticeDate(iso: string): string {
+  return `${shortDate(iso)}（${weekdayOf(iso).label}）`;
+}

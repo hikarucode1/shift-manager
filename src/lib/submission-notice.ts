@@ -1,4 +1,5 @@
 import type { NotificationInput } from "@/lib/notifications";
+import { noticeDate } from "@/lib/week";
 
 /**
  * #338: 講師がレギュラーシフトを提出したときの、教室長向けの通知。
@@ -32,7 +33,7 @@ export function absenceRequestedNotice(
   return {
     type: "absence_requested",
     title: `${tutorName}さんから欠勤申請が届きました`,
-    body: `対象: ${date} ${slotLabel} ／ 理由: ${short}`,
+    body: `対象: ${noticeDate(date)} ${slotLabel} ／ 理由: ${short}`,
     href: "/admin/requests",
   };
 }
