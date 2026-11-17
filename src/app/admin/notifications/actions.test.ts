@@ -17,6 +17,8 @@ vi.mock("@/lib/auth", async (importOriginal) => ({
   getProfile,
 }));
 vi.mock("@/lib/notifications", () => ({ getUnreadCount, markAllRead }));
+const notifyOverdueDesignations = vi.fn();
+vi.mock("@/lib/designation-overdue", () => ({ notifyOverdueDesignations }));
 
 const { getAdminUnreadCountAction, markAllAdminReadAction } = await import(
   "@/app/admin/notifications/actions"
@@ -34,9 +36,13 @@ describe("getAdminUnreadCountAction (#344)", () => {
 
   afterEach(() => {
     vi.restoreAllMocks();
-    [getUser, getProfile, getUnreadCount, markAllRead].forEach((m) =>
-      m.mockReset(),
-    );
+    [
+      getUser,
+      getProfile,
+      getUnreadCount,
+      markAllRead,
+      notifyOverdueDesignations,
+    ].forEach((m) => m.mockReset());
   });
 
   it("認証 API に到達できないときは 0 ではなく ok:false", async () => {
@@ -57,6 +63,7 @@ describe("getAdminUnreadCountAction (#344)", () => {
       count: 0,
     });
     expect(getUnreadCount).not.toHaveBeenCalled();
+    expect(notifyOverdueDesignations).not.toHaveBeenCalled();
   });
 
   it("兼任の人は、教室長向けの通知だけを数える", async () => {
@@ -69,6 +76,8 @@ describe("getAdminUnreadCountAction (#344)", () => {
       count: 2,
     });
     expect(getUnreadCount).toHaveBeenCalledWith(admin.id, "admin");
+    // #331 PR 3: 教室長のベルのときだけ、返事の無い指定代講を確かめる
+    expect(notifyOverdueDesignations).toHaveBeenCalled();
   });
 
   it("DB 障害も 0 に潰さず ok:false", async () => {
