@@ -27,10 +27,33 @@ function dayLabel(s: {
 }
 
 /** 「山田(英) / 佐藤(数)」の形。科目が空なら名前だけ */
-function formatStudents(list: { name: string; subject: string }[]): string {
+function formatStudents(
+  list: { name: string; subject: string; isTrial?: boolean }[],
+): string {
   return list
-    .map((s) => (s.subject ? `${s.name}(${s.subject})` : s.name))
+    .map(
+      (s) =>
+        (s.isTrial ? "【体験】" : "") +
+        (s.subject ? `${s.name}(${s.subject})` : s.name),
+    )
     .join(" / ");
+}
+
+/** #335: 体験授業の生徒・研修コマに付ける小さな印 */
+function TrialBadge() {
+  return (
+    <span className="mr-0.5 rounded bg-rose-100 px-1 text-[10px] font-semibold text-rose-700">
+      体験
+    </span>
+  );
+}
+
+function TrainingBadge() {
+  return (
+    <span className="rounded bg-sky-100 px-1.5 py-0.5 text-[11px] font-semibold text-sky-700">
+      研修
+    </span>
+  );
 }
 
 export default async function TutorHome() {
@@ -122,6 +145,11 @@ export default async function TutorHome() {
               <span className="text-lg font-medium">
                 {data.nextShift.slot.startTime}–{data.nextShift.slot.endTime}
               </span>
+              {data.nextShift.slot.isTraining && (
+                <span className="ml-2 align-middle">
+                  <TrainingBadge />
+                </span>
+              )}
             </p>
             {data.nextShift.slot.students.length > 0 && (
               <p className="mt-1 text-sm text-primary-foreground/80">
@@ -161,12 +189,17 @@ export default async function TutorHome() {
                   {row.slots.map((slot) => (
                     <li key={slot.slotNumber} className="flex gap-2 text-sm">
                       <span className="shrink-0 font-medium">{slot.label}</span>
-                      {slot.students.length > 0 ? (
+                      {slot.isTraining && slot.students.length === 0 ? (
+                        <span className="self-center">
+                          <TrainingBadge />
+                        </span>
+                      ) : slot.students.length > 0 ? (
                         // 名前の途中で折り返さない (1 人ずつ改行させる)
                         <span className="flex min-w-0 flex-wrap gap-x-2 text-muted-foreground">
                           {slot.students.map((st, i) => (
                             <span key={i} className="whitespace-nowrap">
-                              {formatStudents([st])}
+                              {st.isTrial && <TrialBadge />}
+                              {formatStudents([{ ...st, isTrial: false }])}
                             </span>
                           ))}
                         </span>

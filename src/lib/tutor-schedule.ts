@@ -11,7 +11,12 @@ import { getApprovedAbsenceKeys } from "@/lib/absences";
 import { getSlotMeta } from "@/lib/slot-meta";
 import { daysOfWeek, weekdayOf, type WeekRange } from "@/lib/week";
 
-export type ScheduleStudent = { name: string; subject: string };
+export type ScheduleStudent = {
+  name: string;
+  subject: string;
+  /** 体験授業の生徒 (座席表で赤字) */
+  isTrial: boolean;
+};
 
 export type ScheduleSlot = {
   slotNumber: number;
@@ -23,6 +28,8 @@ export type ScheduleSlot = {
   note: string | null;
   /** 承認済みの欠勤申請があるコマ */
   isAbsent: boolean;
+  /** 研修コマ (生徒欄が「研修」) */
+  isTraining: boolean;
   students: ScheduleStudent[];
 };
 
@@ -82,8 +89,10 @@ export async function getTutorWeekSchedule(
         seatNumber: weeklyShifts.seatNumber,
         isOverride: weeklyShifts.isOverride,
         note: weeklyShifts.note,
+        isTraining: weeklyShifts.isTraining,
         studentName: students.name,
         subject: shiftAssignments.subject,
+        isTrial: shiftAssignments.isTrial,
         position: shiftAssignments.position,
       })
       .from(weeklyShifts)
@@ -123,6 +132,7 @@ export async function getTutorWeekSchedule(
           isOverride: r.isOverride,
           note: r.note,
           isAbsent: absentKeys.has(`${r.date}|${r.slotNumber}`),
+          isTraining: r.isTraining,
           students: [],
         },
       };
@@ -132,6 +142,7 @@ export async function getTutorWeekSchedule(
       acc.slot.students.push({
         name: r.studentName,
         subject: r.subject ?? "",
+        isTrial: r.isTrial ?? false,
       });
     }
   }

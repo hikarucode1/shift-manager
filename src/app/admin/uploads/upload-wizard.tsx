@@ -223,7 +223,7 @@ export function UploadWizard({ tutors: serverTutors }: { tutors: Tutor[] }) {
     }
     if (findMappingDuplicates(mappings).length > 0) {
       setError(
-        "同じ講師アカウントに複数の CSV 名が割り当てられています。修正してください。",
+        "同じ講師アカウントに座席表の複数の名前が割り当てられています。修正してください。",
       );
       return;
     }
@@ -409,21 +409,21 @@ export function UploadWizard({ tutors: serverTutors }: { tutors: Tutor[] }) {
       <CardHeader>
         <CardTitle className="flex items-center gap-2 text-base">
           <UploadCloud />
-          CSV ファイルを選択
+          座席表ファイルを選択
         </CardTitle>
         <CardDescription>
-          ファイル形式: Shift_JIS エンコードの .csv (座席表)
+          座席表の Excel (.xlsx) をそのまま選べます。体験授業の生徒は赤字、研修は生徒の欄に「研修」(全員なら講師の欄に「全体研修」の 1 行) と書いておくと、アプリでも見分けます。これまでの CSV (Shift_JIS) も使えます。
         </CardDescription>
       </CardHeader>
       <CardContent>
         <form className="space-y-4" onSubmit={handleParse}>
           <div className="space-y-2">
-            <Label htmlFor="file">座席表 CSV</Label>
+            <Label htmlFor="file">座席表 (Excel / CSV)</Label>
             <Input
               id="file"
               name="file"
               type="file"
-              accept=".csv,text/csv"
+              accept=".xlsx,.csv,text/csv,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
               onChange={(e) => setFile(e.target.files?.[0] ?? null)}
               required
             />
@@ -480,16 +480,26 @@ function PreviewStage({
   const stats = useMemo(() => {
     let teacherRows = 0;
     let studentAssignments = 0;
+    let trials = 0;
+    let trainings = 0;
+    let groupTrainings = 0;
     for (const day of parsed.days) {
       for (const slot of day.slots) {
+        if (slot.groupTraining) groupTrainings++;
         teacherRows += slot.assignments.length;
-        for (const a of slot.assignments)
+        for (const a of slot.assignments) {
           studentAssignments += a.students.length;
+          if (a.isTraining) trainings++;
+          trials += a.students.filter((st) => st.isTrial).length;
+        }
       }
     }
     return {
       teacherRows,
       studentAssignments,
+      trials,
+      trainings,
+      groupTrainings,
       holidays: parsed.days.filter((d) => d.isHoliday).length,
     };
   }, [parsed]);
@@ -570,6 +580,16 @@ function PreviewStage({
             <Stat label="出勤" value={stats.teacherRows} suffix="件" />
             <Stat label="休日" value={stats.holidays} suffix="日" />
           </div>
+          {/* #335: 赤字の生徒 = 体験、生徒欄「研修」= 研修 */}
+          {(stats.trials > 0 ||
+            stats.trainings > 0 ||
+            stats.groupTrainings > 0) && (
+            <p className="mt-3 text-xs text-muted-foreground">
+              体験授業 {stats.trials} 件・研修 {stats.trainings} 件を読み取りました。
+              {stats.groupTrainings > 0 &&
+                ` 全体研修が ${stats.groupTrainings} コマあり、在籍している講師全員を研修として入れます。`}
+            </p>
+          )}
           {parsed.activeTrainings.length > 0 && (
             <div className="mt-4 space-y-1 text-xs text-muted-foreground">
               <p className="font-medium text-foreground">有効な講習期間</p>
@@ -599,7 +619,7 @@ function PreviewStage({
             )}
           </CardTitle>
           <CardDescription>
-            CSV の講師名をシステム上の講師アカウントに割り当てます。自動一致したものは事前選択済みです。
+            座席表の講師名をシステム上の講師アカウントに割り当てます。自動一致したものは事前選択済みです。
           </CardDescription>
         </CardHeader>
         <CardContent>
@@ -716,7 +736,7 @@ function PreviewStage({
               同じ講師アカウントへの重複割当
             </CardTitle>
             <CardDescription>
-              1 つのアカウントに複数の CSV 名を割り当てると、同じ講師が同じコマに重複し公開できません。
+              1 つのアカウントに座席表の複数の名前を割り当てると、同じ講師が同じコマに重複し公開できません。
               いずれかを別のアカウントに変更してください。
             </CardDescription>
           </CardHeader>

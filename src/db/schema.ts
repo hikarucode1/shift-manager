@@ -688,6 +688,8 @@ export const weeklyShifts = pgTable(
     seatNumber: text("seat_number"),
     /** 代講・差替によって元と変わっている場合に true */
     isOverride: boolean("is_override").notNull().default(false),
+    /** #335: 研修のコマ (座席表の生徒の欄に「研修」、または「全体研修」の行) */
+    isTraining: boolean("is_training").notNull().default(false),
     note: text("note"),
     createdAt: timestamp("created_at", { withTimezone: true })
       .notNull()
@@ -739,6 +741,8 @@ export const shiftAssignments = pgTable(
     subject: text("subject").notNull(),
     /** 1 または 2 (左席 / 右席) */
     position: smallint("position").notNull(),
+    /** #335: 体験授業の生徒 (座席表の赤字) */
+    isTrial: boolean("is_trial").notNull().default(false),
     createdAt: timestamp("created_at", { withTimezone: true })
       .notNull()
       .defaultNow(),

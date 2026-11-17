@@ -22,7 +22,12 @@ import { getApprovedAbsenceKeysAll } from "@/lib/absences";
 import { getSlotMeta, slotNumbers } from "@/lib/slot-meta";
 import { daysOfWeek, weekdayOf, type WeekRange } from "@/lib/week";
 
-export type AdminCellStudent = { name: string; subject: string };
+export type AdminCellStudent = {
+  name: string;
+  subject: string;
+  /** 体験授業の生徒 (座席表で赤字) */
+  isTrial: boolean;
+};
 
 export type AdminCell = {
   tutorId: string;
@@ -32,6 +37,8 @@ export type AdminCell = {
   /** 承認済み欠勤があるコマ */
   isAbsent: boolean;
   note: string | null;
+  /** 研修コマ (生徒欄が「研修」) */
+  isTraining: boolean;
   students: AdminCellStudent[];
 };
 
@@ -159,10 +166,12 @@ export async function getAdminWeekSchedule(
         seatNumber: weeklyShifts.seatNumber,
         isOverride: weeklyShifts.isOverride,
         note: weeklyShifts.note,
+        isTraining: weeklyShifts.isTraining,
         tutorId: weeklyShifts.tutorId,
         tutorName: profiles.displayName,
         studentName: students.name,
         subject: shiftAssignments.subject,
+        isTrial: shiftAssignments.isTrial,
         position: shiftAssignments.position,
       })
       .from(weeklyShifts)
@@ -211,6 +220,7 @@ export async function getAdminWeekSchedule(
             `${r.tutorId}|${r.date}|${r.slotNumber}`,
           ),
           note: r.note,
+          isTraining: r.isTraining,
           students: [],
         },
       };
@@ -221,6 +231,7 @@ export async function getAdminWeekSchedule(
       entry.cell.students.push({
         name: r.studentName,
         subject: r.subject ?? "",
+        isTrial: r.isTrial ?? false,
       });
     }
   }

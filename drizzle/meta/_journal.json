@@ -365,6 +365,13 @@
       "when": 1794885603435,
       "tag": "0051_day_off_requests",
       "breakpoints": true
+    },
+    {
+      "idx": 52,
+      "version": "7",
+      "when": 1794904790091,
+      "tag": "0052_training_trial",
+      "breakpoints": true
     }
   ]
 }

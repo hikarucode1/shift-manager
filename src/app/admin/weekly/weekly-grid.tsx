@@ -233,6 +233,11 @@ export function WeeklyGrid({ schedule }: { schedule: AdminWeekSchedule }) {
                                   代講
                                 </Badge>
                               )}
+                              {c.isTraining && (
+                                <Badge className="border-transparent bg-sky-100 px-1 py-0 text-[10px] font-normal text-sky-700 hover:bg-sky-100">
+                                  研修
+                                </Badge>
+                              )}
                               {c.seatNumber && (
                                 <Badge
                                   variant="outline"
@@ -244,12 +249,18 @@ export function WeeklyGrid({ schedule }: { schedule: AdminWeekSchedule }) {
                             </div>
                             {c.students.length > 0 && (
                               <div className="mt-0.5 text-[11px] text-muted-foreground">
-                                {c.students
-                                  .map(
-                                    (s) =>
-                                      `${s.name}${s.subject ? `(${s.subject})` : ""}`,
-                                  )
-                                  .join(" / ")}
+                                {c.students.map((s, i) => (
+                                  <span key={i}>
+                                    {i > 0 && " / "}
+                                    {s.isTrial && (
+                                      <span className="mr-0.5 rounded bg-rose-100 px-1 text-[10px] font-semibold text-rose-700">
+                                        体験
+                                      </span>
+                                    )}
+                                    {s.name}
+                                    {s.subject ? `(${s.subject})` : ""}
+                                  </span>
+                                ))}
                               </div>
                             )}
                             {c.note && (

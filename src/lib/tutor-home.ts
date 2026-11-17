@@ -74,7 +74,7 @@ export type HomeShiftRow = {
   date: string;
   weekdayLabel: string;
   /** #336: コマごとに、担当する生徒 (座席表 CSV の割り当て) も出す */
-  slots: Pick<ScheduleSlot, "slotNumber" | "label" | "students">[];
+  slots: Pick<ScheduleSlot, "slotNumber" | "label" | "isTraining" | "students">[];
   status: "confirmed" | "absent";
 };
 
@@ -168,6 +168,7 @@ export async function getTutorHomeData(tutorId: string): Promise<TutorHomeData> 
       slots: (confirmed ? liveSlots : d.slots).map((s) => ({
         slotNumber: s.slotNumber,
         label: s.label,
+        isTraining: s.isTraining,
         students: s.students,
       })),
       status: confirmed ? "confirmed" : "absent",
