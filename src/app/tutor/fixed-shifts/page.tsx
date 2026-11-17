@@ -414,7 +414,7 @@ export default async function FixedShiftPage() {
             出勤できるコマをタップして登録します。締切までは何度でも修正できます。
           </CardDescription>
         </CardHeader>
-        <CardContent className="px-3 sm:px-6">
+        <CardContent className="max-sm:px-3">
           <FixedShiftEditor
             slots={slots}
             initialEntries={prefill ? prefill.entries : currentEntries}
