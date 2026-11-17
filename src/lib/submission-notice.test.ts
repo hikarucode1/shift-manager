@@ -28,7 +28,7 @@ describe("absenceRequestedNotice (#338)", () => {
     ).toEqual({
       type: "absence_requested",
       title: "山田さんから欠勤申請が届きました",
-      body: "対象: 2026-11-20 3限 ／ 理由: 体調不良",
+      body: "対象: 11/20（金） 3限 ／ 理由: 体調不良",
       href: "/admin/requests",
     });
   });
@@ -40,6 +40,6 @@ describe("absenceRequestedNotice (#338)", () => {
       "3限",
       "あ".repeat(100),
     );
-    expect(n.body).toBe(`対象: 2026-11-20 3限 ／ 理由: ${"あ".repeat(60)}…`);
+    expect(n.body).toBe(`対象: 11/20（金） 3限 ／ 理由: ${"あ".repeat(60)}…`);
   });
 });

@@ -9,6 +9,7 @@ import {
   overdueWindow,
   isDesignationOverdue,
 } from "@/lib/designation-overdue-rule";
+import { noticeDate } from "@/lib/week";
 
 /**
  * #331 PR 3: 欠勤で指定した代講の相手から、前日になっても返事が無い依頼を
@@ -55,7 +56,7 @@ export async function notifyOverdueDesignations(
       await notifyAdmins({
         type: "substitute_response",
         title: "指定した代講の返事がまだありません",
-        body: `対象: ${r.date} ${slotLabel} ／ ${r.requesterName}さんの代講を${r.nomineeName}さんに依頼中。指定し直すか、代講の募集に出してください`,
+        body: `対象: ${noticeDate(r.date)} ${slotLabel} ／ ${r.requesterName}さんの代講を${r.nomineeName}さんに依頼中。指定し直すか、代講の募集に出してください`,
         href: "/admin/requests",
         // 引き受け / 断る の通知 (dedupKey なし) とは別に、1 回だけ
         dedupKey: `noreply:${r.id}`,

@@ -10,7 +10,7 @@ import { db } from "@/db/client";
 import { swapApplications, swapRequests, weeklyShifts } from "@/db/schema";
 import { isUniqueViolation } from "@/lib/db-errors";
 import { getActiveApplicantIds, isTutorBusyAt } from "@/lib/swaps";
-import { jstToday } from "@/lib/week";
+import { jstToday, noticeDate } from "@/lib/week";
 
 type ActionResult = { ok: true } | { ok: false; error: string };
 
@@ -107,7 +107,7 @@ export async function cancelSwapRequest(input: unknown): Promise<ActionResult> {
       await notify(applicants, {
         type: "swap_result",
         title: "応募していた代講の募集が取り下げられました",
-        body: `対象: ${updated[0].date} ${slotLabel} ／ 申請者が取り下げました`,
+        body: `対象: ${noticeDate(updated[0].date)} ${slotLabel} ／ 申請者が取り下げました`,
         href: "/tutor/open-swaps",
       });
     }

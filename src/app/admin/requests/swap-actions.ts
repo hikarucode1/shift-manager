@@ -30,7 +30,7 @@ import {
   SwapBizError,
 } from "@/lib/swap-approval";
 import { substitutionNote } from "@/lib/substitution-note";
-import { isValidIsoDate, jstToday, weekdayOf } from "@/lib/week";
+import { isValidIsoDate, jstToday, noticeDate } from "@/lib/week";
 import { isUniqueViolation } from "@/lib/db-errors";
 import { getSlotMeta, slotLabelSafe } from "@/lib/slot-meta";
 import { db } from "@/db/client";
@@ -158,7 +158,7 @@ export async function decideSwapRequest(
     await notify([updated[0].requesterId], {
       type: "swap_result",
       title: "交代・代講申請が却下されました",
-      body: `対象: ${updated[0].date} ${slotLabel} ／ ${data.decisionNote}`,
+      body: `対象: ${noticeDate(updated[0].date)} ${slotLabel} ／ ${data.decisionNote}`,
       href: "/tutor/swaps",
     });
     // ⚠️ 応募者にも通知する (#238)。承認・取り消しは両側に通知しているのに
@@ -170,7 +170,7 @@ export async function decideSwapRequest(
         await notify(applicants, {
           type: "swap_result",
           title: "応募していた代講の募集が却下されました",
-          body: `対象: ${updated[0].date} ${slotLabel} ／ ${data.decisionNote}`,
+          body: `対象: ${noticeDate(updated[0].date)} ${slotLabel} ／ ${data.decisionNote}`,
           href: "/tutor/open-swaps",
         });
       }
@@ -237,13 +237,13 @@ export async function decideSwapRequest(
       notify([a.requesterId], {
         type: "swap_result",
         title: "交代・代講申請が承認されました",
-        body: `対象: ${a.date} ${slotLabel} ／ 代講: ${a.applicantName}さん`,
+        body: `対象: ${noticeDate(a.date)} ${slotLabel} ／ 代講: ${a.applicantName}さん`,
         href: "/tutor/swaps",
       }),
       notify([a.applicantId], {
         type: "swap_result",
         title: "代講が確定しました",
-        body: `対象: ${a.date} ${slotLabel} (${a.requesterName}さんの代講)`,
+        body: `対象: ${noticeDate(a.date)} ${slotLabel} (${a.requesterName}さんの代講)`,
         // ⚠️ ここは /tutor のままにする (#251 で検討)。承認は未来日限定で、
         // 週次シフトの公開は週単位なので実際にはほぼ今週・来週に収まる。
         // この通知で本人がすべきことは「そのコマに出勤する」なので、
@@ -266,7 +266,7 @@ export async function decideSwapRequest(
               // 本人にあるのが未決の申請でしかないことがある
               title: "欠勤が失効しました（交代成立のため）",
               // 書式は既存の absence_result に揃える (対象日: 日付（曜日）コマ)
-              body: `対象日: ${a.date}（${weekdayOf(a.date).label}）${slotLabel} ／ このコマは ${a.applicantName}さんの代講になりました`,
+              body: `対象日: ${noticeDate(a.date)}${slotLabel} ／ このコマは ${a.applicantName}さんの代講になりました`,
               href: "/tutor/absences",
             }),
           ]
@@ -284,7 +284,7 @@ export async function decideSwapRequest(
         await notify(others, {
           type: "swap_result",
           title: "応募していた代講は他の講師に決まりました",
-          body: `対象: ${a.date} ${slotLabel}`,
+          body: `対象: ${noticeDate(a.date)} ${slotLabel}`,
           href: "/tutor/open-swaps",
         });
       }
@@ -582,7 +582,7 @@ export async function cancelApprovedSwap(
         // ⚠️ この記録が A の募集を閉じていたら、閉じたままであることも伝える
         // (#293)。A は出られないから募集を出していたので、知らないと出られない
         // コマの担当に戻ったまま誰も気づかない。募集し直しの案内は教室長にも出す
-        body: `対象: ${info.date} ${cancelSlotLabel} ／ 理由: ${reason}${
+        body: `対象: ${noticeDate(info.date)} ${cancelSlotLabel} ／ 理由: ${reason}${
           info.requesterSwapClosed
             ? " ／ 記録したときに締め切った交代・代講の募集は、締め切ったままです。必要なら教室長にご相談ください。"
             : ""
@@ -597,7 +597,7 @@ export async function cancelApprovedSwap(
         title: "引き受けた代講が取り消されました",
         // B の募集を閉じたことも、別の通知にせずここに足す (同じ出来事なので)。
         // 追記の決め方は `substituteCancelSuffix` (テスト済み)
-        body: `対象: ${info.date} ${cancelSlotLabel} (${info.requesterName}さんの代講) ／ 理由: ${reason}${substituteCancelSuffix(info.substituteClosedSwapId !== null)}`,
+        body: `対象: ${noticeDate(info.date)} ${cancelSlotLabel} (${info.requesterName}さんの代講) ／ 理由: ${reason}${substituteCancelSuffix(info.substituteClosedSwapId !== null)}`,
         // ⚠️ /tutor には出ない (weekly_shift は元講師に戻った直後)。#245 で
         // 「応募した募集の結果」ができたので、そちらへ着地させる。B の募集が
         // 残っていても変えない — 本題は代講の取り消しで、その結果が見えるのは
@@ -612,7 +612,7 @@ export async function cancelApprovedSwap(
             notify([info.applicantId], {
               type: "absence_result" as const,
               title: "欠勤が失効しました（担当でなくなったため）",
-              body: `対象日: ${info.date}（${weekdayOf(info.date).label}）${cancelSlotLabel} ／ 代講が取り消され、このコマの担当ではなくなりました`,
+              body: `対象日: ${noticeDate(info.date)}${cancelSlotLabel} ／ 代講が取り消され、このコマの担当ではなくなりました`,
               href: "/tutor/absences",
             }),
           ]
@@ -809,7 +809,7 @@ export async function createOpenSwapOnBehalf(
         notify(recipientIds, {
           type: "swap_posted",
           title: "代講募集が追加されました",
-          body: `対象: ${date} ${slotLabel}`,
+          body: `対象: ${noticeDate(date)} ${slotLabel}`,
           href: "/tutor/open-swaps",
         }),
         // ⚠️ 本人は募集を作っていないので、通知が唯一の手がかり。これが無いと
@@ -819,7 +819,7 @@ export async function createOpenSwapOnBehalf(
         notify([tutorId], {
           type: "swap_result",
           title: "代講の募集が作成されました（教室長による代理）",
-          body: `対象: ${date} ${slotLabel} ／ ${reason}`,
+          body: `対象: ${noticeDate(date)} ${slotLabel} ／ ${reason}`,
           href: "/tutor/swaps",
         }),
       ]);
@@ -1043,7 +1043,7 @@ export async function recordSubstitution(
     notify([tutorId], {
       type: "swap_result",
       title: "代講が記録されました（教室長による記録）",
-      body: `対象: ${date} ${slotLabel} ／ ${reason}`,
+      body: `対象: ${noticeDate(date)} ${slotLabel} ／ ${reason}`,
       // ⚠️ 代講者側と同じ理由で /tutor には着地しない (今週・来週しか出さず、
       // #215 は過去こそ本命)。記録行は requester_id がこの講師なので
       // getTutorSwapRequests に入り、/tutor/swaps に「代講の記録」として出る
@@ -1055,7 +1055,7 @@ export async function recordSubstitution(
           notify([tutorId], {
             type: "absence_result" as const,
             title: "欠勤が失効しました（代講が記録されたため）",
-            body: `対象日: ${date}（${weekdayOf(date).label}）${slotLabel} ／ このコマは代講として記録されました`,
+            body: `対象日: ${noticeDate(date)}${slotLabel} ／ このコマは代講として記録されました`,
             href: "/tutor/absences",
           }),
         ]
@@ -1063,7 +1063,7 @@ export async function recordSubstitution(
     notify([substituteId], {
       type: "swap_result",
       title: "代講の担当として記録されました",
-      body: `対象: ${date} ${slotLabel} ／ ${reason}`,
+      body: `対象: ${noticeDate(date)} ${slotLabel} ／ ${reason}`,
       // ⚠️ /tutor は今週・来週の週次シフトしか出さないので、**過去日の記録は
       // 着地しない** (#215 は「過去こそ本命」なのでそれが主用途)。#247 で
       // 「代講の記録」一覧を作ったのでそちらへ
@@ -1086,7 +1086,7 @@ export async function recordSubstitution(
           notify([tutorId], {
             type: "swap_result" as const,
             title: "交代・代講の募集を締め切りました",
-            body: `対象: ${date} ${slotLabel} ／ このコマは代講として記録されたため、募集は締め切りました。`,
+            body: `対象: ${noticeDate(date)} ${slotLabel} ／ このコマは代講として記録されたため、募集は締め切りました。`,
             href: "/tutor/swaps",
           }),
         ]
@@ -1214,7 +1214,7 @@ export async function cancelOpenSwapOnBehalf(
   await notify([req.requesterId], {
     type: "swap_result",
     title: "代講の募集が取り下げられました",
-    body: `対象: ${req.date} ${slotLabel} ／ ${reason}`,
+    body: `対象: ${noticeDate(req.date)} ${slotLabel} ／ ${reason}`,
     href: "/tutor/swaps",
   });
   try {
@@ -1223,7 +1223,7 @@ export async function cancelOpenSwapOnBehalf(
       await notify(applicants, {
         type: "swap_result",
         title: "応募していた代講の募集が取り下げられました",
-        body: `対象: ${req.date} ${slotLabel} ／ ${reason}`,
+        body: `対象: ${noticeDate(req.date)} ${slotLabel} ／ ${reason}`,
         href: "/tutor/open-swaps",
       });
     }

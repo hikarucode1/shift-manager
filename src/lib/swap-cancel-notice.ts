@@ -5,6 +5,7 @@ import {
 // 型だけ。notifications.ts は server-only だが、型の import は消えるので
 // クライアント (request-log-panel) から読んでも問題ない
 import type { NotificationInput } from "@/lib/notifications";
+import { noticeDate } from "@/lib/week";
 
 /**
  * #293 より前の記録で閉じずに残っていた元講師の募集。記録を取り消して担当が
@@ -130,7 +131,7 @@ export function noLongerApprovableForApplicants(
   return {
     type: "swap_result",
     title: "応募していた代講の募集は締め切られました",
-    body: `対象: ${date} ${slotLabel} (${ownerName}さんの募集) ／ ${why}担当が変わって承認できなくなったため、募集は締め切られました。`,
+    body: `対象: ${noticeDate(date)} ${slotLabel} (${ownerName}さんの募集) ／ ${why}担当が変わって承認できなくなったため、募集は締め切られました。`,
     href: "/tutor/open-swaps",
   };
 }

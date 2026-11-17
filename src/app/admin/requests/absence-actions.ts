@@ -16,7 +16,7 @@ import { findPendingSwap, hasSlotEnded } from "@/lib/swaps";
 import { designeeError } from "@/lib/designee-check";
 import { isUniqueViolation } from "@/lib/db-errors";
 import { slotLabelSafe } from "@/lib/slot-meta";
-import { isValidIsoDate, weekdayOf } from "@/lib/week";
+import { isValidIsoDate, noticeDate } from "@/lib/week";
 import { ABSENCE_CLOSED_UNASSIGNED_NOTE } from "@/lib/pending-absence-actions";
 import {
   ABSENCE_AUTO_EXPIRED_NOTE,
@@ -141,7 +141,7 @@ export async function cancelApprovedAbsence(
   await notify([updated[0].tutorId], {
     type: "absence_result",
     title: "欠勤の承認が取り消されました",
-    body: `対象日: ${updated[0].date} ／ ${reason}`,
+    body: `対象日: ${noticeDate(updated[0].date)} ／ ${reason}`,
     href: "/tutor/absences",
   });
 
@@ -172,7 +172,7 @@ export async function cancelApprovedAbsence(
     await notify(nominees, {
       type: "swap_result",
       title: "代講の依頼が取り消されました",
-      body: `対象日: ${updated[0].date} ／ 欠勤の承認が取り消されたため`,
+      body: `対象日: ${noticeDate(updated[0].date)} ／ 欠勤の承認が取り消されたため`,
       href: "/tutor/open-swaps",
     });
   }
@@ -282,11 +282,10 @@ export async function createAbsenceOnBehalf(
   // ⚠️ 登録はもうコミット済み。コマ名の取得で投げると通知が届かず、押し直しは
   // 一意制約で「既に記録があります」になる (`slotLabelSafe`)
   const slotLabel = await slotLabelSafe(slotNumber);
-  const { label } = weekdayOf(date);
   await notify([tutorId], {
     type: "absence_result",
     title: "欠勤が登録されました（教室長による代理登録）",
-    body: `対象日: ${date}（${label}）${slotLabel} ／ ${reason}`,
+    body: `対象日: ${noticeDate(date)}${slotLabel} ／ ${reason}`,
     href: "/tutor/absences",
   });
 
@@ -373,13 +372,12 @@ export async function closeUnassignedAbsence(
   // ⚠️ コマ名の取得は失敗しても投げない (`slotLabelSafe`)。行はもう pending
   // ではないので、ここで action ごと落ちると押し直せず、講師に通知が届かない
   const slotLabel = await slotLabelSafe(slotNumber);
-  const { label } = weekdayOf(date);
   // ⚠️ 「却下」と言わない。中立に、担当でなくなったことだけを伝える。
   // コマごと無くなった (CSV で休日) 場合もあるので、カードの案内と揃える
   await notify([tutorId], {
     type: "absence_result",
     title: "欠勤申請は不要になりました（担当が変わったか、コマが無くなったため）",
-    body: `対象日: ${date}（${label}）${slotLabel} ／ このコマは今はあなたの担当ではありません。`,
+    body: `対象日: ${noticeDate(date)}${slotLabel} ／ このコマは今はあなたの担当ではありません。`,
     href: "/tutor/absences",
   });
 
@@ -495,7 +493,7 @@ export async function redesignateSubstitute(
   await notify([absence.tutorId], {
     type: "absence_result",
     title: "代講を頼む相手が変わりました",
-    body: `対象: ${absence.date} ${slotLabel} ／ ${nominee?.name ?? "指定された講師"}さんに代講を依頼してください`,
+    body: `対象: ${noticeDate(absence.date)} ${slotLabel} ／ ${nominee?.name ?? "指定された講師"}さんに代講を依頼してください`,
     href: "/tutor/absences",
   });
 
