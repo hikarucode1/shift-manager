@@ -22,7 +22,10 @@ import { UnfilledAbsencesPanel } from "./unfilled-absences-panel";
 import { SwapRequestsPanel } from "./swap-requests-panel";
 import { RequestLogPanel } from "./request-log-panel";
 import { ShiftChangePanel } from "./shift-change-panel";
-import { getPendingChangeRequests } from "@/lib/shift-change";
+import {
+  closeExpiredGrants,
+  getPendingChangeRequests,
+} from "@/lib/shift-change";
 
 /**
  * 申請承認 (#224)。
@@ -46,6 +49,8 @@ export default async function AdminRequestsPage({
   }>;
 }) {
   await requireRole("admin");
+  // #333: 期限の切れた変更許可を閉じる (出し直さなかったレギュラーは元に戻す)
+  await closeExpiredGrants(null, new Date());
   const sp = await searchParams;
 
   const view = parseRequestsSearchParams(sp);

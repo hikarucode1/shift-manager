@@ -107,7 +107,7 @@ export function ChangeRequestCard({
             </p>
             {target.kind === "regular" ? (
               <p className="text-muted-foreground">
-                下のコマを直したら「保存」して「提出」を押してください。提出すると変更は締め切られます。
+                下のコマを直したら「保存」して「提出」を押してください。提出すると変更は締め切られます。期限までに提出しないと、直した内容は捨てられて元に戻ります。
               </p>
             ) : (
               <>

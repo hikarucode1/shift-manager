@@ -14,7 +14,7 @@ import {
 } from "@/db/schema";
 import { isUniqueViolation } from "@/lib/db-errors";
 import { notify } from "@/lib/notifications";
-import { closeExpiredGrants } from "@/lib/shift-change";
+import { closeExpiredGrants, takeRegularSnapshot } from "@/lib/shift-change";
 import { unlockUntilFrom } from "@/lib/shift-change-rule";
 import { noticeDate, jstToday } from "@/lib/week";
 
@@ -54,61 +54,60 @@ function untilLabel(until: Date): string {
 /**
  * レギュラーの承認: その期の提出 (提出済み・凍結) を下書きに戻し、講師が
  * すぐ直せるようにする。期が無いときは最新の提出 1 件を戻す。
+ * 戻す前の中身は申請の行に控えておき、期限までに出し直さなければそれに戻す
  */
 async function reopenRegularSubmission(
+  requestId: string,
   tutorId: string,
   regularPeriodId: string | null,
   adminId: string,
   now: Date,
 ) {
-  let effectiveFroms: string[] = [];
-  if (regularPeriodId) {
-    const [p] = await db
-      .select({
-        startDate: regularShiftPeriods.startDate,
-        endDate: regularShiftPeriods.endDate,
+  await db.transaction(async (tx) => {
+    let scope: { from: string; to: string } | null = null;
+    if (regularPeriodId) {
+      const [p] = await tx
+        .select({
+          startDate: regularShiftPeriods.startDate,
+          endDate: regularShiftPeriods.endDate,
+        })
+        .from(regularShiftPeriods)
+        .where(eq(regularShiftPeriods.id, regularPeriodId))
+        .limit(1);
+      if (p) scope = { from: p.startDate, to: p.endDate };
+    } else {
+      const [latest] = await tx
+        .select({ effectiveFrom: fixedShiftSubmissions.effectiveFrom })
+        .from(fixedShiftSubmissions)
+        .where(eq(fixedShiftSubmissions.tutorId, tutorId))
+        .orderBy(desc(fixedShiftSubmissions.effectiveFrom))
+        .limit(1);
+      if (latest) scope = { from: latest.effectiveFrom, to: latest.effectiveFrom };
+    }
+    const snapshot = await takeRegularSnapshot(tx, tutorId, scope);
+    await tx
+      .update(shiftChangeRequests)
+      .set({ regularSnapshot: snapshot })
+      .where(eq(shiftChangeRequests.id, requestId));
+    if (!scope) return;
+    await tx
+      .update(fixedShiftSubmissions)
+      .set({
+        status: "draft",
+        submittedAt: null,
+        updatedAt: now,
+        lastStatusChangedAt: now,
+        lastStatusChangedBy: adminId,
       })
-      .from(regularShiftPeriods)
-      .where(eq(regularShiftPeriods.id, regularPeriodId))
-      .limit(1);
-    if (!p) return;
-    const rows = await db
-      .select({ effectiveFrom: fixedShiftSubmissions.effectiveFrom })
-      .from(fixedShiftSubmissions)
       .where(
         and(
           eq(fixedShiftSubmissions.tutorId, tutorId),
-          gte(fixedShiftSubmissions.effectiveFrom, p.startDate),
-          lte(fixedShiftSubmissions.effectiveFrom, p.endDate),
+          gte(fixedShiftSubmissions.effectiveFrom, scope.from),
+          lte(fixedShiftSubmissions.effectiveFrom, scope.to),
+          inArray(fixedShiftSubmissions.status, ["submitted", "frozen"]),
         ),
       );
-    effectiveFroms = rows.map((r) => r.effectiveFrom);
-  } else {
-    const rows = await db
-      .select({ effectiveFrom: fixedShiftSubmissions.effectiveFrom })
-      .from(fixedShiftSubmissions)
-      .where(eq(fixedShiftSubmissions.tutorId, tutorId))
-      .orderBy(desc(fixedShiftSubmissions.effectiveFrom))
-      .limit(1);
-    effectiveFroms = rows.map((r) => r.effectiveFrom);
-  }
-  if (effectiveFroms.length === 0) return;
-  await db
-    .update(fixedShiftSubmissions)
-    .set({
-      status: "draft",
-      submittedAt: null,
-      updatedAt: now,
-      lastStatusChangedAt: now,
-      lastStatusChangedBy: adminId,
-    })
-    .where(
-      and(
-        eq(fixedShiftSubmissions.tutorId, tutorId),
-        inArray(fixedShiftSubmissions.effectiveFrom, effectiveFroms),
-        inArray(fixedShiftSubmissions.status, ["submitted", "frozen"]),
-      ),
-    );
+  });
 }
 
 export async function decideShiftChange(input: unknown): Promise<ActionResult> {
@@ -155,6 +154,7 @@ export async function decideShiftChange(input: unknown): Promise<ActionResult> {
   if (decision === "approved" && row.kind === "regular") {
     try {
       await reopenRegularSubmission(
+        id,
         row.tutorId,
         row.regularPeriodId,
         profile.id,
@@ -180,7 +180,7 @@ export async function decideShiftChange(input: unknown): Promise<ActionResult> {
     body:
       decision === "approved"
         ? row.kind === "regular"
-          ? `${untilLabel(until)}まで変更できます。変えたら「提出」を押してください`
+          ? `${untilLabel(until)}まで変更できます。変えたら「提出」を押してください。提出しないと元に戻ります`
           : `${untilLabel(until)}まで変更できます。変え終わったら「変更を終える」を押してください`
         : `教室長より: ${note}`,
     href,

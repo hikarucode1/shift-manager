@@ -24,6 +24,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { cn } from "@/lib/utils";
 import { deadlineLabel } from "@/lib/deadline";
 import {
+  closeExpiredGrants,
   getActiveRegularGrant,
   getRegularChangeState,
 } from "@/lib/shift-change";
@@ -41,6 +42,8 @@ export default async function FixedShiftPage() {
   const { profile } = await requireRole("tutor");
   const today = jstToday();
   const now = new Date();
+  // #333: 期限が切れていたら閉じる (出し直さなかった下書きは承認前に戻す)
+  await closeExpiredGrants(profile.id, now);
 
   // Issue #72 (β): 現在受付中の期 (regular_shift_periods) を取得する。
   // submissionOpensAt <= now <= submissionDueAt の active な期を 1 件、

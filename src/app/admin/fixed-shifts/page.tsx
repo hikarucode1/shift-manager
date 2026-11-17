@@ -1,5 +1,6 @@
 import { and, arrayContains, asc, desc, eq, gte, lt, lte } from "drizzle-orm";
 import { requireRole } from "@/lib/auth";
+import { closeExpiredGrants } from "@/lib/shift-change";
 import { db } from "@/db/client";
 import {
   fixedShifts,
@@ -35,6 +36,8 @@ export default async function AdminFixedShiftsOverviewPage({
   searchParams: Promise<{ month?: string }>;
 }) {
   await requireRole("admin");
+  // #333: 期限の切れた変更許可を閉じる (出し直さなかったレギュラーは元に戻す)
+  await closeExpiredGrants(null, new Date());
 
   const sp = await searchParams;
   const targetMonth =

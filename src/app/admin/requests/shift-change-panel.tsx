@@ -77,7 +77,7 @@ function ShiftChangeItem({ row }: { row: ShiftChangeRow }) {
         </div>
         <p className="whitespace-pre-wrap">理由: {row.reason}</p>
         <p className="text-xs text-muted-foreground">
-          承認すると、この講師だけ3日間希望を直せるようになります。直したあと本人が出し直すと通知が届きます。
+          承認すると、この講師だけ3日間希望を直せるようになります。直したあと本人が出し直すと通知が届きます（レギュラーは期限までに出し直さないと元に戻ります）。
         </p>
 
         {rejecting ? (

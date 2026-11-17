@@ -1288,6 +1288,29 @@ export const shiftChangeStatusEnum = pgEnum("shift_change_status", [
  * - regular: `regular_period_id` = 変える期 (null = 期が 1 つも無い)
  * - training: `training_period_id` = 変える講習期間
  */
+/** shift_change_requests.regular_snapshot の中身 (日時は ISO 文字列) */
+export type RegularSnapshot = {
+  /**
+   * 戻す範囲 (effective_from の日付)。この範囲の行を消してから控えを入れ直す。
+   * 期が無く、元の提出も無いときは null
+   */
+  scope: { from: string; to: string } | null;
+  submissions: Array<
+    Omit<
+      typeof fixedShiftSubmissions.$inferSelect,
+      "submittedAt" | "lastStatusChangedAt" | "createdAt" | "updatedAt"
+    > & {
+      submittedAt: string | null;
+      lastStatusChangedAt: string | null;
+      createdAt: string;
+      updatedAt: string;
+    }
+  >;
+  shifts: Array<
+    Omit<typeof fixedShifts.$inferSelect, "createdAt"> & { createdAt: string }
+  >;
+};
+
 export const shiftChangeRequests = pgTable(
   "shift_change_requests",
   {
@@ -1313,6 +1336,11 @@ export const shiftChangeRequests = pgTable(
     /** 承認したときだけ入る。これを過ぎると編集できない */
     unlockedUntil: timestamp("unlocked_until", { withTimezone: true }),
     closedAt: timestamp("closed_at", { withTimezone: true }),
+    /**
+     * レギュラーの承認時に、下書きに戻す前の提出を丸ごと控えておく。
+     * 期限までに出し直さなかったら、これに戻して直しかけの下書きを捨てる
+     */
+    regularSnapshot: jsonb("regular_snapshot").$type<RegularSnapshot>(),
     createdAt: timestamp("created_at", { withTimezone: true })
       .notNull()
       .defaultNow(),
