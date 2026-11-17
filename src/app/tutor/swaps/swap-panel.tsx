@@ -2,23 +2,15 @@
 
 import { useEffect, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
-import { AlertCircle, Info } from "lucide-react";
+import { AlertCircle } from "lucide-react";
 import { isIndeterminate, toFailedResult } from "@/lib/action-failure";
-import type { MySwapRequest, SwappableShift } from "@/lib/swaps";
+import type { MySwapRequest } from "@/lib/swaps";
 import { Button } from "@/components/ui/button";
-import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
-import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from "@/components/ui/card";
-import { busySlotKey } from "@/lib/slot-key";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { shortDate } from "@/lib/week";
 import { cn } from "@/lib/utils";
-import { cancelSwapRequest, createSwapRequest } from "./actions";
+import { cancelSwapRequest } from "./actions";
 
 const STATUS: Record<
   MySwapRequest["status"],
@@ -30,38 +22,13 @@ const STATUS: Record<
   cancelled: { text: "取消", variant: "outline" },
 };
 
-export function SwapPanel({
-  shifts,
-  tutors,
-  requests,
-  busyBySlot,
-}: {
-  shifts: SwappableShift[];
-  tutors: { id: string; name: string }[];
-  requests: MySwapRequest[];
-  /** #181: "date|slotNumber" → そのコマに出勤予定の講師 id */
-  busyBySlot: Record<string, string[]>;
-}) {
+export function SwapPanel({ requests }: { requests: MySwapRequest[] }) {
   const router = useRouter();
   const [isPending, startTransition] = useTransition();
-  const [notice, setNotice] = useState<
-    { type: "ok" | "error"; text: string } | null
-  >(null);
-
-  const [target, setTarget] = useState("");
-  const [nominee, setNominee] = useState("");
-
-  // #181: 選択中のコマに出勤予定の講師。指名先の候補から外す。
-  //
-  // ⚠️ 選択を state のリセットで面倒みないこと。**選択済みの option が後から
-  // disabled になっても、select は値を保持し required も通る** (実測)。
-  // busyBySlot はコマを触らなくても更新されうる (別の申請を取り消すと
-  // revalidatePath → router.refresh() で props だけ入れ替わる) ので、
-  // 「target が変わった瞬間に外す」形だと取りこぼす。導出にしておけば
-  // 出勤状況が動いた時点で常に外れる。
-  const busyTutorIds = busyBySlot[target] ?? [];
-  const effectiveNominee = busyTutorIds.includes(nominee) ? "" : nominee;
-  const [reason, setReason] = useState("");
+  const [notice, setNotice] = useState<{
+    type: "ok" | "error";
+    text: string;
+  } | null>(null);
 
   useEffect(() => {
     if (!notice) return;
@@ -91,43 +58,6 @@ export function SwapPanel({
     });
   }
 
-  function handleSubmit(e: React.FormEvent) {
-    e.preventDefault();
-    const sel = shifts.find((s) => busySlotKey(s.date, s.slotNumber) === target);
-    if (!sel) {
-      setNotice({ type: "error", text: "対象のコマを選択してください。" });
-      return;
-    }
-    // #181 の最終ガード。UI の disable はあくまで先出しなので、state の同期に
-    // 穴が空いてもここで止める (サーバーは別途 isTutorBusyAt で弾く)。
-    if (!effectiveNominee) {
-      setNotice({ type: "error", text: "指名する講師を選択してください。" });
-      return;
-    }
-    // native required は空白のみを通すため trim 後の空チェックで一貫させる
-    const trimmedReason = reason.trim();
-    if (!trimmedReason) {
-      setNotice({ type: "error", text: "理由を入力してください。" });
-      return;
-    }
-    run(
-      () =>
-        createSwapRequest({
-          date: sel.date,
-          slotNumber: sel.slotNumber,
-          reason: trimmedReason,
-          kind: "named",
-          nominatedTutorId: effectiveNominee,
-        }),
-      "交代申請を送信しました。",
-      () => {
-        setTarget("");
-        setReason("");
-        setNominee("");
-      },
-    );
-  }
-
   return (
     <div className="space-y-4">
       {notice && (
@@ -142,124 +72,6 @@ export function SwapPanel({
           {notice.text}
         </p>
       )}
-
-      <Card>
-        <CardHeader>
-          <CardTitle className="text-base">新しい交代申請</CardTitle>
-          <CardDescription>
-            代わってほしい講師を指名します。その講師が承諾すると成立します。代講の募集は教室長が出します（休む場合は欠勤申請をしてください）。
-          </CardDescription>
-        </CardHeader>
-        <CardContent>
-          {shifts.length === 0 ? (
-            <p className="py-4 text-center text-sm text-muted-foreground">
-              交代申請できる今後のシフトがありません。
-            </p>
-          ) : (
-            <form className="space-y-5" onSubmit={handleSubmit}>
-              {/* 1. 対象シフト選択 (排他選択 = native radio + fieldset/legend) */}
-              <fieldset className="space-y-2">
-                <legend className="mb-2 text-sm font-medium">
-                  対象のシフト
-                </legend>
-                <div className="space-y-2">
-                  {shifts.map((s) => {
-                    const val = busySlotKey(s.date, s.slotNumber);
-                    const on = target === val;
-                    return (
-                      <label
-                        key={val}
-                        className={cn(
-                          "flex w-full cursor-pointer items-center justify-between rounded-xl border p-3 transition-colors focus-within:ring-1 focus-within:ring-ring",
-                          on
-                            ? "border-primary bg-primary text-primary-foreground"
-                            : "border-input bg-background hover:bg-muted",
-                        )}
-                      >
-                        <input
-                          type="radio"
-                          name="sw-target"
-                          value={val}
-                          checked={on}
-                          onChange={() => setTarget(val)}
-                          className="sr-only"
-                        />
-                        <span className="text-sm font-medium">
-                          {shortDate(s.date)}（{s.weekdayLabel}） {s.slotLabel}
-                        </span>
-                        <span
-                          className={cn(
-                            "text-xs",
-                            on
-                              ? "text-primary-foreground/80"
-                              : "text-muted-foreground",
-                          )}
-                        >
-                          {s.startTime}–{s.endTime}
-                        </span>
-                      </label>
-                    );
-                  })}
-                </div>
-              </fieldset>
-
-              {/* 2. 指名する講師。講師が出せる交代は指名だけ (#330: 代講の募集は
-                  教室長が出す) */}
-              <div className="space-y-1.5">
-                <Label htmlFor="sw-nominee">指名する講師</Label>
-                <select
-                  id="sw-nominee"
-                  value={effectiveNominee}
-                  onChange={(e) => setNominee(e.target.value)}
-                  required
-                  className="h-9 w-full rounded-md border bg-background px-2 text-sm focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
-                >
-                  <option value="">— 選択してください —</option>
-                  {tutors.map((t) => {
-                    const busy = busyTutorIds.includes(t.id);
-                    return (
-                      <option key={t.id} value={t.id} disabled={busy}>
-                        {t.name}
-                        {busy ? "（同じコマに出勤予定）" : ""}
-                      </option>
-                    );
-                  })}
-                </select>
-              </div>
-
-              {/* 3. 理由 */}
-              <div className="space-y-1.5">
-                <Label htmlFor="sw-reason">理由（必須）</Label>
-                <textarea
-                  id="sw-reason"
-                  value={reason}
-                  onChange={(e) => setReason(e.target.value)}
-                  required
-                  rows={3}
-                  maxLength={500}
-                  placeholder="例: 体調不良のため"
-                  className="w-full rounded-md border bg-background px-3 py-2 text-sm focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
-                />
-              </div>
-
-              {/* 4. 注意バナー (bg-accent/10) */}
-              <div className="rounded-lg bg-accent/10 p-3 text-sm">
-                <p className="flex items-start gap-2 text-foreground">
-                  <Info className="mt-0.5 size-4 shrink-0 text-accent" />
-                  <span>
-                    指名はその講師の承諾後に成立します。誰に頼めばいいか分からないときは、欠勤申請をすると教室長が代講を探します。
-                  </span>
-                </p>
-              </div>
-
-              {/* 5. 下部 primary 全幅 */}
-              <Button type="submit" disabled={isPending} className="w-full">
-                {isPending ? "送信中..." : "交代を申請"}
-              </Button>
-            </form>
-          )}
-        </CardContent>
-      </Card>
 
       <Card>
         <CardHeader>
@@ -340,7 +152,8 @@ export function SwapPanel({
                     )}
                     {r.applicants.length > 0 && (
                       <p className="mt-0.5 text-sm text-muted-foreground">
-                        応募: {r.applicants.map((a) => a.applicantName).join(", ")}
+                        応募:{" "}
+                        {r.applicants.map((a) => a.applicantName).join(", ")}
                       </p>
                     )}
                     {r.status === "approved" && r.approvedApplicantName && (

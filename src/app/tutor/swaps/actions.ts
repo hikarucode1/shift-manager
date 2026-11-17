@@ -1,27 +1,16 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
-import { after } from "next/server";
 import { z } from "zod";
-import { and, arrayContains, eq, inArray, isNull } from "drizzle-orm";
+import { and, eq, isNull } from "drizzle-orm";
 import { requireRole } from "@/lib/auth";
 import { notify } from "@/lib/notifications";
 import { getSlotMeta } from "@/lib/slot-meta";
 import { db } from "@/db/client";
-import {
-  absenceRequests,
-  profiles,
-  swapApplications,
-  swapRequests,
-  weeklyShifts,
-} from "@/db/schema";
+import { swapApplications, swapRequests, weeklyShifts } from "@/db/schema";
 import { isUniqueViolation } from "@/lib/db-errors";
-import {
-  getActiveApplicantIds,
-  hasSlotEnded,
-  isTutorBusyAt,
-} from "@/lib/swaps";
-import { isValidIsoDate, jstToday } from "@/lib/week";
+import { getActiveApplicantIds, isTutorBusyAt } from "@/lib/swaps";
+import { jstToday } from "@/lib/week";
 
 type ActionResult = { ok: true } | { ok: false; error: string };
 
@@ -31,171 +20,14 @@ function revalidateAll() {
   revalidatePath("/admin/requests");
 }
 
-const CreateInput = z
-  .object({
-    date: z.string().refine(isValidIsoDate, "日付が不正です。"),
-    slotNumber: z.number().int().min(1).max(20),
-    reason: z.string().trim().min(1, "理由を入力してください。").max(500),
-    kind: z.enum(["named", "open"]),
-    nominatedTutorId: z.string().uuid().optional().nullable(),
-  })
-  .refine((v) => v.kind === "open" || !!v.nominatedTutorId, {
-    message: "指名交代は相手の講師を選択してください。",
-    path: ["nominatedTutorId"],
-  });
-
-/** 講師: 交代申請を作成 (自分の今後の確定シフトに対して) */
-export async function createSwapRequest(
-  input: unknown,
-): Promise<ActionResult> {
-  const { profile } = await requireRole("tutor");
-
-  const parsed = CreateInput.safeParse(input);
-  if (!parsed.success) {
-    return {
-      ok: false,
-      error: parsed.error.issues[0]?.message ?? "入力が不正です。",
-    };
-  }
-  const { date, slotNumber, reason, kind } = parsed.data;
-  // #330: 代講の募集は教室長だけが出す (代理募集 #227)。講師の画面からは
-  // 入口を消したが、action を直接呼ばれても作らない。講師が休むときは欠勤
-  // 申請 → 教室長が必要なら代理募集、の流れにする
-  if (kind === "open") {
-    return {
-      ok: false,
-      error:
-        "代講の募集は教室長が出します。休む場合は欠勤申請をしてください。",
-    };
-  }
-  const nominatedTutorId = parsed.data.nominatedTutorId ?? null;
-
-  // #178: 新規の募集だけはコマ単位で弾く。終了したコマを今から募集しても
-  // 代わってもらう相手が居ないため (既に済んだ分の記録は承認側で扱う)。
-  if (await hasSlotEnded(date, slotNumber)) {
-    return { ok: false, error: "終了したコマは申請できません。" };
-  }
-
-  // 自分の実在する確定シフトか
-  const shift = await db
-    .select({ id: weeklyShifts.id })
-    .from(weeklyShifts)
-    .where(
-      and(
-        eq(weeklyShifts.tutorId, profile.id),
-        eq(weeklyShifts.date, date),
-        eq(weeklyShifts.slotNumber, slotNumber),
-      ),
-    )
-    .limit(1);
-  if (shift.length === 0) {
-    return { ok: false, error: "対象の確定シフトが見つかりません。" };
-  }
-
-  // クロス整合 (#33): 同一コマに非終端の欠勤申請があれば交代申請は不可。
-  // TOCTOU の残存リスクは createAbsenceRequest 側コメント参照 (#33 C1)。
-  const absenceDup = await db
-    .select({ id: absenceRequests.id })
-    .from(absenceRequests)
-    .where(
-      and(
-        eq(absenceRequests.tutorId, profile.id),
-        eq(absenceRequests.date, date),
-        eq(absenceRequests.slotNumber, slotNumber),
-        inArray(absenceRequests.status, ["pending", "approved"]),
-      ),
-    )
-    .limit(1);
-  if (absenceDup.length > 0) {
-    // 欠勤が承認済みだと講師は自分で取消できない (cancelAbsenceRequest は
-    // pending 限定) ため、特定の操作を指示せず状態非依存の文言にする (#33 C3)
-    return {
-      ok: false,
-      error:
-        "このコマには欠勤申請があります。重複するため交代申請はできません（必要なら教室長にご相談ください）。",
-    };
-  }
-
-  // 指名先の妥当性 (schema の refine で named には必ず入っている)
-  if (nominatedTutorId) {
-    if (nominatedTutorId === profile.id) {
-      return { ok: false, error: "自分自身は指名できません。" };
-    }
-    const nt = await db
-      .select({ id: profiles.id })
-      .from(profiles)
-      .where(
-        and(
-          eq(profiles.id, nominatedTutorId),
-          arrayContains(profiles.roles, ["tutor"]),
-          eq(profiles.isActive, true),
-        ),
-      )
-      .limit(1);
-    if (nt.length === 0) {
-      return { ok: false, error: "指名先の講師が見つかりません。" };
-    }
-    // 指名先が同じコマに既に出勤予定だと applyToSwap の clash ガードで応募でき
-    // ないため、作成時点で弾く。これで申請者にその場で理由が伝わり、一覧に
-    // 応募不能な dead-end 行が出るのも防げる (通知先は下の named 分岐で確定)。
-    if (await isTutorBusyAt(date, slotNumber, nominatedTutorId)) {
-      return {
-        ok: false,
-        error: "その講師は同じコマに出勤予定のため指名できません。",
-      };
-    }
-  }
-
-  try {
-    await db.insert(swapRequests).values({
-      requesterId: profile.id,
-      // #227: 本人申請であることを残す。教室長の代理募集
-      // (createOpenSwapOnBehalf) と DB 上で区別できるのはこの列だけ
-      createdBy: profile.id,
-      kind,
-      nominatedTutorId,
-      date,
-      slotNumber,
-      reason,
-    });
-  } catch (e) {
-    if (isUniqueViolation(e, "swap_requests_active_uniq")) {
-      return { ok: false, error: "このコマには既に交代申請があります。" };
-    }
-    console.error("createSwapRequest failed", e);
-    return { ok: false, error: "申請に失敗しました。時間をおいてお試しください。" };
-  }
-
-  // #155: 新規募集を関連講師へ通知する。応答をブロックしないよう after() で
-  // レスポンス確定後に実行する (募集自体は上で commit 済み。after なら bare な
-  // un-awaited promise と違いサーバーレスでも完了が保証される)。
-  after(async () => {
-    try {
-      // 指名先 1 名へ (作成時に role/active + 同コマ clash を検証済みなので
-      // ここでの資格再判定は不要)。講師が出せるのは指名だけ (#330)
-      const slotLabel =
-        (await getSlotMeta()).get(slotNumber)?.label ?? `${slotNumber}限`;
-      await notify(nominatedTutorId ? [nominatedTutorId] : [], {
-        type: "swap_posted",
-        title: "交代の指名がありました",
-        body: `対象: ${date} ${slotLabel}（あなた宛の指名）`,
-        href: "/tutor/open-swaps",
-      });
-    } catch (e) {
-      console.error("createSwapRequest notify failed", e);
-    }
-  });
-
-  revalidateAll();
-  return { ok: true };
-}
+// #331 (2026/11/17): 講師が自分で相手を選ぶ交代申請はやめた。交代は欠勤申請 →
+// 教室長が相手を指定 → 欠勤の画面から依頼 (designated-actions.ts) の流れだけ。
+// ここに残すのは、それ以前に出された申請の取消・応募・応募取下げ。
 
 const IdInput = z.object({ id: z.string().uuid() });
 
 /** 講師: 自分の pending 申請を取消 */
-export async function cancelSwapRequest(
-  input: unknown,
-): Promise<ActionResult> {
+export async function cancelSwapRequest(input: unknown): Promise<ActionResult> {
   const { profile } = await requireRole("tutor");
   const parsed = IdInput.safeParse(input);
   if (!parsed.success) return { ok: false, error: "入力が不正です。" };
@@ -436,7 +268,10 @@ export async function applyToSwap(input: unknown): Promise<ActionResult> {
       return { ok: false, error: "既に応募済みです。" };
     }
     console.error("applyToSwap failed", e);
-    return { ok: false, error: "応募に失敗しました。時間をおいて再度お試しください。" };
+    return {
+      ok: false,
+      error: "応募に失敗しました。時間をおいて再度お試しください。",
+    };
   }
 
   if (!outcome.ok) return outcome;
@@ -501,7 +336,10 @@ export async function withdrawApplication(
     });
   } catch (e) {
     console.error("withdrawApplication failed", e);
-    return { ok: false, error: "取り下げに失敗しました。時間をおいて再度お試しください。" };
+    return {
+      ok: false,
+      error: "取り下げに失敗しました。時間をおいて再度お試しください。",
+    };
   }
 
   if (!outcome.ok) return outcome;

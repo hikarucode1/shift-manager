@@ -1,26 +1,12 @@
+import Link from "next/link";
 import { requireRole } from "@/lib/auth";
-import {
-  getActiveTutorsExcept,
-  getBusyTutorIdsBySlot,
-  getTutorSwapRequests,
-  getTutorSwappableShifts,
-} from "@/lib/swaps";
+import { getTutorSwapRequests } from "@/lib/swaps";
 import { TutorRequestsNav } from "@/components/tutor-requests-nav";
 import { SwapPanel } from "./swap-panel";
 
 export default async function TutorSwapsPage() {
   const { profile } = await requireRole("tutor");
-
-  const [shifts, tutors, requests] = await Promise.all([
-    getTutorSwappableShifts(profile.id),
-    getActiveTutorsExcept(profile.id),
-    getTutorSwapRequests(profile.id),
-  ]);
-
-  // #181: 指名先が同コマ出勤中だとサーバー側で弾かれる。候補に並べたまま
-  // 送信させて初めてエラーにするのを避けるため、先に出勤状況を引いて渡す。
-  // 対象は「交代に出せるコマ」だけなので追加クエリは 1 本で済む。
-  const busyBySlot = await getBusyTutorIdsBySlot(shifts);
+  const requests = await getTutorSwapRequests(profile.id);
 
   return (
     <div className="space-y-5">
@@ -29,17 +15,18 @@ export default async function TutorSwapsPage() {
       {/* ネイビー hero (#130/#131/#132/#133 と統一) */}
       <section className="rounded-xl bg-primary p-4 text-primary-foreground">
         <h1 className="text-xl font-bold">交代申請</h1>
+        {/* #331 (2026/11/17): 講師が自分で相手を選ぶ交代申請はやめた。
+            ここは今までの交代・代講の記録だけを見る画面 */}
         <p className="mt-1 text-xs text-primary-foreground/80">
-          確定シフトを、指名した講師に代わってもらう申請をします。
+          交代の相手は教室長が決めます。休むときは
+          <Link href="/tutor/absences" className="underline underline-offset-2">
+            欠勤申請
+          </Link>
+          をしてください。教室長が相手を指定したら、欠勤申請の画面からその人に依頼できます。
         </p>
       </section>
 
-      <SwapPanel
-        shifts={shifts}
-        tutors={tutors}
-        requests={requests}
-        busyBySlot={busyBySlot}
-      />
+      <SwapPanel requests={requests} />
     </div>
   );
 }
