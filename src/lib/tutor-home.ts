@@ -249,7 +249,7 @@ export async function getTutorHomeData(tutorId: string): Promise<TutorHomeData> 
     deadlines.push({
       kind: "regular",
       label: `${reg.label}のシフト提出`,
-      href: "/tutor/fixed-shifts",
+      href: `/tutor/fixed-shifts?period=${reg.id}`,
       dueLabel: fmtDeadline(reg.submissionDueAt.toISOString()),
       daysLeft: daysLeftUntil(reg.submissionDueAt, now),
       submitted: (submittedRows[0]?.c ?? 0) > 0,

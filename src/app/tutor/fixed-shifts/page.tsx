@@ -1,3 +1,5 @@
+import Link from "next/link";
+import { ChevronRight } from "lucide-react";
 import { and, asc, desc, eq, gte, lt, lte } from "drizzle-orm";
 import { requireRole } from "@/lib/auth";
 import { db } from "@/db/client";
@@ -21,6 +23,7 @@ import {
   type FixedShiftSubmissionMeta,
 } from "./fixed-shift-editor";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Badge } from "@/components/ui/badge";
 import { cn } from "@/lib/utils";
 import { deadlineLabel } from "@/lib/deadline";
 import {
@@ -38,8 +41,14 @@ import {
   type PreferredStudent,
 } from "@/lib/preferred-students";
 
-export default async function FixedShiftPage() {
+export default async function FixedShiftPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ period?: string }>;
+}) {
   const { profile } = await requireRole("tutor");
+  // #334: 講習と同じく「期間を選ぶ → 中身を編集」。?period= が無ければ一覧
+  const { period: selectedPeriodId } = await searchParams;
   const today = jstToday();
   const now = new Date();
   // #333: 期限が切れていたら閉じる (出し直さなかった下書きは承認前に戻す)
@@ -138,6 +147,107 @@ export default async function FixedShiftPage() {
     acceptingPeriod !== null ||
     grantPeriod !== null ||
     (grant !== null && grant.regularPeriodId === null);
+
+  const confirmedCard = (
+    <>
+      {/* Issue #74 (δ): 自分の確定済みレギュラー枠 (期間範囲ごとに表示) */}
+      {confirmedRows.length > 0 && (
+        <Card className="border-emerald-300 bg-emerald-50/60 dark:bg-emerald-950/30">
+          <CardHeader>
+            <CardTitle className="text-base">確定済みレギュラー</CardTitle>
+            <CardDescription>
+              教室長が確定した出勤枠です。期間 (effective_from 〜 effective_to)
+              ごとに表示します。希望提出と異なる場合があります。
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-2 text-xs">
+            {Array.from(
+              confirmedRows.reduce((acc, r) => {
+                const key = `${r.effectiveFrom}__${r.effectiveTo}`;
+                if (!acc.has(key)) acc.set(key, []);
+                acc.get(key)!.push(r);
+                return acc;
+              }, new Map<string, typeof confirmedRows>()),
+            ).map(([key, rows]) => {
+              const [from, to] = key.split("__");
+              return (
+                <div key={key}>
+                  <div className="font-medium">
+                    {from} 〜 {to}: {rows.length} 枠
+                  </div>
+                  <ul className="ml-4 text-muted-foreground">
+                    {rows.map((r) => (
+                      <li key={`${r.weekday}:${r.slotNumber}`}>
+                        {r.weekday === "mon" && "月"}
+                        {r.weekday === "tue" && "火"}
+                        {r.weekday === "wed" && "水"}
+                        {r.weekday === "thu" && "木"}
+                        {r.weekday === "fri" && "金"}
+                        {r.weekday === "sat" && "土"} {r.slotNumber}限
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              );
+            })}
+          </CardContent>
+        </Card>
+      )}
+
+    </>
+  );
+
+  // #334: 期間の一覧。受付中の期 (無ければ許可された期・変更申請の対象の期) を
+  // カードで出し、タップで編集画面へ。期がまったく無いときは今まで通り編集画面
+  if (activePeriod && selectedPeriodId !== activePeriod.id) {
+    const dueDate = jstToday(activePeriod.submissionDueAt);
+    const daysLeft = Math.round(
+      (Date.parse(dueDate) - Date.parse(today)) / 86_400_000,
+    );
+    const dl = deadlineLabel(daysLeft);
+    return (
+      <div className="space-y-5">
+        <section className="rounded-xl bg-primary p-4 text-primary-foreground">
+          <h1 className="text-xl font-bold">レギュラーシフト提出</h1>
+          <p className="mt-1 text-xs text-primary-foreground/80">
+            期間を選んで、毎週出勤できるコマを登録します。締切までは何度でも変更できます。
+          </p>
+        </section>
+
+        {confirmedCard}
+
+        <div className="grid gap-3">
+          <Link href={`/tutor/fixed-shifts?period=${activePeriod.id}`}>
+            <Card className="transition-colors hover:bg-muted/50">
+              <CardHeader className="flex-row items-center justify-between gap-3 space-y-0">
+                <div className="min-w-0">
+                  <CardTitle className="text-base">{activePeriod.label}</CardTitle>
+                  <CardDescription>
+                    {activePeriod.startDate} 〜 {activePeriod.endDate} ／ 締切{" "}
+                    {activePeriod.submissionDueAt.toLocaleDateString("ja-JP", {
+                      timeZone: "Asia/Tokyo",
+                    })}
+                  </CardDescription>
+                </div>
+                <div className="flex shrink-0 items-center gap-2">
+                  {acceptingPeriod ? (
+                    <Badge variant={dl.urgent ? "accent" : "secondary"}>
+                      {dl.text}
+                    </Badge>
+                  ) : editableNow ? (
+                    <Badge variant="accent">変更できます</Badge>
+                  ) : (
+                    <Badge variant="outline">締切終了</Badge>
+                  )}
+                  <ChevronRight className="size-4 text-muted-foreground" />
+                </div>
+              </CardHeader>
+            </Card>
+          </Link>
+        </div>
+      </div>
+    );
+  }
   const changeView: ChangeRequestView | null = acceptingPeriod
     ? null
     : changeState?.kind === "approved"
@@ -375,6 +485,14 @@ export default async function FixedShiftPage() {
 
   return (
     <div className="space-y-5">
+      {activePeriod && (
+        <Link
+          href="/tutor/fixed-shifts"
+          className="inline-flex items-center text-sm text-muted-foreground hover:underline"
+        >
+          ← レギュラー期間の一覧へ
+        </Link>
+      )}
       {/* ネイビー hero: 期間名 + タイトル + 締切 (#130 と統一) */}
       <section className="rounded-xl bg-primary p-4 text-primary-foreground">
         <p className="text-xs text-primary-foreground/70">
@@ -414,49 +532,8 @@ export default async function FixedShiftPage() {
         <ChangeRequestCard target={{ kind: "regular" }} state={changeView} />
       )}
 
-      {/* Issue #74 (δ): 自分の確定済みレギュラー枠 (期間範囲ごとに表示) */}
-      {confirmedRows.length > 0 && (
-        <Card className="border-emerald-300 bg-emerald-50/60 dark:bg-emerald-950/30">
-          <CardHeader>
-            <CardTitle className="text-base">確定済みレギュラー</CardTitle>
-            <CardDescription>
-              教室長が確定した出勤枠です。期間 (effective_from 〜 effective_to)
-              ごとに表示します。希望提出と異なる場合があります。
-            </CardDescription>
-          </CardHeader>
-          <CardContent className="space-y-2 text-xs">
-            {Array.from(
-              confirmedRows.reduce((acc, r) => {
-                const key = `${r.effectiveFrom}__${r.effectiveTo}`;
-                if (!acc.has(key)) acc.set(key, []);
-                acc.get(key)!.push(r);
-                return acc;
-              }, new Map<string, typeof confirmedRows>()),
-            ).map(([key, rows]) => {
-              const [from, to] = key.split("__");
-              return (
-                <div key={key}>
-                  <div className="font-medium">
-                    {from} 〜 {to}: {rows.length} 枠
-                  </div>
-                  <ul className="ml-4 text-muted-foreground">
-                    {rows.map((r) => (
-                      <li key={`${r.weekday}:${r.slotNumber}`}>
-                        {r.weekday === "mon" && "月"}
-                        {r.weekday === "tue" && "火"}
-                        {r.weekday === "wed" && "水"}
-                        {r.weekday === "thu" && "木"}
-                        {r.weekday === "fri" && "金"}
-                        {r.weekday === "sat" && "土"} {r.slotNumber}限
-                      </li>
-                    ))}
-                  </ul>
-                </div>
-              );
-            })}
-          </CardContent>
-        </Card>
-      )}
+      {/* 期が無いときは一覧を出さないので、確定済みはここに出す */}
+      {!activePeriod && confirmedCard}
 
       <Card>
         <CardHeader>
