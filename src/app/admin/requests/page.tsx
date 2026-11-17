@@ -11,7 +11,7 @@ import {
   parseRequestsSearchParams,
   requestsHref,
 } from "@/lib/requests-search-params";
-import { jstToday } from "@/lib/week";
+import { jstToday, noticeDate } from "@/lib/week";
 import { Badge } from "@/components/ui/badge";
 import { cn } from "@/lib/utils";
 import { AbsenceOnBehalfForm } from "./absence-on-behalf-form";
@@ -22,6 +22,10 @@ import { UnfilledAbsencesPanel } from "./unfilled-absences-panel";
 import { SwapRequestsPanel } from "./swap-requests-panel";
 import { RequestLogPanel } from "./request-log-panel";
 import { ShiftChangePanel } from "./shift-change-panel";
+import { DayOffPanel } from "./day-off-panel";
+import { getPendingDayOffs } from "@/lib/day-offs";
+import { getSlotMeta } from "@/lib/slot-meta";
+import { dayOffSlotsLabel } from "@/lib/day-off-rule";
 import {
   closeExpiredGrants,
   getPendingChangeRequests,
@@ -63,6 +67,8 @@ export default async function AdminRequestsPage({
     activeTutors,
     unfilled,
     pendingChanges,
+    pendingDayOffs,
+    slotMeta,
   ] = await Promise.all([
     getPendingAbsenceRequests(),
     getPendingSwapRequests(),
@@ -76,6 +82,9 @@ export default async function AdminRequestsPage({
     getUnfilledDesignatedAbsences(),
     // #333: 提出期間外のシフト変更申請
     getPendingChangeRequests(),
+    // #360: 先の日の休み希望
+    getPendingDayOffs(),
+    getSlotMeta(),
   ]);
   const tutorOptions = activeTutors.map((t) => ({
     id: t.id,
@@ -86,7 +95,8 @@ export default async function AdminRequestsPage({
     pendingAbsences.length +
     pendingSwaps.length +
     unfilled.length +
-    pendingChanges.length;
+    pendingChanges.length +
+    pendingDayOffs.length;
   const today = jstToday();
   // 未対応 ⇄ 記録 を行き来してもフィルタを捨てない (両方のリンクに載せる)
   const pendingHref = requestsHref({ ...view, tab: "pending" });
@@ -135,6 +145,30 @@ export default async function AdminRequestsPage({
               <UnfilledAbsencesPanel absences={unfilled} tutors={tutorOptions} />
             </section>
           )}
+          <section className="space-y-3">
+            <h2 className="text-sm font-semibold text-muted-foreground">
+              休み希望（シフト公開前の日）
+            </h2>
+            <DayOffPanel
+              pending={pendingDayOffs.map((d) => ({
+                id: d.id,
+                tutorName: d.tutorName,
+                dateLabel: noticeDate(d.date),
+                slotsLabel: dayOffSlotsLabel(
+                  d.slotNumbers,
+                  (n) => slotMeta.get(n)?.label ?? `${n}限`,
+                ),
+                reason: d.reason,
+                createdAtLabel: d.createdAt.toLocaleString("ja-JP", {
+                  timeZone: "Asia/Tokyo",
+                  month: "numeric",
+                  day: "numeric",
+                  hour: "2-digit",
+                  minute: "2-digit",
+                }),
+              }))}
+            />
+          </section>
           <section className="space-y-3">
             <h2 className="text-sm font-semibold text-muted-foreground">交代・代講</h2>
             <SwapRequestsPanel pending={pendingSwaps} />
