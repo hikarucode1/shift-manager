@@ -73,7 +73,8 @@ export type HomeNextShift = {
 export type HomeShiftRow = {
   date: string;
   weekdayLabel: string;
-  slotNumbers: number[];
+  /** #336: コマごとに、担当する生徒 (座席表 CSV の割り当て) も出す */
+  slots: Pick<ScheduleSlot, "slotNumber" | "label" | "students">[];
   status: "confirmed" | "absent";
 };
 
@@ -164,7 +165,11 @@ export async function getTutorHomeData(tutorId: string): Promise<TutorHomeData> 
       date: d.date,
       weekdayLabel: d.weekdayLabel,
       // 確定行は欠勤コマを除いた番号のみ (混在日でも欠勤を確定として見せない)
-      slotNumbers: (confirmed ? liveSlots : d.slots).map((s) => s.slotNumber),
+      slots: (confirmed ? liveSlots : d.slots).map((s) => ({
+        slotNumber: s.slotNumber,
+        label: s.label,
+        students: s.students,
+      })),
       status: confirmed ? "confirmed" : "absent",
     });
   }

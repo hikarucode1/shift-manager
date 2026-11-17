@@ -26,6 +26,13 @@ function dayLabel(s: {
   return `${s.weekdayLabel}曜`;
 }
 
+/** 「山田(英) / 佐藤(数)」の形。科目が空なら名前だけ */
+function formatStudents(list: { name: string; subject: string }[]): string {
+  return list
+    .map((s) => (s.subject ? `${s.name}(${s.subject})` : s.name))
+    .join(" / ");
+}
+
 export default async function TutorHome() {
   const { profile } = await requireRole("tutor");
   const [data, progressSheetUrl] = await Promise.all([
@@ -118,9 +125,7 @@ export default async function TutorHome() {
             </p>
             {data.nextShift.slot.students.length > 0 && (
               <p className="mt-1 text-sm text-primary-foreground/80">
-                {data.nextShift.slot.students
-                  .map((s) => (s.subject ? `${s.name}(${s.subject})` : s.name))
-                  .join(" / ")}
+                {formatStudents(data.nextShift.slot.students)}
               </p>
             )}
           </div>
@@ -150,10 +155,29 @@ export default async function TutorHome() {
                   </p>
                   <p className="text-sm font-semibold">{shortDate(row.date)}</p>
                 </div>
-                <div className="h-8 w-px bg-border" />
-                <p className="flex-1 text-sm font-medium">
-                  {row.slotNumbers.map((n) => `${n}限`).join(" / ")}
-                </p>
+                <div className="w-px self-stretch bg-border" />
+                {/* #336: コマごとに担当する生徒を全部出す */}
+                <ul className="min-w-0 flex-1 space-y-1">
+                  {row.slots.map((slot) => (
+                    <li key={slot.slotNumber} className="flex gap-2 text-sm">
+                      <span className="shrink-0 font-medium">{slot.label}</span>
+                      {slot.students.length > 0 ? (
+                        // 名前の途中で折り返さない (1 人ずつ改行させる)
+                        <span className="flex min-w-0 flex-wrap gap-x-2 text-muted-foreground">
+                          {slot.students.map((st, i) => (
+                            <span key={i} className="whitespace-nowrap">
+                              {formatStudents([st])}
+                            </span>
+                          ))}
+                        </span>
+                      ) : (
+                        <span className="self-center text-xs text-muted-foreground">
+                          生徒の割り当てなし
+                        </span>
+                      )}
+                    </li>
+                  ))}
+                </ul>
                 {row.status === "absent" ? (
                   <Badge variant="destructive">欠勤</Badge>
                 ) : (
