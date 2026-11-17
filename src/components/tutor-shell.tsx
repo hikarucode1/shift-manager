@@ -29,7 +29,7 @@ export function TutorShell({
             <span className="text-xs text-primary-foreground/70">講師</span>
           </Link>
           <div className="flex items-center gap-2">
-            <NotificationBell />
+            <NotificationBell audience="tutor" />
             {/* #320: お問い合わせ */}
             <ContactLink
               base="/tutor"

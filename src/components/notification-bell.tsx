@@ -5,6 +5,7 @@ import { usePathname } from "next/navigation";
 import Link from "next/link";
 import { Bell } from "lucide-react";
 import { getUnreadCountAction } from "@/app/tutor/notifications/actions";
+import { getAdminUnreadCountAction } from "@/app/admin/notifications/actions";
 import {
   INITIAL_POLL_STATE,
   onPollFailure,
@@ -28,14 +29,31 @@ import {
  * 状態の遷移は `lib/unread-badge.ts` に切り出してテストで固定してある
  * (ここは jsdom が無く描画テストできないため)。
  */
-export function NotificationBell() {
+/**
+ * #344: 講師の画面と教室長の画面で別のベル。兼任の人でも、それぞれの画面向けの
+ * 通知だけを数え、それぞれの一覧へ飛ぶ
+ */
+const BELL = {
+  tutor: { fetchCount: getUnreadCountAction, href: "/tutor/notifications" },
+  admin: {
+    fetchCount: getAdminUnreadCountAction,
+    href: "/admin/notifications",
+  },
+} as const;
+
+export function NotificationBell({
+  audience,
+}: {
+  audience: keyof typeof BELL;
+}) {
+  const { fetchCount, href } = BELL[audience];
   const pathname = usePathname();
   const [poll, setPoll] = useState<PollState>(INITIAL_POLL_STATE);
   const [now, setNow] = useState(() => Date.now());
 
   const refresh = useCallback(() => {
     // action-failure: ok — ポーリングなので画面遷移させず、状態として畳む (#168)
-    return getUnreadCountAction()
+    return fetchCount()
       .then((res) => {
         setPoll((prev) =>
           res.ok ? onPollSuccess(prev, res.count, Date.now()) : onPollFailure(prev),
@@ -43,7 +61,7 @@ export function NotificationBell() {
       })
       .catch(() => setPoll(onPollFailure))
       .finally(() => setNow(Date.now()));
-  }, []);
+  }, [fetchCount]);
 
   useEffect(() => {
     void refresh();
@@ -67,7 +85,7 @@ export function NotificationBell() {
 
   return (
     <Link
-      href="/tutor/notifications"
+      href={href}
       aria-label={
         badge.kind === "unknown"
           ? "通知 (未読数を取得できませんでした)"

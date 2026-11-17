@@ -110,6 +110,8 @@ export const notificationTypeEnum = pgEnum("notification_type", [
   "shifts_published",
   // #155 後続: 新規の交代/代講募集 (open=応募資格者へ, named=指名先へ)
   "swap_posted",
+  // #344: 教室長宛て。欠勤で指定した代講の相手が引き受けた / 断った (#331)
+  "substitute_response",
 ]);
 
 /* ------------------------------------------------------------------ */
@@ -1076,6 +1078,12 @@ export const notifications = pgTable(
       .notNull()
       .references(() => profiles.id, { onDelete: "cascade" }),
     type: notificationTypeEnum().notNull(),
+    /**
+     * #344: どの画面のベルに出すか。兼任 (教室長かつ講師) の人でも、講師の
+     * ベルには講師向けだけ、教室長のベルには教室長向けだけを出す。既読も
+     * 画面ごとに分かれる。既存の行はすべて講師向けなので default は tutor
+     */
+    audience: userRoleEnum("audience").notNull().default("tutor"),
     title: text().notNull(),
     body: text(),
     /** タップ時の遷移先 (アプリ内パス) */

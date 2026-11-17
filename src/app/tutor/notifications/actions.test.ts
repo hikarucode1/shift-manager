@@ -80,6 +80,8 @@ describe("getUnreadCountAction", () => {
       ok: true,
       count: 4,
     });
+    // #344: 講師のベルは講師向けの通知だけを数える
+    expect(getUnreadCount).toHaveBeenCalledWith(tutor.id, "tutor");
   });
 
   it("無効化された講師には件数を返さない (多重防御)", async () => {
@@ -155,6 +157,6 @@ describe("markAllReadAction", () => {
 
     await markAllReadAction();
 
-    expect(markAllRead).toHaveBeenCalledWith(tutor.id);
+    expect(markAllRead).toHaveBeenCalledWith(tutor.id, "tutor");
   });
 });

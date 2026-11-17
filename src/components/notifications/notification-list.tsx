@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { Bell, CalendarCheck, Inbox, Repeat } from "lucide-react";
+import { Bell, CalendarCheck, Inbox, Repeat, UserCheck } from "lucide-react";
 import type { NotificationRow, NotificationType } from "@/lib/notifications";
 import { Card, CardContent } from "@/components/ui/card";
 import { cn } from "@/lib/utils";
@@ -9,6 +9,7 @@ const TYPE_ICON: Record<NotificationType, typeof Bell> = {
   swap_result: Inbox,
   shifts_published: CalendarCheck,
   swap_posted: Repeat,
+  substitute_response: UserCheck,
 };
 
 function formatDateTime(d: Date): string {

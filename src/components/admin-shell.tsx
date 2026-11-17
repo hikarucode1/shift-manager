@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { CircleHelp, LogOut } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { NotificationBell } from "@/components/notification-bell";
 import { AdminTopNav } from "@/components/admin-top-nav";
 import { ContactLink } from "@/components/contact/contact-link";
 import type { SessionProfile } from "@/lib/auth";
@@ -27,6 +28,8 @@ export function AdminShell({
             <span className="text-xs text-primary-foreground/70">管理者</span>
           </Link>
           <div className="flex items-center gap-3">
+            {/* #344: 教室長向けの通知 (講師のベルとは別) */}
+            <NotificationBell audience="admin" />
             {/* #320: お問い合わせ */}
             <ContactLink
               base="/admin"

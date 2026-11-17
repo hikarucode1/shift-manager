@@ -1,7 +1,7 @@
 import { requireRole } from "@/lib/auth";
 import { getNotifications } from "@/lib/notifications";
-import { MarkReadOnMount } from "./mark-read-on-mount";
-import { NotificationList } from "./notification-list";
+import { MarkReadOnMount } from "@/components/notifications/mark-read-on-mount";
+import { NotificationList } from "@/components/notifications/notification-list";
 
 export default async function TutorNotificationsPage() {
   const { profile } = await requireRole("tutor");
@@ -15,14 +15,14 @@ export default async function TutorNotificationsPage() {
   // 境界は「エラーID (digest)」を出すが自前の失敗表示は出せない。
   // 2026-07-30 の障害で実際に壊れたのがこの画面なので、問い合わせ時に
   // digest を読み上げられないのは一番痛い。境界に流して揃える。
-  const items = await getNotifications(profile.id);
+  const items = await getNotifications(profile.id, "tutor");
 
   return (
     <div className="space-y-5">
       {/* 取得に失敗した場合はここへ到達せず境界が出るので、既読化が
           「中身を見ないまま未読が消える」形で走ることはない
           (markAllRead は表示分でなく全件対象) */}
-      <MarkReadOnMount />
+      <MarkReadOnMount audience="tutor" />
 
       {/* ネイビー hero (#130/#131 と統一) */}
       <section className="rounded-xl bg-primary p-4 text-primary-foreground">

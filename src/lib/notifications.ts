@@ -1,14 +1,23 @@
 import "server-only";
-import { and, count, desc, eq, isNull, sql } from "drizzle-orm";
+import { and, arrayContains, count, desc, eq, isNull, sql } from "drizzle-orm";
 import { db } from "@/db/client";
 import type { NotificationHealth } from "@/lib/notification-health";
-import { notifications, notificationTypeEnum } from "@/db/schema";
+import { notifications, notificationTypeEnum, profiles } from "@/db/schema";
+import type { Role } from "@/lib/auth";
 
 /** DB enum (notification_type) から導出し、二重定義を避ける */
 export type NotificationType = (typeof notificationTypeEnum.enumValues)[number];
 
+/**
+ * #344: どの画面のベルに出すか。兼任 (教室長かつ講師) の人は、講師の画面と
+ * 教室長の画面で別々の通知を見る (既読も別々)
+ */
+export type NotificationAudience = Role;
+
 export type NotificationInput = {
   type: NotificationType;
+  /** 省略時は講師向け (#344 より前の通知はすべて講師向け) */
+  audience?: NotificationAudience;
   title: string;
   body?: string;
   /** タップ時の遷移先 (アプリ内パス) */
@@ -39,6 +48,7 @@ export async function insertNotifications(
       targets.map((recipientId) => ({
         recipientId,
         type: input.type,
+        audience: input.audience ?? "tutor",
         title: input.title,
         body: input.body,
         href: input.href,
@@ -74,14 +84,44 @@ export async function notify(
   }
 }
 
-/** 未読件数 */
-export async function getUnreadCount(profileId: string): Promise<number> {
+/**
+ * #344: 有効な教室長全員に通知する (教室長向けのベルに出す)。
+ * notify と同じく失敗しても throw しない (本処理を失敗させない)。
+ */
+export async function notifyAdmins(
+  input: Omit<NotificationInput, "audience">,
+): Promise<void> {
+  try {
+    const admins = await db
+      .select({ id: profiles.id })
+      .from(profiles)
+      .where(
+        and(
+          arrayContains(profiles.roles, ["admin"]),
+          eq(profiles.isActive, true),
+        ),
+      );
+    await insertNotifications(
+      admins.map((a) => a.id),
+      { ...input, audience: "admin" },
+    );
+  } catch (e) {
+    console.error("notifyAdmins failed:", e);
+  }
+}
+
+/** 未読件数 (その画面のベルに出す分だけ) */
+export async function getUnreadCount(
+  profileId: string,
+  audience: NotificationAudience,
+): Promise<number> {
   const rows = await db
     .select({ value: count() })
     .from(notifications)
     .where(
       and(
         eq(notifications.recipientId, profileId),
+        eq(notifications.audience, audience),
         isNull(notifications.readAt),
       ),
     );
@@ -94,12 +134,18 @@ export type NotificationRow = typeof notifications.$inferSelect;
 /** 新着順の一覧 */
 export async function getNotifications(
   profileId: string,
+  audience: NotificationAudience,
   limit = 50,
 ): Promise<NotificationRow[]> {
   return db
     .select()
     .from(notifications)
-    .where(eq(notifications.recipientId, profileId))
+    .where(
+      and(
+        eq(notifications.recipientId, profileId),
+        eq(notifications.audience, audience),
+      ),
+    )
     .orderBy(desc(notifications.createdAt))
     .limit(limit);
 }
@@ -109,13 +155,18 @@ export async function getNotifications(
  * 一覧は最新 50 件しか表示しないため、表示分だけの既読化だと 50 件超の
  * 未読が残ったときバッジが永久に消せなくなる (PR #168 レビュー指摘)。
  */
-export async function markAllRead(profileId: string): Promise<void> {
+export async function markAllRead(
+  profileId: string,
+  audience: NotificationAudience,
+): Promise<void> {
   await db
     .update(notifications)
     .set({ readAt: new Date() })
     .where(
       and(
         eq(notifications.recipientId, profileId),
+        // #344: 開いた画面の分だけ。講師の一覧を開いても教室長向けは未読のまま
+        eq(notifications.audience, audience),
         isNull(notifications.readAt),
       ),
     );
@@ -157,6 +208,8 @@ export async function getNotificationHealth(
         notifications.createdAt,
       ),
       dedupKeyProbe: sql<number>`count(${notifications.dedupKey})::int`,
+      // #344: 0046 (audience 列) が未適用なら insert が全滅するので、ここも踏む
+      audienceProbe: sql<number>`count(${notifications.audience})::int`,
       typeProbe: sql<number>`count(*) filter (where ${notifications.type} = any(array[${typeProbe}]))::int`,
     })
     .from(notifications);
