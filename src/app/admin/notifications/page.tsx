@@ -2,6 +2,7 @@ import { hasRole, requireRole } from "@/lib/auth";
 import { getNotifications } from "@/lib/notifications";
 import { MarkReadOnMount } from "@/components/notifications/mark-read-on-mount";
 import { NotificationList } from "@/components/notifications/notification-list";
+import { PushToggle } from "@/components/push/push-toggle";
 
 /**
  * 教室長向けの通知一覧 (#344)。
@@ -28,6 +29,8 @@ export default async function AdminNotificationsPage() {
             " 講師としての通知 (申請の結果など) は講師の画面に出ます。"}
         </p>
       </div>
+
+      <PushToggle />
 
       <NotificationList items={items} />
     </div>

@@ -4,6 +4,7 @@ import { db } from "@/db/client";
 import type { NotificationHealth } from "@/lib/notification-health";
 import { notifications, notificationTypeEnum, profiles } from "@/db/schema";
 import type { Role } from "@/lib/auth";
+import { sendPushToProfiles } from "@/lib/web-push";
 
 /** DB enum (notification_type) から導出し、二重定義を避ける */
 export type NotificationType = (typeof notificationTypeEnum.enumValues)[number];
@@ -63,7 +64,14 @@ export async function insertNotifications(
         notifications.dedupKey,
       ],
     })
-    .returning({ id: notifications.id });
+    .returning({ recipientId: notifications.recipientId });
+  // #318: ベルに出たものはスマホにも送る (講師宛て・教室長宛てのどちらも)。
+  // dedupKey で弾かれた (既に送った) 分は inserted に入らないので二重に届かない。
+  // sendPushToProfiles は throw しない
+  await sendPushToProfiles(
+    inserted.map((r) => r.recipientId),
+    { title: input.title, body: input.body, href: input.href },
+  );
   return inserted.length;
 }
 

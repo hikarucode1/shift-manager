@@ -1223,3 +1223,36 @@ export const appSettings = pgTable("app_settings", {
     .notNull()
     .defaultNow(),
 });
+
+/* ------------------------------------------------------------------ */
+/*  push_subscriptions — スマホ通知 (Web Push) の宛先 (#318)            */
+/* ------------------------------------------------------------------ */
+/**
+ * 1 端末 (ブラウザ) = 1 行。同じ人がスマホと PC で ON にすれば 2 行になる。
+ * endpoint はブラウザが発行する宛先 URL で、端末ごとに一意。
+ *
+ * 期限切れ (Push サービスが 404/410 を返した) の行は送信時に消す。
+ */
+export const pushSubscriptions = pgTable(
+  "push_subscriptions",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    profileId: uuid("profile_id")
+      .notNull()
+      .references(() => profiles.id, { onDelete: "cascade" }),
+    endpoint: text("endpoint").notNull(),
+    /** 暗号化用の鍵 (ブラウザの PushSubscription.keys) */
+    p256dh: text("p256dh").notNull(),
+    auth: text("auth").notNull(),
+    userAgent: text("user_agent"),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (t) => ({
+    endpointUniq: uniqueIndex("push_subscriptions_endpoint_uniq").on(
+      t.endpoint,
+    ),
+    profileIdx: index("push_subscriptions_profile_idx").on(t.profileId),
+  }),
+);

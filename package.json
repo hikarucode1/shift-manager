@@ -35,6 +35,7 @@
     "react-dom": "19.2.4",
     "react-hook-form": "^7.73.1",
     "tailwind-merge": "^3.5.0",
+    "web-push": "^3.6.7",
     "zod": "^4.3.6"
   },
   "devDependencies": {
@@ -43,6 +44,7 @@
     "@types/pg": "^8.20.0",
     "@types/react": "^19",
     "@types/react-dom": "^19",
+    "@types/web-push": "^3.6.4",
     "dotenv": "^17.4.2",
     "drizzle-kit": "^0.31.10",
     "eslint": "^9",
