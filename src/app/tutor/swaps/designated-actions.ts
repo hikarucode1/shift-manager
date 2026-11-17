@@ -4,7 +4,7 @@ import { revalidatePath } from "next/cache";
 import { z } from "zod";
 import { and, eq, isNotNull } from "drizzle-orm";
 import { requireRole } from "@/lib/auth";
-import { notify } from "@/lib/notifications";
+import { notify, notifyAdmins } from "@/lib/notifications";
 import { db } from "@/db/client";
 import {
   absenceRequests,
@@ -235,6 +235,13 @@ export async function acceptDesignatedSubstitution(
       body: `対象: ${info.date} ${slotLabel} (${info.requesterName}さんの代講)`,
       href: "/tutor",
     }),
+    // #344: 相手を指定した教室長にも知らせる (教室長のベル)
+    notifyAdmins({
+      type: "substitute_response",
+      title: "指定した代講を引き受けてもらえました",
+      body: `対象: ${info.date} ${slotLabel} ／ ${info.requesterName}さんの代講: ${info.applicantName}さん`,
+      href: "/admin/weekly",
+    }),
   ]);
 
   revalidateAll();
@@ -280,12 +287,21 @@ export async function declineDesignatedSubstitution(
 
   const u = updated[0];
   const slotLabel = await slotLabelSafe(u.slotNumber);
-  await notify([u.requesterId], {
-    type: "swap_result",
-    title: "代講の依頼が断られました",
-    body: `対象: ${u.date} ${slotLabel} ／ ${profile.displayName}さんが都合がつきませんでした。教室長からの連絡を待ってください`,
-    href: "/tutor/absences",
-  });
+  await Promise.all([
+    notify([u.requesterId], {
+      type: "swap_result",
+      title: "代講の依頼が断られました",
+      body: `対象: ${u.date} ${slotLabel} ／ ${profile.displayName}さんが都合がつきませんでした。教室長からの連絡を待ってください`,
+      href: "/tutor/absences",
+    }),
+    // #344: 教室長は指定し直すか募集に出す (#345) ので、申請承認へ案内する
+    notifyAdmins({
+      type: "substitute_response",
+      title: "指定した代講が断られました",
+      body: `対象: ${u.date} ${slotLabel} ／ ${profile.displayName}さんが都合がつきません。指定し直すか、代講の募集に出してください`,
+      href: "/admin/requests",
+    }),
+  ]);
 
   revalidateAll();
   return { ok: true };
