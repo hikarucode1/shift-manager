@@ -17,6 +17,9 @@ import {
 import { TrainingHeatmap } from "./training-heatmap";
 import { NotifyPublicationButton } from "./notify-publication-button";
 import { AdminShiftWishNav } from "@/components/admin-section-nav";
+import { GrantChangeForm } from "./grant-change-form";
+import { fetchActiveTutors } from "@/lib/upload-commit";
+import { getTrainingGrantsForPeriod } from "@/lib/shift-change";
 
 export default async function AdminTrainingPage({
   searchParams,
@@ -27,10 +30,25 @@ export default async function AdminTrainingPage({
   const { period } = await searchParams;
 
   if (period) {
-    const [data, tutorNotes] = await Promise.all([
+    const [data, tutorNotes, activeTutors, grantMap] = await Promise.all([
       getHeatmapData(period),
       getTrainingTutorNotes(period),
+      // #333: 1 人だけ再開する
+      fetchActiveTutors(),
+      getTrainingGrantsForPeriod(period, new Date()),
     ]);
+    const tutorName = new Map(activeTutors.map((t) => [t.id, t.displayName]));
+    const grants = [...grantMap.entries()].map(([tutorId, until]) => ({
+      tutorId,
+      name: tutorName.get(tutorId) ?? "（退職した講師）",
+      until: until.toLocaleString("ja-JP", {
+        timeZone: "Asia/Tokyo",
+        month: "numeric",
+        day: "numeric",
+        hour: "2-digit",
+        minute: "2-digit",
+      }),
+    }));
     if (data) {
       return (
         <div className="space-y-6">
@@ -52,6 +70,11 @@ export default async function AdminTrainingPage({
             </div>
           </div>
           <TrainingHeatmap data={data} />
+          <GrantChangeForm
+            periodId={period}
+            tutors={activeTutors.map((t) => ({ id: t.id, name: t.displayName }))}
+            grants={grants}
+          />
           {/* #319: 講師ごとの備考・テスト期間・夏休み */}
           <Card>
             <CardHeader>

@@ -116,6 +116,12 @@ export const notificationTypeEnum = pgEnum("notification_type", [
   "shift_submitted",
   // #338: 教室長宛て。講師が欠勤申請を出した (承認待ち)
   "absence_requested",
+  // #333: 教室長宛て。講師が提出期間外のシフト変更を申請した
+  "shift_change_requested",
+  // #333: 講師宛て。変更申請が承認・却下された
+  "shift_change_result",
+  // #333: 教室長宛て。承認された変更を講師が出し直した / 終えた
+  "shift_change_done",
 ]);
 
 /* ------------------------------------------------------------------ */
@@ -1254,5 +1260,84 @@ export const pushSubscriptions = pgTable(
       t.endpoint,
     ),
     profileIdx: index("push_subscriptions_profile_idx").on(t.profileId),
+  }),
+);
+
+/* ------------------------------------------------------------------ */
+/*  shift_change_requests — 提出期間外のシフト変更申請 (#333)            */
+/* ------------------------------------------------------------------ */
+export const shiftChangeKindEnum = pgEnum("shift_change_kind", [
+  "regular",
+  "training",
+]);
+
+export const shiftChangeStatusEnum = pgEnum("shift_change_status", [
+  "pending",
+  "approved",
+  "rejected",
+  // 講師が出し直した / 終えた、取り下げた、期限が切れた
+  "closed",
+]);
+
+/**
+ * 提出期間の外でレギュラー・講習の希望を変えたいときの申請。教室長が承認すると
+ * `unlocked_until` まで**その講師だけ**編集できる (承認 = 中身の承認ではなく、
+ * 変えることの許可)。講習は教室長が申請なしで 1 人だけ再開することもある
+ * (`reason` に教室長の操作であることを書く)。
+ *
+ * - regular: `regular_period_id` = 変える期 (null = 期が 1 つも無い)
+ * - training: `training_period_id` = 変える講習期間
+ */
+export const shiftChangeRequests = pgTable(
+  "shift_change_requests",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    tutorId: uuid("tutor_id")
+      .notNull()
+      .references(() => profiles.id, { onDelete: "cascade" }),
+    kind: shiftChangeKindEnum("kind").notNull(),
+    regularPeriodId: uuid("regular_period_id").references(
+      () => regularShiftPeriods.id,
+      { onDelete: "cascade" },
+    ),
+    trainingPeriodId: uuid("training_period_id").references(() => periods.id, {
+      onDelete: "cascade",
+    }),
+    reason: text("reason").notNull(),
+    status: shiftChangeStatusEnum("status").notNull().default("pending"),
+    decidedBy: uuid("decided_by").references(() => profiles.id, {
+      onDelete: "set null",
+    }),
+    decidedAt: timestamp("decided_at", { withTimezone: true }),
+    decisionNote: text("decision_note"),
+    /** 承認したときだけ入る。これを過ぎると編集できない */
+    unlockedUntil: timestamp("unlocked_until", { withTimezone: true }),
+    closedAt: timestamp("closed_at", { withTimezone: true }),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (t) => ({
+    kindTarget: check(
+      "shift_change_requests_kind_target",
+      sql`(${t.kind} = 'regular' and ${t.trainingPeriodId} is null) or (${t.kind} = 'training' and ${t.trainingPeriodId} is not null and ${t.regularPeriodId} is null)`,
+    ),
+    // 1 人につき、レギュラーは 1 件、講習は期間ごとに 1 件まで (申請中 + 承認中)
+    activeRegularUniq: uniqueIndex("shift_change_requests_active_regular_uniq")
+      .on(t.tutorId)
+      .where(
+        sql`${t.kind} = 'regular' and ${t.status} in ('pending','approved')`,
+      ),
+    activeTrainingUniq: uniqueIndex(
+      "shift_change_requests_active_training_uniq",
+    )
+      .on(t.tutorId, t.trainingPeriodId)
+      .where(
+        sql`${t.kind} = 'training' and ${t.status} in ('pending','approved')`,
+      ),
+    statusIdx: index("shift_change_requests_status_idx").on(
+      t.status,
+      t.createdAt,
+    ),
   }),
 );

@@ -4,6 +4,7 @@ import {
   CalendarCheck,
   CalendarX,
   ClipboardCheck,
+  ClipboardPen,
   Inbox,
   Repeat,
   UserCheck,
@@ -20,6 +21,10 @@ const TYPE_ICON: Record<NotificationType, typeof Bell> = {
   substitute_response: UserCheck,
   shift_submitted: ClipboardCheck,
   absence_requested: CalendarX,
+  // #333: 提出期間外の変更申請
+  shift_change_requested: ClipboardPen,
+  shift_change_result: ClipboardPen,
+  shift_change_done: ClipboardCheck,
 };
 
 function formatDateTime(d: Date): string {

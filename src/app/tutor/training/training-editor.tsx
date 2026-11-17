@@ -278,7 +278,7 @@ export function TrainingEditor({ data }: TrainingEditorProps) {
       {!editable && (
         <div className="flex items-center gap-2 rounded-md border border-muted bg-muted/50 px-3 py-2 text-sm">
           <Lock className="size-4" />
-          提出締切を過ぎているため、閲覧のみ可能です（変更は教室長が再開放した場合のみ）。
+          提出締切を過ぎているため、閲覧のみです。変えたいときは上の「変更申請」から申請してください。
         </div>
       )}
 

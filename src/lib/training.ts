@@ -9,6 +9,7 @@ import {
 import { getSlotMeta, slotNumbers } from "@/lib/slot-meta";
 import { jstToday, weekdayOf } from "@/lib/week";
 import type { DateRange, TrainingRangeKind } from "@/lib/training-ranges";
+import { getActiveTrainingGrant } from "@/lib/shift-change";
 
 export type TrainingPeriodSummary = {
   id: string;
@@ -20,8 +21,13 @@ export type TrainingPeriodSummary = {
   isReopened: boolean;
   /** 締切までの残り日数 (JST, 負なら締切超過) */
   daysLeft: number;
-  /** 現在編集可能か (締切前 or 再開放) */
+  /** 現在編集可能か (締切前 or 再開放 or #333 本人だけの変更許可) */
   editable: boolean;
+  /**
+   * #333: 締切後に教室長が**この講師だけ**編集を許可している期限 (ISO)。
+   * 許可が無ければ null。一覧 (getActiveTrainingPeriods) では常に null
+   */
+  changeUnlockedUntil: string | null;
 };
 
 export type TrainingSlotDef = {
@@ -60,7 +66,7 @@ function jstStartOfToday(now = new Date()): Date {
   return new Date(Date.UTC(y, m, d) - 9 * 60 * 60 * 1000);
 }
 
-function computeEditable(
+export function computeEditable(
   deadline: Date,
   isReopened: boolean,
   now = new Date(),
@@ -132,6 +138,7 @@ export async function getActiveTrainingPeriods(): Promise<
         isReopened: r.isReopened,
         daysLeft,
         editable,
+        changeUnlockedUntil: null,
       };
     })
     // まだ提出可、または終了から ENDED_VISIBLE_DAYS 日以内のものだけ残す
@@ -166,7 +173,13 @@ export async function getTrainingEditorData(
   }
   const p = prow[0];
   const deadline = p.submissionDeadline as Date;
-  const { editable, daysLeft } = computeEditable(deadline, p.isReopened);
+  const computed = computeEditable(deadline, p.isReopened);
+  const { daysLeft } = computed;
+  // #333: 締切後でも、教室長がこの講師だけ許可していれば編集できる
+  const grant = computed.editable
+    ? null
+    : await getActiveTrainingGrant(tutorId, periodId, new Date());
+  const editable = computed.editable || grant !== null;
 
   const slotMeta = await getSlotMeta();
   const slots: TrainingSlotDef[] = slotNumbers(slotMeta).map((n) => {
@@ -233,6 +246,7 @@ export async function getTrainingEditorData(
       isReopened: p.isReopened,
       daysLeft,
       editable,
+      changeUnlockedUntil: grant ? grant.unlockedUntil.toISOString() : null,
     },
     slots,
     days,
@@ -254,6 +268,8 @@ export async function getTrainingEditorData(
  */
 export async function assertTrainingEditable(
   periodId: string,
+  /** #333: この講師だけの変更許可も見る */
+  tutorId: string,
 ): Promise<
   | { ok: true; startDate: string; endDate: string }
   | { ok: false; reason: string }
@@ -279,8 +295,15 @@ export async function assertTrainingEditable(
     r.submissionDeadline as Date,
     r.isReopened,
   );
-  if (!editable) {
-    return { ok: false, reason: "提出締切を過ぎています。" };
+  if (
+    !editable &&
+    !(await getActiveTrainingGrant(tutorId, periodId, new Date()))
+  ) {
+    return {
+      ok: false,
+      reason:
+        "提出締切を過ぎています。変更したいときは「変更申請」を出してください。",
+    };
   }
   return { ok: true, startDate: r.startDate, endDate: r.endDate };
 }
