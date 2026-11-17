@@ -2,6 +2,7 @@ import { requireRole } from "@/lib/auth";
 import { getNotifications } from "@/lib/notifications";
 import { MarkReadOnMount } from "@/components/notifications/mark-read-on-mount";
 import { NotificationList } from "@/components/notifications/notification-list";
+import { PushToggle } from "@/components/push/push-toggle";
 
 export default async function TutorNotificationsPage() {
   const { profile } = await requireRole("tutor");
@@ -31,6 +32,8 @@ export default async function TutorNotificationsPage() {
           申請の結果や確定シフトの公開をお知らせします。
         </p>
       </section>
+
+      <PushToggle />
 
       <NotificationList items={items} />
     </div>
