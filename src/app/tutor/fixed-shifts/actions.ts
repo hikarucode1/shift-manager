@@ -15,6 +15,8 @@ import {
   resolveSaveScope,
   resolveServerEffectiveFrom,
 } from "@/lib/regular-submission-target";
+import { notifyAdmins } from "@/lib/notifications";
+import { regularSubmittedNotice } from "@/lib/submission-notice";
 import {
   normalizePreferredStudents,
   parseStoredPreferredStudents,
@@ -430,6 +432,12 @@ export async function submitFixedShifts(): Promise<SubmitFixedShiftsResult> {
       error: "状態が変わりました。ページを再読込してください。",
     };
   }
+
+  // #338: 教室長のベルに知らせる。下書きに戻して出し直したときも、中身が
+  // 変わっている可能性があるので毎回知らせる。失敗しても提出は成功のまま
+  await notifyAdmins(
+    regularSubmittedNotice(profile.displayName, current.effectiveFrom),
+  );
 
   revalidatePath("/tutor/fixed-shifts");
   // R-5: クライアントの new Date() ではなくサーバが実際に書いた値を返す

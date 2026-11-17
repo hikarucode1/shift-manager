@@ -23,7 +23,7 @@ export default async function AdminNotificationsPage() {
       <div>
         <h1 className="text-2xl font-semibold">通知</h1>
         <p className="mt-1 text-sm text-muted-foreground">
-          代講の依頼への返事などをお知らせします。
+          シフトの提出や、代講の依頼への返事をお知らせします。
           {hasRole(profile, "tutor") &&
             " 講師としての通知 (申請の結果など) は講師の画面に出ます。"}
         </p>

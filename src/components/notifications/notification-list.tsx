@@ -1,5 +1,12 @@
 import Link from "next/link";
-import { Bell, CalendarCheck, Inbox, Repeat, UserCheck } from "lucide-react";
+import {
+  Bell,
+  CalendarCheck,
+  ClipboardCheck,
+  Inbox,
+  Repeat,
+  UserCheck,
+} from "lucide-react";
 import type { NotificationRow, NotificationType } from "@/lib/notifications";
 import { Card, CardContent } from "@/components/ui/card";
 import { cn } from "@/lib/utils";
@@ -10,6 +17,7 @@ const TYPE_ICON: Record<NotificationType, typeof Bell> = {
   shifts_published: CalendarCheck,
   swap_posted: Repeat,
   substitute_response: UserCheck,
+  shift_submitted: ClipboardCheck,
 };
 
 function formatDateTime(d: Date): string {

@@ -330,6 +330,13 @@
       "when": 1794876221308,
       "tag": "0046_notification_audience",
       "breakpoints": true
+    },
+    {
+      "idx": 47,
+      "version": "7",
+      "when": 1794877221190,
+      "tag": "0047_shift_submitted_notification",
+      "breakpoints": true
     }
   ]
 }
