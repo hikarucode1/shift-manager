@@ -2,7 +2,13 @@
 
 import { useEffect, useMemo, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
-import { Check, Snowflake, ThermometerSnowflake } from "lucide-react";
+import {
+  Check,
+  ChevronDown,
+  ChevronUp,
+  Snowflake,
+  ThermometerSnowflake,
+} from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -126,6 +132,14 @@ function symbolFor(a: "yes" | "maybe" | "no" | undefined): string {
   return "";
 }
 
+/** 講師別ステータスの数のタイル。key は submission.status (未提出は "none") */
+const STATUS_TILES = [
+  { key: "submitted", label: "提出済み", tone: "border-primary/30 bg-primary/5" },
+  { key: "draft", label: "下書き（未提出）", tone: "border-amber-300 bg-amber-50" },
+  { key: "none", label: "未提出", tone: "border-destructive/30 bg-destructive/5" },
+  { key: "frozen", label: "凍結", tone: "" },
+] as const;
+
 /** (tutorId, weekday, slot) を 1 つの文字列 key にする */
 function assignKey(tutorId: string, weekday: string, slot: number): string {
   return `${tutorId}:${weekday}:${slot}`;
@@ -177,6 +191,17 @@ export function AdminSubmissionsOverview({
   const isMatch = (t: TutorView) =>
     !filterOn || matchesSubjectFilter(t, subjectFilter);
   const sortedTutors = matchFirst(tutors, isMatch);
+
+  // 講師別ステータス: 全員分のカードは開いたときだけ出す (11/18 本人)
+  const [showAllStatus, setShowAllStatus] = useState(false);
+  const notYet = sortedTutors.filter(
+    (t) => t.submission === null || t.submission.status === "draft",
+  );
+  const withNotes = sortedTutors.filter(
+    (t) =>
+      t.submission &&
+      (t.submission.note || t.submission.preferredStudents.length > 0),
+  );
 
   // #361: いま見ている曜日
   const [weekday, setWeekday] = useState<InputWeekday>("mon");
@@ -412,26 +437,113 @@ export function AdminSubmissionsOverview({
         )}
       </div>
 
-      {/* 講師ごとのステータスカード */}
+      {/* 講師ごとのステータスカード
+          (11/18 本人: 1 人 1 枚のカードだと縦に長いので、数と「まだの人」だけを
+          先に出し、全員分は開いたときだけ出す) */}
       <Card>
         <CardHeader>
           <CardTitle className="text-base">
             講師別ステータス ({formatMonth(targetMonth)})
           </CardTitle>
-          <CardDescription>
-            {tutors.length} 名中、提出済み{" "}
-            {
-              tutors.filter((t) => t.submission?.status === "submitted").length
-            }{" "}
-            名 / 下書き{" "}
-            {tutors.filter((t) => t.submission?.status === "draft").length} 名 /
-            凍結{" "}
-            {tutors.filter((t) => t.submission?.status === "frozen").length} 名
-            / 未提出{" "}
-            {tutors.filter((t) => t.submission === null).length} 名
-          </CardDescription>
+          <CardDescription>{tutors.length} 名分の提出状況です。</CardDescription>
         </CardHeader>
-        <CardContent className="space-y-3">
+        <CardContent className="space-y-4">
+          <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
+            {STATUS_TILES.map((tile) => {
+              const n = tutors.filter(
+                (t) => (t.submission?.status ?? "none") === tile.key,
+              ).length;
+              return (
+                <div
+                  key={tile.key}
+                  className={cn("rounded-lg border p-3", n > 0 && tile.tone)}
+                >
+                  <p className="text-xs text-muted-foreground">{tile.label}</p>
+                  <p className="text-2xl font-bold tabular-nums">
+                    {n}
+                    <span className="ml-0.5 text-sm font-normal">名</span>
+                  </p>
+                </div>
+              );
+            })}
+          </div>
+
+          {/* 声をかける相手 */}
+          <div className="space-y-1.5">
+            <p className="text-sm font-medium">
+              まだ提出していない人 ({notYet.length} 名)
+            </p>
+            {notYet.length === 0 ? (
+              <p className="text-sm text-muted-foreground">
+                全員が提出しました。
+              </p>
+            ) : (
+              <div className="flex flex-wrap gap-1.5">
+                {notYet.map((t) => (
+                  <span
+                    key={t.id}
+                    className={cn(
+                      "inline-flex items-center gap-1 rounded-full border px-2.5 py-1 text-xs",
+                      !isMatch(t) && "opacity-40",
+                    )}
+                  >
+                    <TrackDot track={t.track} />
+                    {t.displayName}
+                    {t.submission?.status === "draft" && (
+                      <span className="text-muted-foreground">（下書き）</span>
+                    )}
+                  </span>
+                ))}
+              </div>
+            )}
+          </div>
+
+          {withNotes.length > 0 && (
+            <div className="space-y-1.5">
+              <p className="text-sm font-medium">
+                メモ・担当したい生徒の書き込み ({withNotes.length} 名)
+              </p>
+              <ul className="space-y-1 text-xs text-muted-foreground">
+                {withNotes.map((t) => (
+                  <li key={t.id}>
+                    <span className="font-medium text-foreground">
+                      {t.displayName}
+                    </span>
+                    {t.submission!.preferredStudents.length > 0 && (
+                      <>
+                        ：担当したい生徒{" "}
+                        {formatPreferredStudents(
+                          t.submission!.preferredStudents,
+                        )}
+                      </>
+                    )}
+                    {t.submission!.note && (
+                      <span className="whitespace-pre-wrap">
+                        ：📝 {t.submission!.note}
+                      </span>
+                    )}
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
+
+          <Button
+            variant="outline"
+            size="sm"
+            aria-expanded={showAllStatus}
+            onClick={() => setShowAllStatus((v) => !v)}
+          >
+            {showAllStatus ? (
+              <ChevronUp className="mr-1 size-4" />
+            ) : (
+              <ChevronDown className="mr-1 size-4" />
+            )}
+            {showAllStatus ? "全員分を閉じる" : "全員分を見る（凍結もここから）"}
+          </Button>
+        </CardContent>
+        {showAllStatus && (
+        <CardContent className="space-y-3 border-t pt-4">
           {sortedTutors.map((t) => {
             const status = t.submission?.status ?? "未提出";
             const badge = statusBadgeProps(status);
@@ -517,6 +629,7 @@ export function AdminSubmissionsOverview({
             </p>
           )}
         </CardContent>
+        )}
       </Card>
 
       {/* #361: 曜日ごとに「このコマに誰が来られるか」を名前で並べ、名前を押して
