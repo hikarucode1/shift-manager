@@ -31,7 +31,13 @@ export type HeatmapDay = {
   isWeekend: boolean;
 };
 
-export type HeatmapTutor = { id: string; name: string };
+export type HeatmapTutor = {
+  id: string;
+  name: string;
+  /** #350: 文理 (未登録は null) と担当できる科目の key。絞り込みに使う */
+  track: string | null;
+  subjects: string[];
+};
 
 export type HeatmapData = {
   period: HeatmapPeriod;
@@ -120,6 +126,8 @@ export async function getHeatmapData(
         slotNumber: trainingPreferences.slotNumber,
         tutorId: trainingPreferences.tutorId,
         tutorName: profiles.displayName,
+        tutorTrack: profiles.track,
+        tutorSubjects: profiles.teachableSubjects,
       })
       .from(trainingPreferences)
       .innerJoin(profiles, eq(profiles.id, trainingPreferences.tutorId))
@@ -157,7 +165,12 @@ export async function getHeatmapData(
   for (const r of prefRows) {
     const key = `${r.date}|${r.slotNumber}`;
     const list = tutorsByCell[key] ?? (tutorsByCell[key] = []);
-    list.push({ id: r.tutorId, name: r.tutorName });
+    list.push({
+      id: r.tutorId,
+      name: r.tutorName,
+      track: r.tutorTrack,
+      subjects: r.tutorSubjects,
+    });
     const c = (counts[key] = (counts[key] ?? 0) + 1);
     if (c > maxCount) maxCount = c;
     submitted.add(r.tutorId);
@@ -180,11 +193,16 @@ export async function getHeatmapData(
   const orphanTutors: Record<string, HeatmapTutor> = {};
   if (orphanIdSet.size > 0) {
     const orphanRows = await db
-      .select({ id: profiles.id, name: profiles.displayName })
+      .select({
+        id: profiles.id,
+        name: profiles.displayName,
+        track: profiles.track,
+        subjects: profiles.teachableSubjects,
+      })
       .from(profiles)
       .where(inArray(profiles.id, Array.from(orphanIdSet)));
     for (const o of orphanRows) {
-      orphanTutors[o.id] = { id: o.id, name: o.name };
+      orphanTutors[o.id] = o;
     }
   }
 

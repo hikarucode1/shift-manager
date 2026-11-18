@@ -10,6 +10,14 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { shortDate } from "@/lib/week";
 import { cn } from "@/lib/utils";
+import { SubjectFilterBar, TrackDot } from "@/components/subject-filter-bar";
+import {
+  NO_SUBJECT_FILTER,
+  isSubjectFilterOn,
+  matchFirst,
+  matchesSubjectFilter,
+  type SubjectFilter,
+} from "@/lib/tutor-subjects";
 import { saveCourseConfirmations } from "./confirm-actions";
 
 /**
@@ -52,6 +60,27 @@ export function TrainingHeatmap({ data }: { data: HeatmapData }) {
 
   const [isPending, startTransition] = useTransition();
   const [open, setOpen] = useState<OpenCell | null>(null);
+
+  // #350: 文理・科目で絞り込む。表の数字は「合う希望者の数」にし、
+  // マスを開いた一覧では合う人を先頭に、合わない人は薄く残す (11/18 本人)
+  const [subjectFilter, setSubjectFilter] =
+    useState<SubjectFilter>(NO_SUBJECT_FILTER);
+  const filterOn = isSubjectFilterOn(subjectFilter);
+  const isMatch = (t: HeatmapTutor) =>
+    !filterOn || matchesSubjectFilter(t, subjectFilter);
+  const shownCounts = useMemo<Record<string, number>>(() => {
+    if (!filterOn) return counts;
+    const out: Record<string, number> = {};
+    for (const [key, list] of Object.entries(tutorsByCell)) {
+      out[key] = list.filter((t) =>
+        matchesSubjectFilter(t, subjectFilter),
+      ).length;
+    }
+    return out;
+  }, [filterOn, counts, tutorsByCell, subjectFilter]);
+  const shownMax = filterOn
+    ? Math.max(0, ...Object.values(shownCounts))
+    : maxCount;
   // モーダル内: 編集中の確定講師 ID セット
   const [editedConfirmedIds, setEditedConfirmedIds] = useState<Set<string>>(
     () => new Set(),
@@ -140,7 +169,15 @@ export function TrainingHeatmap({ data }: { data: HeatmapData }) {
     const submitted = new Set(open.tutors.map((t) => t.id));
     return open.initialConfirmedIds
       .filter((id) => !submitted.has(id))
-      .map((id) => orphanTutors[id] ?? { id, name: `(不明な講師: ${id})` });
+      .map(
+        (id) =>
+          orphanTutors[id] ?? {
+            id,
+            name: `(不明な講師: ${id})`,
+            track: null,
+            subjects: [],
+          },
+      );
   }, [open, orphanTutors]);
 
   const dirty = useMemo(() => {
@@ -165,8 +202,20 @@ export function TrainingHeatmap({ data }: { data: HeatmapData }) {
         </p>
       )}
 
+      <div className="space-y-1.5 rounded-lg border bg-muted/30 p-3">
+        <p className="text-sm font-medium">文理・科目で絞り込む</p>
+        <SubjectFilterBar value={subjectFilter} onChange={setSubjectFilter} />
+        {filterOn && (
+          <p className="text-xs text-muted-foreground">
+            表の数字は、絞り込みに合う希望者の数です。マスを押すと合う人が先頭に出ます。
+          </p>
+        )}
+      </div>
+
       <div className="flex flex-wrap items-center gap-3 text-xs text-muted-foreground">
-        <span>色が濃いほど希望者が多い（最大 {maxCount} 名）</span>
+        <span>
+          色が濃いほど{filterOn ? "合う" : ""}希望者が多い（最大 {shownMax} 名）
+        </span>
         <span className="flex items-center gap-1">
           少
           {HEAT_ALPHA.slice(1).map((a) => (
@@ -220,15 +269,17 @@ export function TrainingHeatmap({ data }: { data: HeatmapData }) {
                 </th>
                 {days.map((d) => {
                   const key = `${d.date}|${s.slotNumber}`;
-                  const c = counts[key] ?? 0;
+                  const c = shownCounts[key] ?? 0;
+                  // 絞り込みで 0 人になっても、希望者がいればマスは開ける
+                  const all = counts[key] ?? 0;
                   const confirmedCount = (confirmedByCell[key] ?? []).length;
-                  const level = heatLevel(c, maxCount);
+                  const level = heatLevel(c, shownMax);
                   const a = HEAT_ALPHA[level];
                   // 最濃 (level 4 = フル accent) のみ白文字。level 3 (alpha 0.62) は
                   // 薄めの橙で白文字だとコントラスト不足のため既定の濃色文字に保つ
                   // (#127 review)。白 on フル accent はアプリ標準の bg-accent と同基準。
                   const dark = level >= 4;
-                  const cellInteractive = c > 0 || confirmedCount > 0;
+                  const cellInteractive = all > 0 || confirmedCount > 0;
                   return (
                     <td key={d.date} className="border p-0">
                       <button
@@ -237,7 +288,9 @@ export function TrainingHeatmap({ data }: { data: HeatmapData }) {
                         onClick={() => openCell(d.date, s.slotNumber, s.label)}
                         title={
                           cellInteractive
-                            ? `${shortDate(d.date)} ${s.label}: 希望 ${c} 名 / 確定 ${confirmedCount} 名`
+                            ? filterOn
+                              ? `${shortDate(d.date)} ${s.label}: 合う希望者 ${c} 名 (希望 ${all} 名) / 確定 ${confirmedCount} 名`
+                              : `${shortDate(d.date)} ${s.label}: 希望 ${c} 名 / 確定 ${confirmedCount} 名`
                             : undefined
                         }
                         className={cn(
@@ -252,7 +305,7 @@ export function TrainingHeatmap({ data }: { data: HeatmapData }) {
                             a > 0 ? `hsl(var(--accent) / ${a})` : undefined,
                         }}
                       >
-                        <span>{c > 0 ? c : "·"}</span>
+                        <span>{c > 0 ? c : all > 0 ? "0" : "·"}</span>
                         {confirmedCount > 0 && (
                           <span
                             className={cn(
@@ -316,7 +369,7 @@ export function TrainingHeatmap({ data }: { data: HeatmapData }) {
                 </p>
               ) : (
                 <ul className="max-h-72 space-y-1 overflow-y-auto text-sm">
-                  {open.tutors.map((t) => {
+                  {matchFirst(open.tutors, isMatch).map((t) => {
                     const checked = editedConfirmedIds.has(t.id);
                     return (
                       <li key={t.id}>
@@ -324,6 +377,7 @@ export function TrainingHeatmap({ data }: { data: HeatmapData }) {
                           className={cn(
                             "flex cursor-pointer items-center gap-2 rounded px-2 py-1 hover:bg-muted/50",
                             checked && "bg-emerald-50 dark:bg-emerald-950/30",
+                            !isMatch(t) && "opacity-40",
                           )}
                         >
                           <input
@@ -332,6 +386,7 @@ export function TrainingHeatmap({ data }: { data: HeatmapData }) {
                             onChange={() => toggleTutor(t.id)}
                             disabled={isPending}
                           />
+                          <TrackDot track={t.track} />
                           <span>{t.name}</span>
                           {checked && (
                             <Check className="ml-auto size-3 text-emerald-600" />
@@ -361,6 +416,7 @@ export function TrainingHeatmap({ data }: { data: HeatmapData }) {
                                 onChange={() => toggleTutor(t.id)}
                                 disabled={isPending}
                               />
+                              <TrackDot track={t.track} />
                               <span>{t.name}</span>
                               <span className="text-[10px] text-amber-800 dark:text-amber-300">
                                 (希望未提出)

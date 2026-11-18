@@ -60,6 +60,9 @@ export default async function AdminFixedShiftsOverviewPage({
           id: profiles.id,
           displayName: profiles.displayName,
           email: profiles.email,
+          // #350: 文理・担当できる科目で絞り込む
+          track: profiles.track,
+          teachableSubjects: profiles.teachableSubjects,
         })
         .from(profiles)
         .where(
@@ -193,6 +196,8 @@ export default async function AdminFixedShiftsOverviewPage({
       id: t.id,
       displayName: t.displayName,
       email: t.email,
+      track: t.track,
+      subjects: t.teachableSubjects,
       submission: sub
         ? {
             effectiveFrom: sub.effectiveFrom,
