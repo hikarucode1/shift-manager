@@ -512,7 +512,7 @@ export async function saveTutorTeachingProfile(input: {
   await requireRole("admin");
   const id = z.string().uuid().safeParse(input?.profileId);
   if (!id.success) return { ok: false, error: "入力が不正です。" };
-  const checked = checkTeachingProfile(input);
+  const checked = checkTeachingProfile(input ?? {});
   if (!checked.ok) return checked;
 
   const updated = await db
@@ -530,6 +530,7 @@ export async function saveTutorTeachingProfile(input: {
     return { ok: false, error: "講師が見つかりません。" };
   }
 
+  revalidatePath("/admin/tutors");
   revalidatePath(`/admin/tutors/${id.data}`);
   revalidatePath("/admin/tutor-subjects");
   return { ok: true };

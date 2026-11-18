@@ -30,6 +30,9 @@ export async function saveMyTeachingProfile(input: {
 
   revalidatePath("/tutor/me");
   revalidatePath("/tutor");
+  // #349: 教室長の一覧・詳細・担当科目の表にも同じ内容が出る
+  revalidatePath("/admin/tutors");
+  revalidatePath(`/admin/tutors/${profile.id}`);
   revalidatePath("/admin/tutor-subjects");
   return { ok: true };
 }

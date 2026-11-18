@@ -101,8 +101,8 @@ export function normalizeSubjects(keys: readonly string[]): string[] {
  * 文理は必須、科目は 1 つ以上。知らない key は弾く。
  */
 export function checkTeachingProfile(input: {
-  track: unknown;
-  subjects: unknown;
+  track?: unknown;
+  subjects?: unknown;
 }):
   | { ok: true; track: TrackKey; subjects: string[] }
   | { ok: false; error: string } {
