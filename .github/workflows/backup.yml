@@ -1,0 +1,95 @@
+# 本番 DB の毎日のバックアップ。
+#
+# Supabase の無料プランには、画面から戻せるバックアップが無い。誤操作や障害で
+# データが消えたときに戻せるよう、毎朝 1 回、本番を丸ごと書き出して残す。
+# 戻し方: docs/runbooks/db-backup-restore.md
+#
+# ⚠️ **このリポジトリは公開 (public)。** artifact は GitHub にログインした誰でも
+# ダウンロードできる。だからファイルは必ず暗号化し (AES256、パスフレーズは
+# secret `BACKUP_PASSPHRASE`)、平文はディスクにも残さない (scripts/backup-db.sh)。
+# パスフレーズは長いランダムな文字列にして、secret とは別に光さんが保管する
+# (GitHub の secret は後から読み出せないので、無くすと戻せない)。
+#
+# 接続先: secret `PROD_DATABASE_URL` (Transaction pooler 6543) のポートだけを
+# 5432 に変えた **Session pooler** を使う。pg_dump は transaction pooler では
+# 正しく動かず、direct connection は無料プランだと IPv6 専用で Actions から届かない。
+name: db backup
+
+on:
+  # 毎朝 05:00 JST (= 20:00 UTC)。migration guard (06:00 JST) より前
+  schedule:
+    - cron: "0 20 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  backup:
+    name: backup (production)
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    # 上流のリポジトリだけ (fork では動かさない)
+    if: github.repository == 'hikarucode1/shift-manager'
+    concurrency:
+      group: db-backup
+      cancel-in-progress: false
+    steps:
+      - name: Require secrets
+        # 未設定なら落とす。skip だと「取っているつもりで何も無い」状態が続く
+        env:
+          PROD_DATABASE_URL: ${{ secrets.PROD_DATABASE_URL }}
+          BACKUP_PASSPHRASE: ${{ secrets.BACKUP_PASSPHRASE }}
+        run: |
+          missing=""
+          [ -z "${PROD_DATABASE_URL}" ] && missing="${missing} PROD_DATABASE_URL"
+          [ -z "${BACKUP_PASSPHRASE}" ] && missing="${missing} BACKUP_PASSPHRASE"
+          if [ -n "${missing}" ]; then
+            {
+              echo "### secret が未設定です:${missing}"
+              echo ""
+              echo "Settings > Secrets and variables > Actions に登録してください。"
+              echo "手順は docs/runbooks/db-backup-restore.md にあります。"
+            } >> "$GITHUB_STEP_SUMMARY"
+            echo "::error::secret が未設定のため、バックアップを取れません:${missing}"
+            exit 1
+          fi
+          if [ "${#BACKUP_PASSPHRASE}" -lt 24 ]; then
+            echo "::error::BACKUP_PASSPHRASE が短すぎます (24 文字以上にしてください)"
+            exit 1
+          fi
+
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - name: Install PostgreSQL 17 client
+        # Supabase のサーバーより古い pg_dump は動かないので、新しい版を入れる
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq postgresql-common
+          sudo /usr/share/postgresql-common/pgdg/apt.postgresql.org.sh -y
+          sudo apt-get install -y -qq postgresql-client-17
+          echo "/usr/lib/postgresql/17/bin" >> "$GITHUB_PATH"
+
+      - name: Dump, compress and encrypt
+        env:
+          PROD_DATABASE_URL: ${{ secrets.PROD_DATABASE_URL }}
+          BACKUP_PASSPHRASE: ${{ secrets.BACKUP_PASSPHRASE }}
+        run: |
+          # Transaction pooler (6543) → Session pooler (5432)
+          export BACKUP_DATABASE_URL="${PROD_DATABASE_URL/:6543\//:5432/}"
+          export BACKUP_OUT="backup-$(TZ=Asia/Tokyo date +%Y%m%d-%H%M).sql.gz.gpg"
+          echo "BACKUP_FILE=${BACKUP_OUT}" >> "$GITHUB_ENV"
+          pg_dump --version
+          scripts/backup-db.sh
+
+      - name: Keep the encrypted backup
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ env.BACKUP_FILE }}
+          path: ${{ env.BACKUP_FILE }}
+          retention-days: 90
+          if-no-files-found: error
+          # 暗号化済みで圧縮も済んでいる
+          compression-level: 0
