@@ -9,6 +9,11 @@ import {
   inviteStatusOf,
   type InviteStatus,
 } from "@/lib/invite-resend";
+import {
+  normalizeSubjects,
+  subjectShortLabel,
+  trackLabel,
+} from "@/lib/tutor-subjects";
 import { TutorManager } from "./tutor-manager";
 
 /**
@@ -66,6 +71,8 @@ export default async function AdminTutorsPage() {
       isActive: profiles.isActive,
       authUserId: profiles.authUserId,
       createdAt: profiles.createdAt,
+      track: profiles.track,
+      teachableSubjects: profiles.teachableSubjects,
     })
     .from(profiles)
     .where(arrayContains(profiles.roles, ["tutor"]))
@@ -85,6 +92,9 @@ export default async function AdminTutorsPage() {
         ? null
         : (inviteStatuses?.get(t.authUserId) ?? "unknown"),
     createdAt: t.createdAt.toISOString(),
+    // #349: 一覧の「担当科目」列
+    track: trackLabel(t.track),
+    subjects: normalizeSubjects(t.teachableSubjects).map(subjectShortLabel),
   }));
 
   return (

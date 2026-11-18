@@ -21,7 +21,7 @@ export function AdminShell({
 }) {
   return (
     <div className="flex min-h-screen flex-1 flex-col">
-      <header className="sticky top-0 z-20 border-b bg-primary text-primary-foreground">
+      <header className="sticky top-0 z-20 border-b bg-primary text-primary-foreground print:hidden">
         <div className="mx-auto flex max-w-6xl items-center justify-between px-4 py-3">
           <Link href="/" className="flex items-baseline gap-2">
             <span className="text-lg font-semibold">Shift Manager</span>

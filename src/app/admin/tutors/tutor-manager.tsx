@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState, useTransition } from "react";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import {
   AlertCircle,
@@ -51,6 +52,10 @@ export type TutorRow = {
    */
   inviteStatus: InviteStatus | null;
   createdAt: string;
+  /** #349: 文理の表示名 (未登録は null) */
+  track: string | null;
+  /** #349: 担当できる科目の短い表示名 (「中英」「高数IA」) */
+  subjects: string[];
 };
 
 // 列幅: 氏名 / メール / 状態 / 担当科目 / 操作
@@ -346,9 +351,13 @@ export function TutorManager({
                         >
                           {avatarInitial(t.displayName)}
                         </span>
-                        <span className="truncate font-semibold">
+                        {/* #349: 名前から講師の詳細 (担当科目) へ */}
+                        <Link
+                          href={`/admin/tutors/${t.id}`}
+                          className="truncate font-semibold underline-offset-4 hover:text-primary hover:underline"
+                        >
                           {t.displayName}
-                        </span>
+                        </Link>
                         {t.id === currentProfileId && (
                           <Badge variant="outline" className="shrink-0">
                             自分
@@ -392,9 +401,24 @@ export function TutorManager({
                           </Badge>
                         )}
                       </div>
-                      {/* 担当科目 (per-tutor マスタ未対応) */}
-                      <div className="px-3.5 py-2.5 text-muted-foreground/50">
-                        —
+                      {/* #349: 担当科目。全部は入らないので先頭だけ出し、残りは詳細で */}
+                      <div className="min-w-0 px-3.5 py-2.5 text-sm">
+                        {t.track && t.subjects.length > 0 ? (
+                          <Link
+                            href={`/admin/tutors/${t.id}`}
+                            className="block truncate hover:text-primary"
+                            title={`${t.track}・${t.subjects.join(" ")}`}
+                          >
+                            <span className="mr-1.5 font-medium">{t.track}</span>
+                            <span className="text-muted-foreground">
+                              {t.subjects.slice(0, 3).join(" ")}
+                              {t.subjects.length > 3 &&
+                                ` ほか${t.subjects.length - 3}`}
+                            </span>
+                          </Link>
+                        ) : (
+                          <span className="text-muted-foreground/60">未登録</span>
+                        )}
                       </div>
                       {/* 操作 */}
                       <div className="px-3.5 py-2.5 text-right">

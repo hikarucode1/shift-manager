@@ -9,6 +9,7 @@ import { db } from "@/db/client";
 import { profiles } from "@/db/schema";
 import { isUniqueViolation } from "@/lib/db-errors";
 import { setProfileActive } from "@/lib/profile-active";
+import { checkTeachingProfile } from "@/lib/tutor-subjects";
 import { createAdminClient } from "@/lib/supabase/admin";
 import {
   acceptanceRefusal,
@@ -495,5 +496,41 @@ export async function renameTutor(input: unknown): Promise<ActionResult> {
   }
 
   revalidatePath("/admin/tutors");
+  return { ok: true };
+}
+
+/**
+ * #349: 教室長が講師の文理・担当できる科目を登録・修正する
+ * (まだログインしていない講師の分を代わりに入れるときにも使う)。
+ * 確認は講師本人の保存 (#348) と同じ checkTeachingProfile。
+ */
+export async function saveTutorTeachingProfile(input: {
+  profileId: unknown;
+  track: unknown;
+  subjects: unknown;
+}): Promise<ActionResult> {
+  await requireRole("admin");
+  const id = z.string().uuid().safeParse(input?.profileId);
+  if (!id.success) return { ok: false, error: "入力が不正です。" };
+  const checked = checkTeachingProfile(input);
+  if (!checked.ok) return checked;
+
+  const updated = await db
+    .update(profiles)
+    .set({
+      track: checked.track,
+      teachableSubjects: checked.subjects,
+      updatedAt: new Date(),
+    })
+    .where(
+      and(eq(profiles.id, id.data), arrayContains(profiles.roles, ["tutor"])),
+    )
+    .returning({ id: profiles.id });
+  if (updated.length === 0) {
+    return { ok: false, error: "講師が見つかりません。" };
+  }
+
+  revalidatePath(`/admin/tutors/${id.data}`);
+  revalidatePath("/admin/tutor-subjects");
   return { ok: true };
 }
