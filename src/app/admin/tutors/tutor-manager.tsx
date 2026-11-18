@@ -5,6 +5,8 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import {
   AlertCircle,
+  ChevronRight,
+  Plus,
   CheckCircle2,
   KeyRound,
   Mail,
@@ -403,22 +405,38 @@ export function TutorManager({
                       </div>
                       {/* #349: 担当科目。全部は入らないので先頭だけ出し、残りは詳細で */}
                       <div className="min-w-0 px-3.5 py-2.5 text-sm">
-                        {t.track && t.subjects.length > 0 ? (
-                          <Link
-                            href={`/admin/tutors/${t.id}`}
-                            className="block truncate hover:text-primary"
-                            title={`${t.track}・${t.subjects.join(" ")}`}
-                          >
-                            <span className="mr-1.5 font-medium">{t.track}</span>
-                            <span className="text-muted-foreground">
-                              {t.subjects.slice(0, 3).join(" ")}
-                              {t.subjects.length > 3 &&
-                                ` ほか${t.subjects.length - 3}`}
+                        {/* 名前を押す発想にはならないので、押せると分かる形にする */}
+                        <Link
+                          href={`/admin/tutors/${t.id}`}
+                          title={
+                            t.track
+                              ? `${t.track}・${t.subjects.join(" ")}`
+                              : undefined
+                          }
+                          className={cn(
+                            "inline-flex max-w-full items-center gap-1 rounded-md border px-2 py-1 transition-colors",
+                            t.track && t.subjects.length > 0
+                              ? "bg-background hover:border-primary/40 hover:bg-primary/5"
+                              : "border-dashed border-primary/40 font-medium text-primary hover:bg-primary/5",
+                          )}
+                        >
+                          {t.track && t.subjects.length > 0 ? (
+                            <span className="truncate">
+                              <span className="mr-1.5 font-medium">{t.track}</span>
+                              <span className="text-muted-foreground">
+                                {t.subjects.slice(0, 3).join(" ")}
+                                {t.subjects.length > 3 &&
+                                  ` ほか${t.subjects.length - 3}`}
+                              </span>
                             </span>
-                          </Link>
-                        ) : (
-                          <span className="text-muted-foreground/60">未登録</span>
-                        )}
+                          ) : (
+                            <>
+                              <Plus className="size-3.5 shrink-0" />
+                              登録する
+                            </>
+                          )}
+                          <ChevronRight className="size-3.5 shrink-0 text-muted-foreground" />
+                        </Link>
                       </div>
                       {/* 操作 */}
                       <div className="px-3.5 py-2.5 text-right">

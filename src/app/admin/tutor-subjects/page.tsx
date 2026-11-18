@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { and, arrayContains, asc, eq } from "drizzle-orm";
-import { Check } from "lucide-react";
+import { Check, Pencil } from "lucide-react";
 import { requireRole } from "@/lib/auth";
 import { db } from "@/db/client";
 import { profiles } from "@/db/schema";
@@ -80,7 +80,7 @@ export default async function AdminTutorSubjectsPage({
       <div>
         <h1 className="text-2xl font-semibold">担当科目</h1>
         <p className="mt-1 text-sm text-muted-foreground print:hidden">
-          講師が担当できる科目の一覧です。名前を押すとその講師の登録を直せます。
+          講師が担当できる科目の一覧です。「直す」からその講師の登録を直せます。
           {unregistered > 0 && `まだ登録していない講師が ${unregistered} 人います。`}
         </p>
       </div>
@@ -151,12 +151,18 @@ export default async function AdminTutorSubjectsPage({
                 return (
                   <tr key={t.id} className="border-b last:border-b-0">
                     <td className="sticky left-0 z-10 bg-background px-3 py-2 whitespace-nowrap">
-                      <Link
-                        href={`/admin/tutors/${t.id}`}
-                        className="font-medium underline-offset-4 hover:text-primary hover:underline"
-                      >
-                        {t.displayName}
-                      </Link>
+                      <div className="flex items-center justify-between gap-2">
+                        <span className="font-medium">{t.displayName}</span>
+                        {/* 名前を押す発想にはならないので、ボタンの形で出す */}
+                        <Link
+                          href={`/admin/tutors/${t.id}`}
+                          aria-label={`${t.displayName} の担当科目を直す`}
+                          className="inline-flex shrink-0 items-center gap-0.5 rounded-md border px-1.5 py-0.5 text-xs text-muted-foreground transition-colors hover:border-primary/40 hover:bg-primary/5 hover:text-primary print:hidden"
+                        >
+                          <Pencil className="size-3" />
+                          直す
+                        </Link>
+                      </div>
                     </td>
                     <td className="border-l px-2 py-2 text-center">
                       {tl ? (
