@@ -5,6 +5,7 @@ import {
   ChevronRight,
   ExternalLink,
   MapPin,
+  Megaphone,
   UserRound,
 } from "lucide-react";
 import { eq } from "drizzle-orm";
@@ -13,6 +14,10 @@ import { profiles } from "@/db/schema";
 import { requireRole } from "@/lib/auth";
 import { getTutorHomeData } from "@/lib/tutor-home";
 import { getProgressSheetUrl } from "@/lib/progress-sheet-db";
+import {
+  countUnconfirmedAnnouncements,
+  TUTOR_ANNOUNCEMENTS_PATH,
+} from "@/lib/announcements-db";
 import { ConfirmWeekButton } from "./confirm-week-button";
 import { shortDate, weekRangeLabel } from "@/lib/week";
 import { cn } from "@/lib/utils";
@@ -62,20 +67,23 @@ function TrainingBadge() {
 
 export default async function TutorHome() {
   const { profile } = await requireRole("tutor");
-  const [data, progressSheetUrl, [teaching]] = await Promise.all([
-    getTutorHomeData(profile.id),
-    // #339: 教室長が登録した進行表 (スプレッドシート)
-    getProgressSheetUrl(),
-    // #348: 文理・担当できる科目を登録済みか
-    db
-      .select({
-        track: profiles.track,
-        teachableSubjects: profiles.teachableSubjects,
-      })
-      .from(profiles)
-      .where(eq(profiles.id, profile.id))
-      .limit(1),
-  ]);
+  const [data, progressSheetUrl, [teaching], unconfirmedAnnouncements] =
+    await Promise.all([
+      getTutorHomeData(profile.id),
+      // #339: 教室長が登録した進行表 (スプレッドシート)
+      getProgressSheetUrl(),
+      // #348: 文理・担当できる科目を登録済みか
+      db
+        .select({
+          track: profiles.track,
+          teachableSubjects: profiles.teachableSubjects,
+        })
+        .from(profiles)
+        .where(eq(profiles.id, profile.id))
+        .limit(1),
+      // 教室長からのお知らせで、まだ「確認しました」を押していない数
+      countUnconfirmedAnnouncements(profile.id),
+    ]);
   const needsTeachingProfile =
     !teaching?.track || (teaching.teachableSubjects ?? []).length === 0;
 
@@ -122,6 +130,25 @@ export default async function TutorHome() {
         </div>
       </section>
 
+      {/* 教室長からのお知らせ (未確認があるときだけ一番上に出す) */}
+      {unconfirmedAnnouncements > 0 && (
+        <Link
+          href={TUTOR_ANNOUNCEMENTS_PATH}
+          className="flex items-center gap-3 rounded-lg border border-accent/30 bg-accent/10 p-3 transition-colors hover:bg-accent/15"
+        >
+          <Megaphone className="size-5 shrink-0 text-accent" />
+          <div className="min-w-0 flex-1">
+            <p className="text-sm font-medium">
+              教室長からのお知らせが {unconfirmedAnnouncements} 件あります
+            </p>
+            <p className="text-xs text-muted-foreground">
+              読んで「確認しました」を押してください
+            </p>
+          </div>
+          <ChevronRight className="size-4 shrink-0 text-muted-foreground" />
+        </Link>
+      )}
+
       {/* #348: 担当できる科目が未登録ならマイページへ */}
       {needsTeachingProfile && (
         <Link
@@ -130,7 +157,9 @@ export default async function TutorHome() {
         >
           <UserRound className="size-5 shrink-0 text-primary" />
           <div className="min-w-0 flex-1">
-            <p className="text-sm font-medium">担当できる科目を登録してください</p>
+            <p className="text-sm font-medium">
+              担当できる科目を登録してください
+            </p>
             <p className="text-xs text-muted-foreground">
               理系・文系と、教えられる科目をマイページで選びます
             </p>
@@ -158,7 +187,9 @@ export default async function TutorHome() {
 
       {/* 次の出勤 */}
       <section className="space-y-2">
-        <h2 className="text-sm font-semibold text-muted-foreground">次の出勤</h2>
+        <h2 className="text-sm font-semibold text-muted-foreground">
+          次の出勤
+        </h2>
         {data.nextShift ? (
           <div className="rounded-xl bg-primary p-4 text-primary-foreground">
             <div className="flex items-center justify-between">
@@ -168,7 +199,8 @@ export default async function TutorHome() {
               </span>
               {data.nextShift.slot.seatNumber && (
                 <Badge variant="accent">
-                  <MapPin className="size-3" />座席 {data.nextShift.slot.seatNumber}
+                  <MapPin className="size-3" />
+                  座席 {data.nextShift.slot.seatNumber}
                 </Badge>
               )}
             </div>
@@ -282,6 +314,16 @@ export default async function TutorHome() {
           <ChevronRight className="size-4 text-muted-foreground" />
         </a>
       )}
+
+      {/* 過去のお知らせもいつでも読み返せるように */}
+      <Link
+        href={TUTOR_ANNOUNCEMENTS_PATH}
+        className="flex items-center gap-3 rounded-xl border p-3 transition-colors hover:bg-muted/50"
+      >
+        <Megaphone className="size-5 shrink-0 text-primary" />
+        <span className="flex-1 text-sm font-medium">教室長からのお知らせ</span>
+        <ChevronRight className="size-4 text-muted-foreground" />
+      </Link>
     </div>
   );
 }

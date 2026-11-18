@@ -52,6 +52,8 @@ const NAV: {
   },
   { href: "/admin/uploads", label: "Excel取り込み" },
   { href: "/admin/requests", label: "申請承認" },
+  // 講師全員へのお知らせ (LINE で送っていた連絡の代わり)
+  { href: "/admin/announcements", label: "お知らせ" },
 ];
 
 export function AdminTopNav() {

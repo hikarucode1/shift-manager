@@ -7,6 +7,7 @@ import {
   ClipboardCheck,
   ClipboardPen,
   Inbox,
+  Megaphone,
   Repeat,
   UserCheck,
 } from "lucide-react";
@@ -29,6 +30,8 @@ const TYPE_ICON: Record<NotificationType, typeof Bell> = {
   // #360: 先の日の休み希望
   day_off_requested: CalendarOff,
   day_off_result: CalendarOff,
+  // 教室長からのお知らせ
+  announcement: Megaphone,
 };
 
 function formatDateTime(d: Date): string {
