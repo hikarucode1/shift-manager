@@ -6,7 +6,6 @@ import {
   Check,
   ChevronDown,
   ChevronUp,
-  Snowflake,
   ThermometerSnowflake,
 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
@@ -137,7 +136,6 @@ const STATUS_TILES = [
   { key: "submitted", label: "提出済み", tone: "border-primary/30 bg-primary/5" },
   { key: "draft", label: "下書き（未提出）", tone: "border-amber-300 bg-amber-50" },
   { key: "none", label: "未提出", tone: "border-destructive/30 bg-destructive/5" },
-  { key: "frozen", label: "凍結", tone: "" },
 ] as const;
 
 /** (tutorId, weekday, slot) を 1 つの文字列 key にする */
@@ -194,6 +192,9 @@ export function AdminSubmissionsOverview({
 
   // 講師別ステータス: 全員分のカードは開いたときだけ出す (11/18 本人)
   const [showAllStatus, setShowAllStatus] = useState(false);
+  const frozenCount = tutors.filter(
+    (t) => t.submission?.status === "frozen",
+  ).length;
   const notYet = sortedTutors.filter(
     (t) => t.submission === null || t.submission.status === "draft",
   );
@@ -445,10 +446,14 @@ export function AdminSubmissionsOverview({
           <CardTitle className="text-base">
             講師別ステータス ({formatMonth(targetMonth)})
           </CardTitle>
-          <CardDescription>{tutors.length} 名分の提出状況です。</CardDescription>
+          <CardDescription>
+            {tutors.length} 名分の提出状況です。
+            {frozenCount > 0 &&
+              ` 凍結中の提出が ${frozenCount} 件あります（「全員分を見る」から解除できます）。`}
+          </CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
-          <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
+          <div className="grid grid-cols-3 gap-2">
             {STATUS_TILES.map((tile) => {
               const n = tutors.filter(
                 (t) => (t.submission?.status ?? "none") === tile.key,
@@ -539,7 +544,7 @@ export function AdminSubmissionsOverview({
             ) : (
               <ChevronDown className="mr-1 size-4" />
             )}
-            {showAllStatus ? "全員分を閉じる" : "全員分を見る（凍結もここから）"}
+            {showAllStatus ? "全員分を閉じる" : "全員分を見る"}
           </Button>
         </CardContent>
         {showAllStatus && (
@@ -547,10 +552,8 @@ export function AdminSubmissionsOverview({
           {sortedTutors.map((t) => {
             const status = t.submission?.status ?? "未提出";
             const badge = statusBadgeProps(status);
-            const canFreeze =
-              t.submission &&
-              (t.submission.status === "draft" ||
-                t.submission.status === "submitted");
+            // 11/18 本人: 凍結は使わないのでボタンを外した。前に凍結した提出が
+            // 残っていたときに戻せるよう、解除だけは残す
             const canUnfreeze =
               t.submission && t.submission.status === "frozen";
             return (
@@ -582,19 +585,6 @@ export function AdminSubmissionsOverview({
                   </div>
                 )}
                 <div className="flex gap-2">
-                  {canFreeze && (
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      disabled={isPending}
-                      onClick={() =>
-                        handleFreeze(t.id, t.submission!.effectiveFrom, true)
-                      }
-                    >
-                      <Snowflake className="mr-1 h-4 w-4" />
-                      凍結
-                    </Button>
-                  )}
                   {canUnfreeze && (
                     <Button
                       variant="outline"
