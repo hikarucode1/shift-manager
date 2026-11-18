@@ -126,6 +126,8 @@ export const notificationTypeEnum = pgEnum("notification_type", [
   "day_off_requested",
   // #360: 講師宛て。休み希望が承認・却下された
   "day_off_result",
+  // 講師宛て。教室長が出したお知らせ (LINE で送っていた連絡の代わり)
+  "announcement",
 ]);
 
 /* ------------------------------------------------------------------ */
@@ -1422,6 +1424,59 @@ export const dayOffRequests = pgTable(
     statusDateIdx: index("day_off_requests_status_date_idx").on(
       t.status,
       t.date,
+    ),
+  }),
+);
+
+/* ------------------------------------------------------------------ */
+/*  announcements — 教室長から講師全員へのお知らせ                     */
+/* ------------------------------------------------------------------ */
+/*  今まで LINE でシフトと一緒に送っていた連絡を、教室長が好きなときに   */
+/*  アプリから出す。送った時点の在籍講師を announcement_recipients に   */
+/*  1 行ずつ作り、講師が「確認しました」を押すと confirmed_at が入る     */
+/*  (LINE のスタンプの代わり)。                                         */
+
+export const announcements = pgTable(
+  "announcements",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    title: text("title").notNull(),
+    body: text("body").notNull(),
+    /** 出した教室長。退職などで消えてもお知らせは残す */
+    createdBy: uuid("created_by").references(() => profiles.id, {
+      onDelete: "set null",
+    }),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (t) => ({
+    createdIdx: index("announcements_created_idx").on(t.createdAt),
+  }),
+);
+
+export const announcementRecipients = pgTable(
+  "announcement_recipients",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    announcementId: uuid("announcement_id")
+      .notNull()
+      .references(() => announcements.id, { onDelete: "cascade" }),
+    tutorId: uuid("tutor_id")
+      .notNull()
+      .references(() => profiles.id, { onDelete: "cascade" }),
+    /** null = まだ「確認しました」を押していない */
+    confirmedAt: timestamp("confirmed_at", { withTimezone: true }),
+  },
+  (t) => ({
+    uniq: unique("announcement_recipients_announcement_tutor_unique").on(
+      t.announcementId,
+      t.tutorId,
+    ),
+    // 講師ホームの「未確認のお知らせ」用
+    tutorConfirmedIdx: index("announcement_recipients_tutor_confirmed_idx").on(
+      t.tutorId,
+      t.confirmedAt,
     ),
   }),
 );

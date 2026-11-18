@@ -379,6 +379,13 @@
       "when": 1794967050224,
       "tag": "0053_tutor_subjects",
       "breakpoints": true
+    },
+    {
+      "idx": 54,
+      "version": "7",
+      "when": 1794994444262,
+      "tag": "0054_announcements",
+      "breakpoints": true
     }
   ]
 }
