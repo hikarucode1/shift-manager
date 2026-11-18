@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { CircleHelp, LogOut } from "lucide-react";
+import { CircleHelp, LogOut, UserRound } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { NotificationBell } from "@/components/notification-bell";
 import { ContactLink } from "@/components/contact/contact-link";
@@ -24,11 +24,12 @@ export function TutorShell({
     <div className="flex min-h-screen flex-1 flex-col">
       <header className="sticky top-0 z-20 border-b bg-primary text-primary-foreground">
         <div className="flex items-center justify-between px-4 py-3">
-          <Link href="/tutor" className="flex items-baseline gap-2">
+          <Link href="/tutor" className="flex shrink-0 items-baseline gap-2 whitespace-nowrap">
             <span className="text-lg font-semibold">Shift Manager</span>
-            <span className="text-xs text-primary-foreground/70">講師</span>
+            {/* 360px 幅では入りきらないので「講師」を省く (#348 でマイページのボタンが増えた) */}
+            <span className="text-xs text-primary-foreground/70 max-[380px]:hidden">講師</span>
           </Link>
-          <div className="flex items-center gap-2">
+          <div className="flex min-w-0 items-center gap-1.5">
             <NotificationBell audience="tutor" />
             {/* #320: お問い合わせ */}
             <ContactLink
@@ -39,11 +40,14 @@ export function TutorShell({
               <CircleHelp className="size-5" />
             </ContactLink>
             {/* #348: 名前を押すとマイページ */}
+            {/* 文字だけだと押せると気づきにくいので、アイコン付きのボタンの形にする */}
             <Link
               href="/tutor/me"
-              className="max-w-[40vw] truncate rounded-md px-1 text-sm text-primary-foreground/80 underline-offset-4 hover:bg-primary-foreground/10 hover:underline"
+              aria-label={`マイページ (${profile.displayName})`}
+              className="flex max-w-[40vw] items-center gap-1 rounded-full bg-primary-foreground/15 py-1 pl-1.5 pr-2.5 text-sm text-primary-foreground transition-colors hover:bg-primary-foreground/25"
             >
-              {profile.displayName}
+              <UserRound className="size-4 shrink-0" />
+              <span className="truncate">{profile.displayName}</span>
             </Link>
             <form action="/auth/signout" method="post">
               <Button
