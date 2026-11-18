@@ -25,11 +25,12 @@ import { Card, CardContent } from "@/components/ui/card";
  * いた。判別は `lib/auth-availability.ts` の `isAuthUnavailable` に集約してある。
  *
  * ⚠️ **到達不能と判定できない残りの形**: 応答の本文が JSON で、かつその
- * ステータスが `NETWORK_ERROR_CODES` / 500 / 429 のいずれでもない場合
- * (例: ゲートウェイが JSON の本文で 404 や 401 や 540 を返す形の停止)。この場合は
+ * ステータスが `NETWORK_ERROR_CODES` / 500 / 429 / 540 のいずれでもない場合
+ * (例: ゲートウェイが JSON の本文で 404 や 401 を返す形の停止)。この場合は
  * いまも「ログアウト」として観測される。本文が JSON でなければ、ステータスに
  * 関係なく到達不能として扱われる (auth-js の `handleError` が `AuthUnknownError`
- * にするため。`isAuthUnavailable` 参照)。Supabase の pause がどちらかは未実測 (#294)
+ * にするため。`isAuthUnavailable` 参照)。Supabase の pause (540) は本文の形に
+ * かかわらず到達不能として扱う (#294。実測はしていない)
  *
  * ⚠️ client component だが、これは reload ボタンのためだけ。本体は SSR されて
  * 最初の HTML に載るので、JS が動かない環境でもメッセージは表示される

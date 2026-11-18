@@ -45,10 +45,10 @@
 |---|---|---|---|
 | **page だけの失敗**: layout の認可は通り、page のクエリが失敗する (schema の不整合の多く。2026-07-30 の migration 0029 未適用はこれ) | 素通し | **200 + loading のスケルトン**。hydration 後に error.tsx (エラー ID は Next の digest)。**JS が動かないとスケルトンのまま** (#189) | 200 は #192 / #190 で実測 |
 | **layout の認可が失敗する DB の障害**: DB の全断・DATABASE_URL の誤り・プール枯渇 | 素通し | layout の `requireRole` が失敗 → `resolveOrIncident` → **200 + SystemUnavailable** (エラー ID は `reportIncident`)。最初の HTML に載るので JS 不要 | #192 で実測 |
-| **認証 API に届かない**: fetch の失敗、auth-js が retryable とするステータス、**本文が JSON でない応答 (ステータスは問わない)**、JSON の本文で 500 / 429 (`UNAVAILABLE_STATUS`) | 「ログアウト」とみなさず素通し (#193) | **200 + SystemUnavailable** | 未実測 |
-| **認証 API が JSON の本文で、それ以外のステータスを返す** (401 / 403 / 404 / 540 など) | 「ログアウト」と区別できない | **/login へ 307** (`src/components/system-unavailable.tsx` の「到達不能と判定できない残りの形」) | 未実測 |
+| **認証 API に届かない**: fetch の失敗、auth-js が retryable とするステータス、**本文が JSON でない応答 (ステータスは問わない)**、JSON の本文で 500 / 429 / 540 (`UNAVAILABLE_STATUS`) | 「ログアウト」とみなさず素通し (#193) | **200 + SystemUnavailable** | 未実測 |
+| **認証 API が JSON の本文で、それ以外のステータスを返す** (401 / 403 / 404 など) | 「ログアウト」と区別できない | **/login へ 307** (`src/components/system-unavailable.tsx` の「到達不能と判定できない残りの形」) | 未実測 |
 
-- ⚠️ **Supabase Free tier の自動 pause が 3 行目と 4 行目のどちらに入るかは分かっていない** (#294)。GoTrue が動いていて自分の DB に届かない形 (JSON の 500) や、ゲートウェイが 540 を JSON でない本文で返す形なら 3 行目 (200 + SystemUnavailable)。ゲートウェイが **540 を JSON の本文で**返す形なら 4 行目 (/login へ 307) で、#193 が直そうとした形が残る
+- **Supabase Free tier の自動 pause は 3 行目に入る** (#294)。GoTrue が動いていて自分の DB に届かない形 (JSON の 500) も、ゲートウェイが 540 (pause 中を示す Supabase 独自の番号) を返す形も、本文が JSON かどうかに関係なく 200 + SystemUnavailable。540 は pause 以外では使われないので `UNAVAILABLE_STATUS` に入れた。pause 中の実際の応答は実測していない (本番は毎日使われるので、7 日間アクセスなしの自動 pause にはまず当たらない)
 - ⚠️ **3・4 行目の挙動は、セッションの cookie があるリクエストだけ**。cookie が無いと、auth-js は認証 API を呼ばずに「未ログイン」を返すので、middleware は障害に関係なく /login へ 307 し、ログイン画面は正常に出る。**cookie なしで画面を叩く確認では、認証 API の障害は見えない**
 - SystemUnavailable の文言「画面を表示できませんでした。」は、error.tsx (page の失敗) と、`/` `/login` `/auth/confirm` `/auth/set-password` でも出る (`grep -rl SystemUnavailable src/app` で確認)。**文言では、どの層の失敗か区別できない**
 - **画面を叩いてステータスや文言を見る監視では、障害を区別できない**。200 になる障害は正常と区別できず、307 になる障害もあり、cookie の有無でも変わる。死活は画面ではなく専用のエンドポイントで見る。#275 は今のところ DB の確認 (`select 1` → 503) が対象で、認証 API まで見るかは未定。認証 API の停止は、#275 が DB だけを見る形だと検知できない

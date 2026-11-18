@@ -62,6 +62,10 @@ const UNAVAILABLE: [string, () => Promise<Response>][] = [
     respondWith(429, { error_code: "over_request_rate_limit" }),
   ],
   [
+    "540 + JSON 本文 (Supabase のプロジェクト停止中, #294)",
+    respondWith(540, { message: "Project paused" }),
+  ],
+  [
     "500 + HTML 本文 (ゲートウェイのエラーページ)",
     async () =>
       new Response("<html>Bad Gateway</html>", {
