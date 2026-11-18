@@ -54,8 +54,8 @@ jobs:
             echo "::error::secret が未設定のため、バックアップを取れません:${missing}"
             exit 1
           fi
-          if [ "${#BACKUP_PASSPHRASE}" -lt 24 ]; then
-            echo "::error::BACKUP_PASSPHRASE が短すぎます (24 文字以上にしてください)"
+          if [ "${#BACKUP_PASSPHRASE}" -lt 20 ]; then
+            echo "::error::BACKUP_PASSPHRASE が短すぎます (20 文字以上にしてください)"
             exit 1
           fi
 

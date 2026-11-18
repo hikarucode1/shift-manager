@@ -16,9 +16,12 @@ GitHub Actions (`.github/workflows/backup.yml`) が **毎朝 05:00 (JST)** に�
 
 ## 1. 最初の設定 (1 回だけ)
 
-1. パスワード管理アプリなどで、**32 文字以上のランダムな文字列**を作る
-2. それを **パスワード管理アプリに保存する** (GitHub の secret は後から読み出せない。
-   無くすとバックアップを開けない)
+1. パスワード管理アプリで**ランダムなパスワード**を作り、そのまま保存する
+   (20 文字以上。Apple の「パスワード」アプリの「強力なパスワード」でよい)。
+   GitHub の secret は後から読み出せないので、**無くすとバックアップを開けない**
+   - Apple の「パスワード」アプリなら: ウェブサイト `github.com`、
+     ユーザー名 `BACKUP_PASSPHRASE`、メモに「shift-manager の DB バックアップの鍵。
+     戻し方は docs/runbooks/db-backup-restore.md」
 3. GitHub のリポジトリ → Settings → Secrets and variables → Actions →
    New repository secret で、名前 `BACKUP_PASSPHRASE`、値に 1 の文字列を登録
 4. Actions → **db backup** → Run workflow で手動で 1 回動かし、緑になって
