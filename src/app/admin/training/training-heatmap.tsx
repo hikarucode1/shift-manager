@@ -416,6 +416,7 @@ export function TrainingHeatmap({ data }: { data: HeatmapData }) {
                                 onChange={() => toggleTutor(t.id)}
                                 disabled={isPending}
                               />
+                              <TrackDot track={t.track} />
                               <span>{t.name}</span>
                               <span className="text-[10px] text-amber-800 dark:text-amber-300">
                                 (希望未提出)

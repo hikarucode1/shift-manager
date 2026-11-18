@@ -407,7 +407,7 @@ export function AdminSubmissionsOverview({
         <SubjectFilterBar value={subjectFilter} onChange={setSubjectFilter} />
         {filterOn && (
           <p className="text-xs text-muted-foreground">
-            合う講師 {tutors.filter(isMatch).length} 人を先頭に出し、合わない講師は薄く表示しています。
+            合う講師 {tutors.filter(isMatch).length} 人を先頭に出し、合わない講師は薄く表示しています。「＋ 希望に無い講師を入れる」では、合う講師の名前に ● が付きます。
           </p>
         )}
       </div>
