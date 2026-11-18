@@ -19,7 +19,8 @@ vi.mock("@/db/client", () => ({
   },
 }));
 
-const { sendPushToProfiles, isGoneStatus } = await import("@/lib/web-push");
+const { sendPushToProfiles, isGoneStatus, isAllowedPushEndpoint } =
+  await import("@/lib/web-push");
 
 describe("sendPushToProfiles (#318)", () => {
   beforeEach(() => {
@@ -28,7 +29,7 @@ describe("sendPushToProfiles (#318)", () => {
     process.env.VAPID_PRIVATE_KEY = "priv";
     subs.splice(0, subs.length, {
       id: "s1",
-      endpoint: "https://push.example/1",
+      endpoint: "https://fcm.googleapis.com/fcm/send/abc",
       p256dh: "k",
       auth: "a",
     });
@@ -52,7 +53,7 @@ describe("sendPushToProfiles (#318)", () => {
     expect(sendNotification).toHaveBeenCalledTimes(1);
     const [sub, payload] = sendNotification.mock.calls[0];
     expect(sub).toEqual({
-      endpoint: "https://push.example/1",
+      endpoint: "https://fcm.googleapis.com/fcm/send/abc",
       keys: { p256dh: "k", auth: "a" },
     });
     expect(JSON.parse(payload)).toEqual({ title: "t", body: "b", href: "/x" });
@@ -82,5 +83,54 @@ describe("sendPushToProfiles (#318)", () => {
       false,
       false,
     ]);
+  });
+
+  it("Push サービス以外の送信先には送らず、その行を消す", async () => {
+    subs.splice(0, subs.length, {
+      id: "bad",
+      endpoint: "https://internal.example/hook",
+      p256dh: "k",
+      auth: "a",
+    });
+    await sendPushToProfiles(["p1"], { title: "t" });
+    expect(sendNotification).not.toHaveBeenCalled();
+    expect(deleted).toHaveLength(1);
+  });
+});
+
+describe("isAllowedPushEndpoint", () => {
+  it("主要ブラウザの Push サービスは通す", () => {
+    for (const url of [
+      "https://fcm.googleapis.com/fcm/send/abc",
+      "https://android.googleapis.com/gcm/send/abc",
+      "https://web.push.apple.com/abc",
+      "https://api.push.apple.com/3/device/abc",
+      "https://updates.push.services.mozilla.com/wpush/v2/abc",
+      "https://db5p.notify.windows.com/w/?token=abc",
+      "https://FCM.googleapis.com/fcm/send/abc",
+    ]) {
+      expect(isAllowedPushEndpoint(url), url).toBe(true);
+    }
+  });
+
+  it("それ以外の URL は通さない", () => {
+    for (const url of [
+      "https://example.com/hook",
+      "http://fcm.googleapis.com/fcm/send/abc",
+      "https://fcm.googleapis.com:8443/fcm/send/abc",
+      "https://user:pass@fcm.googleapis.com/fcm/send/abc",
+      "https://fcm.googleapis.com.evil.example/x",
+      "https://evilpush.apple.com/x",
+      "https://push.apple.com.evil.example/x",
+      "https://fcm.googleapis.com@evil.example/x",
+      "https://127.0.0.1/x",
+      "https://169.254.169.254/latest/meta-data",
+      "https://localhost/x",
+      "ftp://fcm.googleapis.com/x",
+      "not a url",
+      "",
+    ]) {
+      expect(isAllowedPushEndpoint(url), url).toBe(false);
+    }
   });
 });

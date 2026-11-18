@@ -35,6 +35,43 @@ export function getVapidConfig(): VapidConfig | null {
   return { publicKey, privateKey, subject };
 }
 
+/**
+ * ブラウザが発行する Push の送信先 (endpoint) として認めるホスト。
+ *
+ * endpoint はブラウザから送られてくる値なので、何でも受け付けると、ログイン
+ * 済みの人がサーバーに好きな URL へ POST させられる (SSRF)。主要ブラウザの
+ * Push サービスだけに絞る。
+ * - Chrome / Edge / Samsung など: fcm.googleapis.com (旧: android.googleapis.com)
+ * - Safari / iOS: *.push.apple.com
+ * - Firefox: *.push.services.mozilla.com
+ * - 旧 Edge / Windows: *.notify.windows.com
+ */
+const PUSH_HOSTS_EXACT = ["fcm.googleapis.com", "android.googleapis.com"];
+const PUSH_HOST_SUFFIXES = [
+  ".push.apple.com",
+  ".push.services.mozilla.com",
+  ".notify.windows.com",
+];
+
+export function isAllowedPushEndpoint(endpoint: string): boolean {
+  let url: URL;
+  try {
+    url = new URL(endpoint);
+  } catch {
+    return false;
+  }
+  if (url.protocol !== "https:") return false;
+  // 既定の 443 以外や、user:pass@ 付きは Push サービスの URL ではない
+  if (url.port !== "" || url.username !== "" || url.password !== "") {
+    return false;
+  }
+  const host = url.hostname.toLowerCase();
+  return (
+    PUSH_HOSTS_EXACT.includes(host) ||
+    PUSH_HOST_SUFFIXES.some((suffix) => host.endsWith(suffix))
+  );
+}
+
 /** 期限切れ・取り消し済みの購読 (二度と届かない) */
 export function isGoneStatus(statusCode: number | undefined): boolean {
   return statusCode === 404 || statusCode === 410;
@@ -64,6 +101,11 @@ export async function sendPushToProfiles(
     const gone: string[] = [];
     await Promise.all(
       subs.map(async (s) => {
+        // 登録時にも見ているが、絞る前に入った行が残っていても送らずに消す
+        if (!isAllowedPushEndpoint(s.endpoint)) {
+          gone.push(s.id);
+          return;
+        }
         try {
           await webpush.sendNotification(
             { endpoint: s.endpoint, keys: { p256dh: s.p256dh, auth: s.auth } },

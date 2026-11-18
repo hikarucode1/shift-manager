@@ -5,7 +5,7 @@ import { and, eq } from "drizzle-orm";
 import { requireSession } from "@/lib/auth";
 import { db } from "@/db/client";
 import { pushSubscriptions } from "@/db/schema";
-import { sendPushToProfiles } from "@/lib/web-push";
+import { isAllowedPushEndpoint, sendPushToProfiles } from "@/lib/web-push";
 
 /**
  * #318: スマホ通知 (Web Push) の ON / OFF。端末ごとに 1 行。
@@ -32,6 +32,12 @@ export async function savePushSubscription(
   const parsed = SubscriptionInput.safeParse(input);
   if (!parsed.success) return { ok: false, error: "入力が不正です。" };
   const { endpoint, keys, userAgent, sendTest } = parsed.data;
+  // ブラウザの Push サービス以外の URL は受け付けない (サーバーから任意の URL へ送らせない)
+  if (!isAllowedPushEndpoint(endpoint)) {
+    // 対応していないブラウザだった場合に気づけるよう、ホスト名だけ残す
+    console.warn("push endpoint rejected:", new URL(endpoint).hostname);
+    return { ok: false, error: "このブラウザの通知には対応していません。" };
+  }
   try {
     // 同じ端末で別の人がログインし直した場合も、今の人の宛先に付け替える
     await db
