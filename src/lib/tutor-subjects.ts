@@ -137,3 +137,31 @@ export function matchesTrackFilter(
   if (filter === "both") return track === "both";
   return track === filter || track === "both";
 }
+
+/** 文理・科目での絞り込み (#349 担当科目の表 / #350 シフト希望) */
+export type SubjectFilter = {
+  track: TrackKey | "none" | null;
+  /** 科目の key。null なら科目では絞らない */
+  subject: string | null;
+};
+
+export const NO_SUBJECT_FILTER: SubjectFilter = { track: null, subject: null };
+
+export function isSubjectFilterOn(f: SubjectFilter): boolean {
+  return f.track !== null || f.subject !== null;
+}
+
+export function matchesSubjectFilter(
+  t: { track: string | null; subjects: readonly string[] },
+  f: SubjectFilter,
+): boolean {
+  return (
+    matchesTrackFilter(t.track, f.track) &&
+    (!f.subject || t.subjects.includes(f.subject))
+  );
+}
+
+/** 合う人を先頭に。合う人どうし・合わない人どうしは元の並び (名前順) のまま */
+export function matchFirst<T>(list: readonly T[], match: (t: T) => boolean): T[] {
+  return [...list.filter(match), ...list.filter((t) => !match(t))];
+}

@@ -2,6 +2,8 @@ import { describe, it, expect } from "vitest";
 import {
   ALL_SUBJECT_KEYS,
   checkTeachingProfile,
+  matchFirst,
+  matchesSubjectFilter,
   matchesTrackFilter,
   normalizeSubjects,
   subjectShortLabel,
@@ -76,5 +78,23 @@ describe("matchesTrackFilter (#349)", () => {
     expect(matchesTrackFilter(null, "none")).toBe(true);
     expect(matchesTrackFilter("science", "none")).toBe(false);
     expect(matchesTrackFilter(null, null)).toBe(true);
+  });
+});
+
+describe("matchesSubjectFilter / matchFirst (#350)", () => {
+  const sci = { track: "science", subjects: ["hs_math1a", "hs_phys"] };
+  const hum = { track: "humanities", subjects: ["hs_en"] };
+  const none = { track: null, subjects: [] };
+
+  it("文理と科目の両方に合う人だけ true", () => {
+    const f = { track: "science", subject: "hs_math1a" } as const;
+    expect(matchesSubjectFilter(sci, f)).toBe(true);
+    expect(matchesSubjectFilter(hum, f)).toBe(false);
+    expect(matchesSubjectFilter(none, { track: null, subject: null })).toBe(true);
+    expect(matchesSubjectFilter(none, { track: null, subject: "hs_en" })).toBe(false);
+  });
+
+  it("matchFirst は合う人を前に出し、それぞれの中の順は変えない", () => {
+    expect(matchFirst([1, 2, 3, 4, 5], (n) => n % 2 === 0)).toEqual([2, 4, 1, 3, 5]);
   });
 });

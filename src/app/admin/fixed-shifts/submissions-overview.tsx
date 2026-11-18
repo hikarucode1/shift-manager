@@ -22,6 +22,14 @@ import {
   saveMonthlyConfirmation,
   saveRegularConfirmation,
 } from "./confirm-actions";
+import { SubjectFilterBar, TrackDot } from "@/components/subject-filter-bar";
+import {
+  NO_SUBJECT_FILTER,
+  isSubjectFilterOn,
+  matchFirst,
+  matchesSubjectFilter,
+  type SubjectFilter,
+} from "@/lib/tutor-subjects";
 import {
   formatPreferredStudents,
   type PreferredStudent,
@@ -57,6 +65,9 @@ type TutorView = {
   id: string;
   displayName: string;
   email: string;
+  /** #350: 文理 (未登録は null) と担当できる科目の key */
+  track: string | null;
+  subjects: string[];
   submission: SubmissionView | null;
   entries: Array<{
     weekday: string;
@@ -157,6 +168,15 @@ export function AdminSubmissionsOverview({
     const id = setTimeout(() => setNotice(null), 5000);
     return () => clearTimeout(id);
   }, [notice]);
+
+  // #350: 文理・科目で絞り込む。合わない人は消さずに薄くし、合う人を先頭に出す
+  // (確定済みの人が見えなくなって外し忘れないように。11/18 本人)
+  const [subjectFilter, setSubjectFilter] =
+    useState<SubjectFilter>(NO_SUBJECT_FILTER);
+  const filterOn = isSubjectFilterOn(subjectFilter);
+  const isMatch = (t: TutorView) =>
+    !filterOn || matchesSubjectFilter(t, subjectFilter);
+  const sortedTutors = matchFirst(tutors, isMatch);
 
   // #361: いま見ている曜日
   const [weekday, setWeekday] = useState<InputWeekday>("mon");
@@ -381,6 +401,17 @@ export function AdminSubmissionsOverview({
         </p>
       )}
 
+      {/* #350: 下の 2 つのカードに効く */}
+      <div className="space-y-1.5 rounded-lg border bg-muted/30 p-3">
+        <p className="text-sm font-medium">文理・科目で絞り込む</p>
+        <SubjectFilterBar value={subjectFilter} onChange={setSubjectFilter} />
+        {filterOn && (
+          <p className="text-xs text-muted-foreground">
+            合う講師 {tutors.filter(isMatch).length} 人を先頭に出し、合わない講師は薄く表示しています。
+          </p>
+        )}
+      </div>
+
       {/* 講師ごとのステータスカード */}
       <Card>
         <CardHeader>
@@ -401,7 +432,7 @@ export function AdminSubmissionsOverview({
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-3">
-          {tutors.map((t) => {
+          {sortedTutors.map((t) => {
             const status = t.submission?.status ?? "未提出";
             const badge = statusBadgeProps(status);
             const canFreeze =
@@ -413,10 +444,16 @@ export function AdminSubmissionsOverview({
             return (
               <div
                 key={t.id}
-                className="flex flex-wrap items-center gap-3 rounded-md border border-border bg-card p-3"
+                className={cn(
+                  "flex flex-wrap items-center gap-3 rounded-md border border-border bg-card p-3",
+                  !isMatch(t) && "opacity-40",
+                )}
               >
                 <div className="min-w-[10rem] flex-1">
-                  <div className="font-medium">{t.displayName}</div>
+                  <div className="flex items-center gap-1.5 font-medium">
+                    <TrackDot track={t.track} />
+                    {t.displayName}
+                  </div>
                   <div className="text-xs text-muted-foreground">{t.email}</div>
                 </div>
                 <Badge variant={badge.variant}>{badge.label}</Badge>
@@ -528,14 +565,14 @@ export function AdminSubmissionsOverview({
           <div className="space-y-2">
             {slots.map((slot) => {
               const cellKey = `${weekday}:${slot.slotNumber}`;
-              const yes = tutors.filter(
+              const yes = sortedTutors.filter(
                 (t) => entryMaps.get(t.id)?.get(cellKey) === "yes",
               );
-              const maybe = tutors.filter(
+              const maybe = sortedTutors.filter(
                 (t) => entryMaps.get(t.id)?.get(cellKey) === "maybe",
               );
               // 希望に無いのに確定している人 (前に手で入れた等) も見せる
-              const others = tutors.filter(
+              const others = sortedTutors.filter(
                 (t) =>
                   !entryMaps.get(t.id)?.has(cellKey) ||
                   entryMaps.get(t.id)?.get(cellKey) === "no",
@@ -573,6 +610,7 @@ export function AdminSubmissionsOverview({
                     confirmedSet={confirmedSet}
                     disabled={isPending}
                     onToggle={toggleConfirmed}
+                    isMatch={isMatch}
                   />
                   <NameRow
                     mark="△"
@@ -583,6 +621,7 @@ export function AdminSubmissionsOverview({
                     confirmedSet={confirmedSet}
                     disabled={isPending}
                     onToggle={toggleConfirmed}
+                    isMatch={isMatch}
                   />
                   {confirmedOthers.length > 0 && (
                     <NameRow
@@ -594,6 +633,7 @@ export function AdminSubmissionsOverview({
                       confirmedSet={confirmedSet}
                       disabled={isPending}
                       onToggle={toggleConfirmed}
+                      isMatch={isMatch}
                     />
                   )}
                   {addable.length > 0 && (
@@ -615,6 +655,7 @@ export function AdminSubmissionsOverview({
                       <option value="">＋ 希望に無い講師を入れる</option>
                       {addable.map((t) => (
                         <option key={t.id} value={t.id}>
+                          {filterOn && isMatch(t) ? "● " : ""}
                           {t.displayName}
                         </option>
                       ))}
@@ -692,6 +733,7 @@ function NameRow({
   confirmedSet,
   disabled,
   onToggle,
+  isMatch,
 }: {
   mark: string;
   people: TutorView[];
@@ -701,6 +743,8 @@ function NameRow({
   confirmedSet: Set<string>;
   disabled: boolean;
   onToggle: (tutorId: string, weekday: string, slot: number) => void;
+  /** #350: 絞り込みに合う人か。合わない人は薄くする */
+  isMatch: (t: TutorView) => boolean;
 }) {
   return (
     <div className="flex items-start gap-2">
@@ -731,7 +775,8 @@ function NameRow({
                 onClick={() => onToggle(t.id, weekday, slotNumber)}
                 title={draft ? "まだ提出していない下書きの希望です" : undefined}
                 className={cn(
-                  "rounded-full border px-2.5 py-1 text-xs font-medium transition-colors disabled:opacity-60",
+                  "inline-flex items-center gap-1 rounded-full border px-2.5 py-1 text-xs font-medium transition-colors disabled:opacity-60",
+                  !isMatch(t) && "opacity-40",
                   on
                     ? "border-primary bg-primary text-primary-foreground"
                     : tone === "maybe"
@@ -739,7 +784,7 @@ function NameRow({
                       : "border-input bg-background hover:bg-muted",
                 )}
               >
-                {on && "✓ "}
+                {on ? "✓" : <TrackDot track={t.track} />}
                 {t.displayName}
                 {draft && <span className="ml-1 opacity-70">（下書き）</span>}
               </button>

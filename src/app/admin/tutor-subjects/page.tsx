@@ -10,18 +10,13 @@ import {
   ALL_SUBJECT_KEYS,
   SUBJECT_GROUPS,
   TRACKS,
-  matchesTrackFilter,
+  matchesSubjectFilter,
   subjectShortLabel,
   trackLabel,
   type TrackKey,
 } from "@/lib/tutor-subjects";
+import { TRACK_BADGE_CLASS } from "@/components/subject-filter-bar";
 import { SubjectFilter } from "./subject-filter";
-
-const TRACK_STYLE: Record<TrackKey, string> = {
-  science: "bg-sky-100 text-sky-800",
-  humanities: "bg-rose-100 text-rose-800",
-  both: "bg-violet-100 text-violet-800",
-};
 
 /** 列の並び (中学生 5 + 高校生 16)。高校生は公共・地歴も続けて並べる */
 const COLUMNS = SUBJECT_GROUPS.flatMap((g) =>
@@ -63,10 +58,11 @@ export default async function AdminTutorSubjectsPage({
     )
     .orderBy(asc(profiles.displayName));
 
-  const rows = tutors.filter(
-    (t) =>
-      matchesTrackFilter(t.track, trackFilter) &&
-      (!subjectFilter || t.teachableSubjects.includes(subjectFilter)),
+  const rows = tutors.filter((t) =>
+    matchesSubjectFilter(
+      { track: t.track, subjects: t.teachableSubjects },
+      { track: trackFilter, subject: subjectFilter },
+    ),
   );
   const unregistered = tutors.filter(
     (t) => !trackLabel(t.track) || t.teachableSubjects.length === 0,
@@ -85,7 +81,7 @@ export default async function AdminTutorSubjectsPage({
         </p>
       </div>
 
-      <SubjectFilter track={trackFilter ?? ""} subject={subjectFilter ?? ""} />
+      <SubjectFilter value={{ track: trackFilter, subject: subjectFilter }} />
 
       <p className="text-sm text-muted-foreground">
         {trackFilter || subjectFilter
@@ -169,7 +165,7 @@ export default async function AdminTutorSubjectsPage({
                         <span
                           className={cn(
                             "rounded px-1.5 py-0.5 text-xs font-semibold whitespace-nowrap",
-                            TRACK_STYLE[t.track as TrackKey],
+                            TRACK_BADGE_CLASS[t.track as TrackKey],
                           )}
                         >
                           {tl}
