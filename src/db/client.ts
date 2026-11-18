@@ -2,6 +2,7 @@ import { config } from "dotenv";
 import { drizzle } from "drizzle-orm/postgres-js";
 import postgres from "postgres";
 import * as schema from "./schema";
+import { resolveDatabaseUrl } from "./connection-url";
 
 // Next.js は .env.local を自動で読むが、tsx スクリプトや Drizzle CLI から
 // 直接 import されたときのフォールバック。
@@ -12,7 +13,8 @@ if (!process.env.DATABASE_URL) {
   config({ path: ".env" });
 }
 
-const connectionString = process.env.DATABASE_URL!;
+// プレビューでは本番 DB につながない (connection-url.ts)
+const connectionString = resolveDatabaseUrl()!;
 
 // Supabase の pooler(ポート 6543)経由のセッションは prepare を無効化。
 // #165: プール上限を明示。デフォルト max:10 のままだと、サーバーレス
