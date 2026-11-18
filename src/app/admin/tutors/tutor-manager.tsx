@@ -498,7 +498,7 @@ export function TutorManager({
                                   onClick={() =>
                                     run(
                                       () => resendInvite({ profileId: t.id }),
-                                      "招待メールを再送しました。前に送ったリンクは使えなくなります。",
+                                      "招待メールを再送しました。前のメールのリンクは使えなくなるので、講師には一番新しいメールのリンクを開くよう伝えてください。",
                                       undefined,
                                       { refreshOnSuccess: false, rowId: t.id },
                                     )
@@ -509,7 +509,7 @@ export function TutorManager({
                                 </Button>
                                 <span className="text-xs text-muted-foreground">
                                   {t.inviteStatus === "pending"
-                                    ? `${t.email} はまだ招待リンクを使っていません。期限切れのときに送り直せます。`
+                                    ? `${t.email} はまだ登録を済ませていません。リンクの期限が切れた・メールが見つからないときは再送できます (前のメールのリンクは使えなくなります)。`
                                     : "招待の状態を確認できませんでした。受け取り済みの場合は送信されません。"}
                                 </span>
                               </div>
