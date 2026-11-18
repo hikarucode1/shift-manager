@@ -143,6 +143,10 @@ export const profiles = pgTable("profiles", {
   roles: userRoleEnum("roles").array().notNull().default(["tutor"]),
   email: text("email").notNull(),
   isActive: boolean("is_active").notNull().default(true),
+  /** #348: 理系 / 文系 / どちらも (science / humanities / both)。未登録は null */
+  track: text("track"),
+  /** #348: 担当できる科目の key (`src/lib/tutor-subjects.ts`)。未登録は空 */
+  teachableSubjects: text("teachable_subjects").array().notNull().default([]),
   createdAt: timestamp("created_at", { withTimezone: true })
     .notNull()
     .defaultNow(),

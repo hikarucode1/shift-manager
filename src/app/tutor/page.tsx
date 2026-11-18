@@ -5,7 +5,11 @@ import {
   ChevronRight,
   ExternalLink,
   MapPin,
+  UserRound,
 } from "lucide-react";
+import { eq } from "drizzle-orm";
+import { db } from "@/db/client";
+import { profiles } from "@/db/schema";
 import { requireRole } from "@/lib/auth";
 import { getTutorHomeData } from "@/lib/tutor-home";
 import { getProgressSheetUrl } from "@/lib/progress-sheet-db";
@@ -58,11 +62,22 @@ function TrainingBadge() {
 
 export default async function TutorHome() {
   const { profile } = await requireRole("tutor");
-  const [data, progressSheetUrl] = await Promise.all([
+  const [data, progressSheetUrl, [teaching]] = await Promise.all([
     getTutorHomeData(profile.id),
     // #339: 教室長が登録した進行表 (スプレッドシート)
     getProgressSheetUrl(),
+    // #348: 文理・担当できる科目を登録済みか
+    db
+      .select({
+        track: profiles.track,
+        teachableSubjects: profiles.teachableSubjects,
+      })
+      .from(profiles)
+      .where(eq(profiles.id, profile.id))
+      .limit(1),
   ]);
+  const needsTeachingProfile =
+    !teaching?.track || (teaching.teachableSubjects ?? []).length === 0;
 
   // hero の締切 / アラートはどちらも「編集可能・未提出」の最も近い締切を使う
   const alertDeadline = data.deadlines.find((d) => !d.submitted) ?? null;
@@ -106,6 +121,23 @@ export default async function TutorHome() {
           </div>
         </div>
       </section>
+
+      {/* #348: 担当できる科目が未登録ならマイページへ */}
+      {needsTeachingProfile && (
+        <Link
+          href="/tutor/me"
+          className="flex items-center gap-3 rounded-lg border border-primary/20 bg-primary/5 p-3 transition-colors hover:bg-primary/10"
+        >
+          <UserRound className="size-5 shrink-0 text-primary" />
+          <div className="min-w-0 flex-1">
+            <p className="text-sm font-medium">担当できる科目を登録してください</p>
+            <p className="text-xs text-muted-foreground">
+              理系・文系と、教えられる科目をマイページで選びます
+            </p>
+          </div>
+          <ChevronRight className="size-4 shrink-0 text-muted-foreground" />
+        </Link>
+      )}
 
       {/* 締切アラート (未提出の最近接) */}
       {alertDeadline && (
