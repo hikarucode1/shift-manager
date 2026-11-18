@@ -38,9 +38,13 @@ export function TutorShell({
             >
               <CircleHelp className="size-5" />
             </ContactLink>
-            <span className="max-w-[40vw] truncate text-sm text-primary-foreground/80">
+            {/* #348: 名前を押すとマイページ */}
+            <Link
+              href="/tutor/me"
+              className="max-w-[40vw] truncate rounded-md px-1 text-sm text-primary-foreground/80 underline-offset-4 hover:bg-primary-foreground/10 hover:underline"
+            >
               {profile.displayName}
-            </span>
+            </Link>
             <form action="/auth/signout" method="post">
               <Button
                 type="submit"
