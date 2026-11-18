@@ -3,7 +3,7 @@ import { requireRole } from "@/lib/auth";
 import { db } from "@/db/client";
 import { profiles } from "@/db/schema";
 import { TRACKS, normalizeSubjects, type TrackKey } from "@/lib/tutor-subjects";
-import { TeachingProfileForm } from "./teaching-profile-form";
+import { TeachingProfileForm } from "@/components/teaching-profile-form";
 
 /** #348: 講師のマイページ。文理と担当できる科目を自分で登録する */
 export default async function TutorMyPage() {

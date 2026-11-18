@@ -3,12 +3,15 @@ import { SegmentedNav } from "@/components/segmented-nav";
 /**
  * 管理者「講師管理」グループのサブナビ (#120)。
  * トップナビ「講師管理」配下に 講師 / 教室長 を統合。
+ * #349: 担当科目 (講師 × 科目の表) を足した。/admin/tutors の配下に置くと
+ * 「講師」タブも光るので URL は別にしている。
  */
 export function AdminTutorsNav() {
   return (
     <SegmentedNav
       items={[
         { href: "/admin/tutors", label: "講師" },
+        { href: "/admin/tutor-subjects", label: "担当科目" },
         { href: "/admin/admins", label: "教室長" },
       ]}
     />

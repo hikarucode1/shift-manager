@@ -8,15 +8,21 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { isIndeterminate, toFailedResult } from "@/lib/action-failure";
 import { SUBJECT_GROUPS, TRACKS, type TrackKey } from "@/lib/tutor-subjects";
 import { cn } from "@/lib/utils";
-import { saveMyTeachingProfile } from "./actions";
+import { saveMyTeachingProfile } from "@/app/tutor/me/actions";
+import { saveTutorTeachingProfile } from "@/app/admin/tutors/actions";
 
-/** #348: 文理と担当できる科目をタップで選ぶ */
+/**
+ * #348: 文理と担当できる科目をタップで選ぶ。
+ * #349: profileId を渡すと教室長がその講師の分を保存する (渡さなければ本人の分)。
+ */
 export function TeachingProfileForm({
   initialTrack,
   initialSubjects,
+  profileId,
 }: {
   initialTrack: TrackKey | null;
   initialSubjects: string[];
+  profileId?: string;
 }) {
   const router = useRouter();
   const [isPending, startTransition] = useTransition();
@@ -41,10 +47,12 @@ export function TeachingProfileForm({
   function save() {
     setNotice(null);
     startTransition(async () => {
-      const res = await saveMyTeachingProfile({
-        track,
-        subjects: [...subjects],
-      }).catch(toFailedResult);
+      const input = { track, subjects: [...subjects] };
+      const res = await (
+        profileId
+          ? saveTutorTeachingProfile({ ...input, profileId })
+          : saveMyTeachingProfile(input)
+      ).catch(toFailedResult);
       if (res.ok) {
         setNotice({ type: "ok", text: "保存しました。" });
         router.refresh();
@@ -92,7 +100,11 @@ export function TeachingProfileForm({
       <Card>
         <CardHeader>
           <CardTitle className="text-base">担当できる科目</CardTitle>
-          <CardDescription>教えられる科目をすべてタップしてください。</CardDescription>
+          <CardDescription>
+            {profileId
+              ? "教えられる科目をすべてタップしてください。講師本人のマイページにも同じ内容が出ます。"
+              : "教えられる科目をすべてタップしてください。"}
+          </CardDescription>
         </CardHeader>
         <CardContent className="space-y-5">
           {levels.map((level) => (

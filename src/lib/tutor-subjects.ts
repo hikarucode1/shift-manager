@@ -95,3 +95,45 @@ export function normalizeSubjects(keys: readonly string[]): string[] {
   const set = new Set(keys);
   return ALL_SUBJECT_KEYS.filter((k) => set.has(k));
 }
+
+/**
+ * 保存前の確認 (#348 講師本人 / #349 教室長 で共通)。
+ * 文理は必須、科目は 1 つ以上。知らない key は弾く。
+ */
+export function checkTeachingProfile(input: {
+  track?: unknown;
+  subjects?: unknown;
+}):
+  | { ok: true; track: TrackKey; subjects: string[] }
+  | { ok: false; error: string } {
+  const { track, subjects } = input;
+  if (
+    !Array.isArray(subjects) ||
+    subjects.length > ALL_SUBJECT_KEYS.length ||
+    !subjects.every((k) => typeof k === "string" && ALL_SUBJECT_KEYS.includes(k))
+  ) {
+    return { ok: false, error: "入力が不正です。" };
+  }
+  if (track === null || track === undefined) {
+    return { ok: false, error: "理系・文系を選んでください。" };
+  }
+  if (!TRACKS.some((t) => t.key === track)) {
+    return { ok: false, error: "入力が不正です。" };
+  }
+  const normalized = normalizeSubjects(subjects);
+  if (normalized.length === 0) {
+    return { ok: false, error: "担当できる科目を 1 つ以上選んでください。" };
+  }
+  return { ok: true, track: track as TrackKey, subjects: normalized };
+}
+
+/** 一覧の絞り込み: 「理系」には「どちらも」の人も入れる */
+export function matchesTrackFilter(
+  track: string | null,
+  filter: TrackKey | "none" | null,
+): boolean {
+  if (!filter) return true;
+  if (filter === "none") return !TRACKS.some((t) => t.key === track);
+  if (filter === "both") return track === "both";
+  return track === filter || track === "both";
+}

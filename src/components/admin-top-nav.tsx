@@ -33,7 +33,7 @@ const NAV: {
   {
     href: "/admin/tutors",
     label: "講師管理",
-    match: startsWithAny(["/admin/tutors", "/admin/admins"]),
+    match: startsWithAny(["/admin/tutors", "/admin/tutor-subjects", "/admin/admins"]),
   },
   {
     href: "/admin/periods",
