@@ -16,9 +16,11 @@ import {
   fixedShiftSubmissions,
   regularShiftPeriods,
   shiftConfirmations,
-  trainingPreferences,
 } from "@/db/schema";
-import { getActiveTrainingPeriods } from "@/lib/training";
+import {
+  getActiveTrainingPeriods,
+  getTrainingSubmissionStatuses,
+} from "@/lib/training";
 import { getTutorWeekSchedule, type ScheduleSlot } from "@/lib/tutor-schedule";
 import { homeWeekOf, jstToday, nextWeek } from "@/lib/week";
 
@@ -202,23 +204,20 @@ export async function getTutorHomeData(tutorId: string): Promise<TutorHomeData> 
 
   // --- 提出締切 (編集可能なもの) ---
   const deadlines: HomeDeadline[] = [];
-  for (const tp of trainingPeriods.filter((p) => p.editable)) {
-    const submittedRows = await db
-      .select({ c: count() })
-      .from(trainingPreferences)
-      .where(
-        and(
-          eq(trainingPreferences.tutorId, tutorId),
-          eq(trainingPreferences.periodId, tp.id),
-        ),
-      );
+  // 本番チェック No.12: 「提出する」を押したものだけ提出済み (一時保存は未提出)
+  const editableTraining = trainingPeriods.filter((p) => p.editable);
+  const trainingStatuses = await getTrainingSubmissionStatuses(
+    tutorId,
+    editableTraining.map((p) => p.id),
+  );
+  for (const tp of editableTraining) {
     deadlines.push({
       kind: "training",
       label: `${tp.name}のシフト提出`,
       href: "/tutor/training",
       dueLabel: fmtDeadline(tp.submissionDeadline),
       daysLeft: tp.daysLeft,
-      submitted: (submittedRows[0]?.c ?? 0) > 0,
+      submitted: trainingStatuses.get(tp.id) === "submitted",
     });
   }
 

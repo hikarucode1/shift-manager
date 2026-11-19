@@ -627,6 +627,12 @@ export const trainingPeriodNotes = pgTable(
     /** #319: 夏休み (任意)。開始と終了は両方入っているか両方空 */
     summerFrom: date("summer_from"),
     summerTo: date("summer_to"),
+    /**
+     * 本番チェック No.12: 講習希望を「提出」した時刻。null は一時保存 (未提出)。
+     * 提出済みのあいだは講師が編集できない (「修正する」で null に戻す)。
+     * 教室長の希望集計は提出済みの講師だけを数える
+     */
+    submittedAt: timestamp("submitted_at", { withTimezone: true }),
     updatedAt: timestamp("updated_at", { withTimezone: true })
       .notNull()
       .defaultNow(),

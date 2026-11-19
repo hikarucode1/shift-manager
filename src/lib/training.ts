@@ -1,5 +1,5 @@
 import "server-only";
-import { and, desc, eq } from "drizzle-orm";
+import { and, desc, eq, inArray } from "drizzle-orm";
 import { db } from "@/db/client";
 import {
   periods,
@@ -52,7 +52,12 @@ export type TrainingEditorData = {
   note: string;
   /** #319: テスト期間 / 夏休み (どちらも任意) */
   ranges: Record<TrainingRangeKind, DateRange>;
+  /** 本番チェック No.12: 提出した時刻 (ISO)。null は一時保存 (未提出) */
+  submittedAt: string | null;
 };
+
+/** 講師ごとの講習希望の状態。none = まだ何も保存していない */
+export type TrainingSubmissionStatus = "submitted" | "draft" | "none";
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 
@@ -221,6 +226,7 @@ export async function getTrainingEditorData(
         testTo: trainingPeriodNotes.testTo,
         summerFrom: trainingPeriodNotes.summerFrom,
         summerTo: trainingPeriodNotes.summerTo,
+        submittedAt: trainingPeriodNotes.submittedAt,
       })
       .from(trainingPeriodNotes)
       .where(
@@ -259,7 +265,65 @@ export async function getTrainingEditorData(
         to: noteRow[0]?.summerTo ?? null,
       },
     },
+    submittedAt: noteRow[0]?.submittedAt?.toISOString() ?? null,
   };
+}
+
+/** 講師の各講習期間の提出状態 (一覧のバッジ・ホームの締切表示用) */
+export async function getTrainingSubmissionStatuses(
+  tutorId: string,
+  periodIds: string[],
+): Promise<Map<string, TrainingSubmissionStatus>> {
+  const out = new Map<string, TrainingSubmissionStatus>();
+  if (periodIds.length === 0) return out;
+  const [noteRows, prefRows] = await Promise.all([
+    db
+      .select({
+        periodId: trainingPeriodNotes.periodId,
+        submittedAt: trainingPeriodNotes.submittedAt,
+      })
+      .from(trainingPeriodNotes)
+      .where(
+        and(
+          eq(trainingPeriodNotes.tutorId, tutorId),
+          inArray(trainingPeriodNotes.periodId, periodIds),
+        ),
+      ),
+    db
+      .selectDistinct({ periodId: trainingPreferences.periodId })
+      .from(trainingPreferences)
+      .where(
+        and(
+          eq(trainingPreferences.tutorId, tutorId),
+          inArray(trainingPreferences.periodId, periodIds),
+        ),
+      ),
+  ]);
+  for (const id of periodIds) out.set(id, "none");
+  // コマを選んだ・備考などを書いた = 一時保存
+  for (const r of prefRows) out.set(r.periodId, "draft");
+  for (const r of noteRows) {
+    out.set(r.periodId, r.submittedAt ? "submitted" : "draft");
+  }
+  return out;
+}
+
+/** 提出済みか (編集系 action のガード用) */
+export async function isTrainingSubmitted(
+  periodId: string,
+  tutorId: string,
+): Promise<boolean> {
+  const rows = await db
+    .select({ submittedAt: trainingPeriodNotes.submittedAt })
+    .from(trainingPeriodNotes)
+    .where(
+      and(
+        eq(trainingPeriodNotes.periodId, periodId),
+        eq(trainingPeriodNotes.tutorId, tutorId),
+      ),
+    )
+    .limit(1);
+  return rows[0]?.submittedAt != null;
 }
 
 /**
@@ -270,6 +334,8 @@ export async function assertTrainingEditable(
   periodId: string,
   /** #333: この講師だけの変更許可も見る */
   tutorId: string,
+  /** 本番チェック No.12: 提出済みなら断る (「修正する」自体はこれを false で呼ぶ) */
+  { rejectSubmitted = true }: { rejectSubmitted?: boolean } = {},
 ): Promise<
   | { ok: true; startDate: string; endDate: string }
   | { ok: false; reason: string }
@@ -303,6 +369,12 @@ export async function assertTrainingEditable(
       ok: false,
       reason:
         "提出締切を過ぎています。変更したいときは「変更申請」を出してください。",
+    };
+  }
+  if (rejectSubmitted && (await isTrainingSubmitted(periodId, tutorId))) {
+    return {
+      ok: false,
+      reason: "提出済みです。直すときは「修正する」を押してください。",
     };
   }
   return { ok: true, startDate: r.startDate, endDate: r.endDate };

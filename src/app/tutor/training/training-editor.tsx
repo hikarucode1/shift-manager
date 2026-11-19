@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
-import { AlertCircle, Lock } from "lucide-react";
+import { AlertCircle, CheckCircle2, Lock } from "lucide-react";
 import {
   Card,
   CardContent,
@@ -27,6 +27,8 @@ import {
   saveTrainingRange,
   setTrainingSlot,
   setTrainingSlotsBulk,
+  submitTraining,
+  unsubmitTraining,
 } from "./actions";
 
 /** 曜日ラベルから色クラス (土=青 / 日=赤 / 平日=既定) を返す */
@@ -62,6 +64,7 @@ export type TrainingEditorProps = {
     selected: string[];
     note: string;
     ranges: Record<TrainingRangeKind, DateRange>;
+    submittedAt: string | null;
   };
 };
 
@@ -69,7 +72,10 @@ const key = (date: string, slot: number) => `${date}|${slot}`;
 
 export function TrainingEditor({ data }: TrainingEditorProps) {
   const { period, slots, days } = data;
-  const editable = period.editable;
+  // 本番チェック No.12: 提出済みのあいだは締切前でも編集させない
+  // (「修正する」で提出を取り下げると、また編集できる)
+  const [submittedAt, setSubmittedAt] = useState(data.submittedAt);
+  const editable = period.editable && submittedAt === null;
 
   const router = useRouter();
   const [selected, setSelected] = useState<Set<string>>(
@@ -87,6 +93,10 @@ export function TrainingEditor({ data }: TrainingEditorProps) {
     setSavingCount((c) => c + d);
   }, []);
   const [leaving, setLeaving] = useState(false);
+  // 提出・一時保存の結果はボタンのすぐ上に出す (上の通知は画面外になりやすい)
+  const [footerNotice, setFooterNotice] = useState<
+    { type: "ok" | "error"; text: string } | null
+  >(null);
 
   useEffect(() => {
     if (!notice) return;
@@ -277,27 +287,75 @@ export function TrainingEditor({ data }: TrainingEditorProps) {
     }
   }
 
+  /** 備考・期間・コマの保存が終わるまで待つ (コマは最大 10 秒) */
+  async function waitForSaves() {
+    await flushNote();
+    await rangeQueue.current;
+    for (let i = 0; i < 100 && savingRef.current > 0; i++) {
+      await new Promise((r) => setTimeout(r, 100));
+    }
+  }
+
+  // PC ではクリックの押し下げで備考欄のフォーカスが外れて保存が始まる。
+  // ボタンは押せるままにして、押したら保存の終わりを待ってから動く
   async function goBackToList() {
     setLeaving(true);
-    if (editable) {
-      await flushNote();
-      await rangeQueue.current;
-      // コマの保存が残っていれば終わるまで待つ (最大 10 秒)
-      for (let i = 0; i < 100 && savingRef.current > 0; i++) {
-        await new Promise((r) => setTimeout(r, 100));
-      }
-    }
+    if (editable) await waitForSaves();
     router.push("/tutor/training");
+  }
+
+  async function handleSubmit() {
+    setLeaving(true);
+    setFooterNotice(null);
+    await waitForSaves();
+    const res = await submitTraining({ periodId: period.id }).catch(
+      toFailedResult,
+    );
+    if (!mounted.current) return;
+    setLeaving(false);
+    if (res.ok) {
+      setSubmittedAt(new Date().toISOString());
+      setFooterNotice({ type: "ok", text: "提出しました。" });
+    } else {
+      setFooterNotice({ type: "error", text: res.error });
+      if (isIndeterminate(res)) router.refresh();
+    }
+  }
+
+  async function handleUnsubmit() {
+    setLeaving(true);
+    setFooterNotice(null);
+    const res = await unsubmitTraining({ periodId: period.id }).catch(
+      toFailedResult,
+    );
+    if (!mounted.current) return;
+    setLeaving(false);
+    if (res.ok) {
+      setSubmittedAt(null);
+      setFooterNotice({
+        type: "ok",
+        text: "編集できるようにしました。直したら、もう一度「提出する」を押してください。",
+      });
+    } else {
+      setFooterNotice({ type: "error", text: res.error });
+      if (isIndeterminate(res)) router.refresh();
+    }
   }
 
   const selectedCount = selected.size;
 
   return (
     <div className="space-y-4">
-      {!editable && (
+      {!period.editable && (
         <div className="flex items-center gap-2 rounded-md border border-muted bg-muted/50 px-3 py-2 text-sm">
           <Lock className="size-4" />
           提出締切を過ぎているため、閲覧のみです。変えたいときは上の「変更申請」から申請してください。
+        </div>
+      )}
+      {period.editable && submittedAt && (
+        <div className="flex items-center gap-2 rounded-md border border-primary/40 bg-primary/5 px-3 py-2 text-sm">
+          <CheckCircle2 className="size-4 text-primary" />
+          提出済みです。直すときは一番下の「修正する」を押してください。
         </div>
       )}
 
@@ -317,8 +375,8 @@ export function TrainingEditor({ data }: TrainingEditorProps) {
       {/* 操作案内 (#157): 詳細画面には何をする画面かの説明が無かった */}
       {editable && (
         <p className="text-sm text-muted-foreground">
-          出勤できるコマをタップして選んでください。タップするたびに選択/解除が
-          切り替わり、自動で保存されます。締切までは何度でも変更できます。
+          出勤できるコマをタップして選んでください。選んだ内容は自動で一時保存されます。
+          最後に一番下の「提出する」を押すと、教室長に届きます。
         </p>
       )}
 
@@ -504,27 +562,74 @@ export function TrainingEditor({ data }: TrainingEditorProps) {
         </CardContent>
       </Card>
 
-      {/* 完了バー: 選択は自動保存されるため、ここは確認 + 一覧への導線 */}
+      {/* 完了バー (本番チェック No.12): 一時保存 / 提出する */}
       <div className="space-y-2 border-t pt-4">
         <div className="flex items-center justify-between text-sm text-muted-foreground">
           <span>選択 {selectedCount} コマ</span>
-          {savingCount > 0 ? (
-            <span>保存中...</span>
-          ) : (
-            <span>選んだコマは自動で保存されます</span>
-          )}
+          {savingCount > 0 && <span>保存中...</span>}
         </div>
-        {/* PC ではクリックの押し下げで備考欄のフォーカスが外れて保存が始まり、
-            ボタンが押せない状態に変わってクリックが消えていた。押せるまま
-            にして、押したら保存の終わりを待ってから一覧へ移る */}
-        <Button
-          type="button"
-          className="w-full"
-          disabled={leaving}
-          onClick={() => void goBackToList()}
-        >
-          {leaving ? "保存中..." : "一覧へ戻る"}
-        </Button>
+        {footerNotice && (
+          <p
+            role="status"
+            className={cn(
+              "flex items-center gap-1 text-sm",
+              footerNotice.type === "ok" ? "text-primary" : "text-destructive",
+            )}
+          >
+            {footerNotice.type === "error" ? (
+              <AlertCircle className="size-4 shrink-0" />
+            ) : (
+              <CheckCircle2 className="size-4 shrink-0" />
+            )}
+            {footerNotice.text}
+          </p>
+        )}
+        {period.editable && !submittedAt && (
+          <>
+            <Button
+              type="button"
+              className="w-full"
+              disabled={leaving}
+              onClick={() => void handleSubmit()}
+            >
+              {leaving ? "保存中..." : "提出する"}
+            </Button>
+            <Button
+              type="button"
+              variant="outline"
+              className="w-full"
+              disabled={leaving}
+              onClick={() => void goBackToList()}
+            >
+              一時保存して一覧へ戻る
+            </Button>
+            <p className="text-xs text-muted-foreground">
+              一時保存のままだと教室長には届きません。
+            </p>
+          </>
+        )}
+        {period.editable && submittedAt && (
+          <Button
+            type="button"
+            variant="outline"
+            className="w-full"
+            disabled={leaving}
+            onClick={() => void handleUnsubmit()}
+          >
+            修正する
+          </Button>
+        )}
+        {(!period.editable || submittedAt) && (
+          <Button
+            type="button"
+            variant={period.editable ? "ghost" : "default"}
+            className="w-full"
+            disabled={leaving}
+            onClick={() => void goBackToList()}
+          >
+            一覧へ戻る
+          </Button>
+        )}
       </div>
     </div>
   );

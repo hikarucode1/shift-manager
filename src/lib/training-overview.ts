@@ -1,5 +1,13 @@
 import "server-only";
-import { and, arrayContains, asc, count, eq, inArray } from "drizzle-orm";
+import {
+  and,
+  arrayContains,
+  asc,
+  count,
+  eq,
+  inArray,
+  isNotNull,
+} from "drizzle-orm";
 import { db } from "@/db/client";
 import {
   courseConfirmations,
@@ -131,6 +139,16 @@ export async function getHeatmapData(
       })
       .from(trainingPreferences)
       .innerJoin(profiles, eq(profiles.id, trainingPreferences.tutorId))
+      // 本番チェック No.12: 「提出する」を押した講師の希望だけ数える
+      // (一時保存のままの希望は教室長に見せない)
+      .innerJoin(
+        trainingPeriodNotes,
+        and(
+          eq(trainingPeriodNotes.periodId, trainingPreferences.periodId),
+          eq(trainingPeriodNotes.tutorId, trainingPreferences.tutorId),
+          isNotNull(trainingPeriodNotes.submittedAt),
+        ),
+      )
       .where(
         and(
           eq(trainingPreferences.periodId, periodId),
@@ -277,6 +295,8 @@ export async function getTrainingTutorNotes(
     .where(
       and(
         eq(trainingPeriodNotes.periodId, periodId),
+        // 本番チェック No.12: 提出済みの講師だけ
+        isNotNull(trainingPeriodNotes.submittedAt),
         arrayContains(profiles.roles, ["tutor"]),
         eq(profiles.isActive, true),
       ),

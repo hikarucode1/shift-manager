@@ -7,6 +7,7 @@ import { courseConfirmations, periods } from "@/db/schema";
 import {
   getActiveTrainingPeriods,
   getTrainingEditorData,
+  getTrainingSubmissionStatuses,
   type TrainingEditorData,
 } from "@/lib/training";
 import {
@@ -132,6 +133,11 @@ export default async function TutorTrainingPage({
         asc(courseConfirmations.slotNumber),
       ),
   ]);
+  // 本番チェック No.12: 期間ごとの提出状態 (提出済み / 一時保存中 / 未提出)
+  const statuses = await getTrainingSubmissionStatuses(
+    profile.id,
+    activePeriods.map((p) => p.id),
+  );
 
   // 期ごとに { date → slot番号配列 } にグループ化
   const confirmedByPeriod = new Map<
@@ -155,7 +161,7 @@ export default async function TutorTrainingPage({
       <section className="rounded-xl bg-primary p-4 text-primary-foreground">
         <h1 className="text-xl font-bold">講習シフト提出</h1>
         <p className="mt-1 text-xs text-primary-foreground/80">
-          講習期間ごとに勤務できるコマを選びます。締切までは何度でも変更できます。
+          講習期間ごとに勤務できるコマを選んで、「提出する」を押します。
         </p>
       </section>
 
@@ -208,7 +214,14 @@ export default async function TutorTrainingPage({
                       {formatDeadlineDate(p.submissionDeadline)}
                     </CardDescription>
                   </div>
-                  <div className="flex shrink-0 items-center gap-2">
+                  <div className="flex shrink-0 flex-wrap items-center justify-end gap-2">
+                    {statuses.get(p.id) === "submitted" ? (
+                      <Badge>提出済み</Badge>
+                    ) : statuses.get(p.id) === "draft" ? (
+                      <Badge variant="outline">一時保存中</Badge>
+                    ) : p.editable ? (
+                      <Badge variant="outline">未提出</Badge>
+                    ) : null}
                     {p.isReopened ? (
                       <Badge variant="destructive">締切無視中（提出可）</Badge>
                     ) : p.editable ? (
@@ -240,5 +253,6 @@ function serializeData(d: TrainingEditorData) {
     selected: [...d.selected],
     note: d.note,
     ranges: d.ranges,
+    submittedAt: d.submittedAt,
   };
 }
