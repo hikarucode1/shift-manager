@@ -9,6 +9,7 @@ import { getApprovedDayOffs, getDayOffConflicts } from "@/lib/day-offs";
 import { dayOffSlotsLabel } from "@/lib/day-off-rule";
 import { getSlotMeta } from "@/lib/slot-meta";
 import { WeeklyGrid } from "./weekly-grid";
+import { UndoWeekButton } from "./undo-week-button";
 
 export default async function AdminWeeklyPage({
   searchParams,
@@ -96,6 +97,14 @@ export default async function AdminWeeklyPage({
       )}
       {/* 週が変わったらフィルタ等のローカル state をリセットするため key を付与 */}
       <WeeklyGrid key={schedule.range.start} schedule={schedule} />
+      {/* 本番チェック メモ16: 間違えて取り込んだ週を取り消す */}
+      {schedule.upload && schedule.upload.weekStart === range.start && (
+        <UndoWeekButton
+          weekStart={range.start}
+          weekLabel={`${noticeDate(range.start)}〜${noticeDate(range.end)}`}
+          shiftCount={schedule.totalShiftCount}
+        />
+      )}
     </div>
   );
 }
