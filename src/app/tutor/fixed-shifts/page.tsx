@@ -440,15 +440,13 @@ export default async function FixedShiftPage({
                   : "text-primary-foreground",
               )}
             >
-              {headerDeadline.dueAt.toLocaleString("ja-JP", {
+              {/* 本番チェック メモ3: 締切は日付だけ (その日の 23:59 まで) */}
+              {headerDeadline.dueAt.toLocaleDateString("ja-JP", {
                 timeZone: "Asia/Tokyo",
-                year: "numeric",
-                month: "2-digit",
-                day: "2-digit",
-                hour: "2-digit",
-                minute: "2-digit",
+                month: "numeric",
+                day: "numeric",
               })}
-              （{headerDeadline.text}）
+              まで（{headerDeadline.text}）
             </span>
           </p>
         )}
