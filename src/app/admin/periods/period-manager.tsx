@@ -513,15 +513,19 @@ function PeriodList({
                           >
                             <Pencil className="size-3.5" />
                           </Button>
-                          <Button
-                            size="sm"
-                            variant={p.isReopened ? "destructive" : "outline"}
-                            disabled={isPending}
-                            title="締切を無視して講師の希望提出を受け付けます"
-                            onClick={() => onReopen(p.id, !p.isReopened)}
-                          >
-                            {p.isReopened ? "締切で締める" : "締切後も受付"}
-                          </Button>
+                          {/* 本番チェックの気づき14 (11/19 本人): 「締切後も受付 (締切無視)」は
+                              いらない。全体を開け直すときは締切日を延ばし、1 人だけなら変更申請か
+                              「1 人だけ再開」。前に締切無視にした期を戻せるよう、解除だけ残す */}
+                          {p.isReopened && (
+                            <Button
+                              size="sm"
+                              variant="destructive"
+                              disabled={isPending}
+                              onClick={() => onReopen(p.id, false)}
+                            >
+                              締切で締める
+                            </Button>
+                          )}
                         </>
                       )}
                       <Button

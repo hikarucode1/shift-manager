@@ -40,7 +40,6 @@ const NAV: {
     label: "期間管理",
     match: startsWithAny([
       "/admin/periods",
-      "/admin/submission-periods",
       "/admin/regular-periods",
     ]),
   },
