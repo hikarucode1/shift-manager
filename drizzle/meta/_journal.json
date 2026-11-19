@@ -400,6 +400,13 @@
       "when": 1795094803803,
       "tag": "0056_shift_reminder",
       "breakpoints": true
+    },
+    {
+      "idx": 57,
+      "version": "7",
+      "when": 1795132242166,
+      "tag": "0057_drop_monthly_submission_periods",
+      "breakpoints": true
     }
   ]
 }

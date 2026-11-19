@@ -258,65 +258,13 @@ export const fixedShifts = pgTable(
 );
 
 /* ------------------------------------------------------------------ */
-/*  monthly_submission_periods — 月別レギュラー提出期間 (Issue #60)      */
-/* ------------------------------------------------------------------ */
-/*  教室長が「対象月 / 提出開始 / 提出締切」を月単位で指定するエンティティ。 */
-/*  fixed_shift_submissions.period_id から参照される。                  */
-/*  既存 periods (通常 / 講習) とは用途が異なるため別テーブル。           */
-
-export const monthlySubmissionPeriods = pgTable(
-  "monthly_submission_periods",
-  {
-    id: uuid("id").primaryKey().defaultRandom(),
-    /** 対象月の 1 日 (例: 2026-07-01 = 2026年7月分)。月単位の一意制約あり */
-    targetMonth: date("target_month").notNull(),
-    /** 講師の提出可能開始日時 */
-    submissionOpensAt: timestamp("submission_opens_at", { withTimezone: true }).notNull(),
-    /** 講師の提出締切日時。締切後は強制凍結 (B2 で実装) */
-    submissionDueAt: timestamp("submission_due_at", { withTimezone: true }).notNull(),
-    /** アーカイブ (論理削除)。一覧から隠すが履歴は保持 */
-    isArchived: boolean("is_archived").notNull().default(false),
-    createdBy: uuid("created_by")
-      .notNull()
-      .references(() => profiles.id, { onDelete: "restrict" }),
-    createdAt: timestamp("created_at", { withTimezone: true })
-      .notNull()
-      .defaultNow(),
-    updatedAt: timestamp("updated_at", { withTimezone: true })
-      .notNull()
-      .defaultNow(),
-  },
-  (t) => ({
-    // PR #66 Round 3 P1-B: アクティブ (= 未 archived) な行に限定した unique index。
-    // 全件 unique にすると「誤って archived → 同月を作り直したい」が永続的に詰む。
-    // 部分 unique で論理削除と再作成を共存させる (`absence_requests_active_uniq`,
-    // `swap_requests_active_uniq` の既存パターンに整合)。
-    targetMonthActiveUniq: uniqueIndex(
-      "monthly_submission_periods_target_month_active_uniq",
-    )
-      .on(t.targetMonth)
-      .where(sql`${t.isArchived} = false`),
-    // PR #66 Round 3 P2-A: アプリ層の zod 検証を bypass する経路 (service_role 直接 SQL、
-    // CSV/import、将来の他クライアント) からの不正データを DB 層で塞ぐ。
-    targetMonthIsFirstOfMonth: check(
-      "monthly_submission_periods_target_month_first_of_month_chk",
-      sql`${t.targetMonth} = date_trunc('month', ${t.targetMonth})::date`,
-    ),
-    opensBeforeDue: check(
-      "monthly_submission_periods_opens_before_due_chk",
-      sql`${t.submissionOpensAt} < ${t.submissionDueAt}`,
-    ),
-  }),
-);
-
-/* ------------------------------------------------------------------ */
 /*  regular_shift_periods — 期 (可変長) マスタ (Issue #71)            */
 /* ------------------------------------------------------------------ */
 /*  業務実態: 4月頭に提出 → 6月末まで持つ = 期 (3ヶ月程度、可変長)。     */
 /*  monthly_submission_periods (月単位) を置換する第 2 段階の起点。     */
 /*  日付単位 (月初制約なし) で期中始動 (例: 4/16 〜) も許容。            */
 /*  label は admin 手動 ("2026年春期 (4-6月)" 等)、業務ラベルに揃える。   */
-/*  旧 monthly_submission_periods は β/γ 完了後に別 PR で廃止予定。       */
+/*  旧 monthly_submission_periods は 0057 で廃止済み。                  */
 
 export const regularShiftPeriods = pgTable(
   "regular_shift_periods",
@@ -992,17 +940,6 @@ export const fixedShiftSubmissionsRelations = relations(
       fields: [fixedShiftSubmissions.periodId],
       references: [regularShiftPeriods.id],
     }),
-  }),
-);
-
-export const monthlySubmissionPeriodsRelations = relations(
-  monthlySubmissionPeriods,
-  ({ one, many }) => ({
-    creator: one(profiles, {
-      fields: [monthlySubmissionPeriods.createdBy],
-      references: [profiles.id],
-    }),
-    submissions: many(fixedShiftSubmissions),
   }),
 );
 
