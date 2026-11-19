@@ -172,6 +172,18 @@ export function AdminSubmissionsOverview({
         ),
       ),
   );
+  // 11/19 本人: 「押す＝選ぶ」と「レギュラーに決定する」を見た目で分ける。
+  // 決定済み (保存済み) の集合。選んだだけで未決定の人と区別して表示する
+  const [savedSet, setSavedSet] = useState<Set<string>>(
+    () =>
+      new Set(
+        initialConfirmed.map((a) =>
+          assignKey(a.tutorId, a.weekday, a.slotNumber),
+        ),
+      ),
+  );
+  const addedCount = [...confirmedSet].filter((k) => !savedSet.has(k)).length;
+  const removedCount = [...savedSet].filter((k) => !confirmedSet.has(k)).length;
   // 初期確定セットからの変更検知 (未保存変更がある時 ボタン強調)
   const [confirmDirty, setConfirmDirty] = useState(false);
 
@@ -330,9 +342,10 @@ export function AdminSubmissionsOverview({
       }).catch(toFailedResult);
       if (result.ok) {
         setConfirmDirty(false);
+        setSavedSet(new Set(confirmedSet));
         setNotice({
           type: "ok",
-          text: `確定 ${result.inserted} 枠を保存しました。`,
+          text: `${formatMonth(targetMonth)}だけ、${result.inserted} コマをレギュラーに決定しました。`,
         });
         router.refresh();
       } else {
@@ -351,12 +364,9 @@ export function AdminSubmissionsOverview({
     if (!period) return;
     const assignments = currentAssignments();
     const confirmed = window.confirm(
-      `期「${period.label}」(${period.startDate} 〜 ${period.endDate}) ` +
-        `のすべての月に同じ ${assignments.length} 枠を保存します。\n\n` +
-        `※ 適用される ${assignments.length} 枠は ${formatMonth(targetMonth)} の画面で ✓ を付けたものです。\n` +
-        `ほかの月で「その月だけ保存」をしていた場合、その分は\n` +
-        `この内容で上書きされます。\n\n` +
-        `続行しますか?`,
+      `選んだ ${assignments.length} コマを、${period.label}（${period.startDate} 〜 ${period.endDate}）のレギュラーに決定します。\n\n` +
+        `ほかの月で「この月だけ別にする」で決めていた分は、この内容で置き換わります。\n\n` +
+        `決定しますか?`,
     );
     if (!confirmed) return;
     setNotice(null);
@@ -367,9 +377,10 @@ export function AdminSubmissionsOverview({
       }).catch(toFailedResult);
       if (result.ok) {
         setConfirmDirty(false);
+        setSavedSet(new Set(confirmedSet));
         setNotice({
           type: "ok",
-          text: `期のすべての月に ${result.inserted} 枠を保存しました。`,
+          text: `${result.inserted} コマをレギュラーに決定しました（${period.label} の期間すべて）。`,
         });
         router.refresh();
       } else {
@@ -653,13 +664,20 @@ export function AdminSubmissionsOverview({
       <Card>
         <CardHeader>
           <CardTitle className="text-base">
-            出られる人と確定 ({formatMonth(targetMonth)})
+            レギュラーを決める ({period ? period.label : formatMonth(targetMonth)})
           </CardTitle>
           <CardDescription>
-            各マスに、そのコマに出られると出した講師が並びます（白＝○、オレンジ＝△ できれば避けたい）。名前を押すと確定（✓）、もう一度押すと外れます。右の % は講師ごとの「確定したコマ ÷ 出られるコマ（○と△）」です。決め終わったら下の「保存」を押してください。
+            ① 表の名前を押して、レギュラーにする人を選びます（もう一度押すと外れます）。② 選び終わったら、下の「レギュラーに決定する」を押します。押すまでは決まりません。
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
+          <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-muted-foreground">
+            <span className="flex items-center gap-1"><span className="inline-block h-3 w-5 rounded border border-input bg-background" />出られる（○）</span>
+            <span className="flex items-center gap-1"><span className="inline-block h-3 w-5 rounded border border-amber-300 bg-amber-50" />できれば避けたい（△）</span>
+            <span className="flex items-center gap-1"><span className="inline-block h-3 w-5 rounded border-2 border-sky-600 bg-sky-50" />選んだ（まだ決定していない）</span>
+            <span className="flex items-center gap-1"><span className="inline-block h-3 w-5 rounded border border-primary bg-primary" />レギュラーに決定済み</span>
+            <span className="flex items-center gap-1"><span className="inline-block h-3 w-5 rounded border border-dashed border-destructive bg-destructive/5" />決定済みから外す</span>
+          </div>
           <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_15rem]">
             <div className="overflow-x-auto">
               <table className="w-full min-w-[56rem] table-fixed border-collapse text-xs">
@@ -703,6 +721,7 @@ export function AdminSubmissionsOverview({
                           tutors={sortedTutors}
                           entryMaps={entryMaps}
                           confirmedSet={confirmedSet}
+                          savedSet={savedSet}
                           disabled={isPending}
                           onToggle={toggleConfirmed}
                           isMatch={isMatch}
@@ -724,49 +743,52 @@ export function AdminSubmissionsOverview({
           </div>
 
           <div className="space-y-3 rounded-md border bg-muted/40 p-3 text-sm">
-            <div className="space-y-1">
+            <div className="flex flex-wrap items-center gap-3">
+              {period && (
+                <Button
+                  size="lg"
+                  onClick={handleSaveRegularConfirmation}
+                  disabled={isPending || (!confirmDirty && addedCount + removedCount === 0)}
+                >
+                  <Check className="mr-1 h-4 w-4" />
+                  レギュラーに決定する
+                </Button>
+              )}
+              <div className="text-xs">
+                {addedCount + removedCount > 0 ? (
+                  <span className="font-medium text-amber-700 dark:text-amber-300">
+                    まだ決定していない変更があります（新しく選んだ {addedCount} コマ・外す {removedCount} コマ）
+                  </span>
+                ) : (
+                  <span className="text-muted-foreground">
+                    決定済みのレギュラー: {savedSet.size} コマ（変更なし）
+                  </span>
+                )}
+              </div>
+            </div>
+            <div className="flex flex-wrap items-center gap-x-4 gap-y-1">
               <Button
                 variant="outline"
                 size="sm"
                 onClick={bulkConfirmAllSubmittedYes}
                 disabled={isPending || tutors.length === 0}
               >
-                提出済みの ○ をまとめて確定にする
+                提出済みの ○ をまとめて選ぶ
               </Button>
-              <p className="text-xs text-muted-foreground">
-                全曜日の、提出済みの人の ○ をすべて ✓ にします。そこから外したい人を押して直すと早いです。
-              </p>
-            </div>
-            <div className="flex flex-wrap items-center gap-2">
-              {period && (
-                <Button
-                  onClick={handleSaveRegularConfirmation}
-                  disabled={isPending}
-                  className={cn(confirmDirty && "ring-2 ring-primary/40")}
-                >
-                  <Check className="mr-1 h-4 w-4" />
-                  期の全部の月に保存（{confirmedSet.size} 枠）
-                </Button>
-              )}
               <Button
-                variant={period ? "outline" : "default"}
+                variant="link"
+                size="sm"
+                className="h-auto px-0 text-xs text-muted-foreground"
                 onClick={handleSaveConfirmation}
                 disabled={isPending}
-                className={cn(confirmDirty && "ring-2 ring-primary/40")}
               >
-                <Check className="mr-1 h-4 w-4" />
-                {formatMonth(targetMonth)}だけ保存
+                {formatMonth(targetMonth)}だけ別にする（例外）
               </Button>
-              {confirmDirty && (
-                <span className="text-xs text-amber-700 dark:text-amber-300">
-                  まだ保存していない変更があります
-                </span>
-              )}
             </div>
             <p className="text-xs text-muted-foreground">
               {period
-                ? `ふつうは「期の全部の月に保存」です（${period.label}: ${period.startDate} 〜 ${period.endDate} のどの月も同じ確定になります）。この月だけ違うときに「${formatMonth(targetMonth)}だけ保存」を使います。`
-                : "この月を含む期がまだ無いため、保存できません。先に「レギュラー期間」で期を作ってください。"}
+                ? `決定すると、${period.label}（${period.startDate} 〜 ${period.endDate}）の期間すべてのレギュラーになります。ある月だけ違うときは「${formatMonth(targetMonth)}だけ別にする」を使います。`
+                : "この月を含む期がまだ無いため、決定できません。先に「レギュラー期間」で期を作ってください。"}
             </p>
           </div>
         </CardContent>
@@ -792,6 +814,7 @@ function ScheduleCell({
   tutors,
   entryMaps,
   confirmedSet,
+  savedSet,
   disabled,
   onToggle,
   isMatch,
@@ -802,6 +825,8 @@ function ScheduleCell({
   tutors: TutorView[];
   entryMaps: Map<string, Map<string, "yes" | "maybe" | "no">>;
   confirmedSet: Set<string>;
+  /** 決定済み (保存済み)。選んだだけの人と見た目を分ける */
+  savedSet: Set<string>;
   disabled: boolean;
   onToggle: (tutorId: string, weekday: string, slot: number) => void;
   isMatch: (t: TutorView) => boolean;
@@ -819,7 +844,9 @@ function ScheduleCell({
     return a === undefined || a === "no";
   });
   // 希望に無いのに確定している人 (手で入れた等) も見せる
-  const confirmedOthers = others.filter(isOn);
+  const isSaved = (t: TutorView) =>
+    savedSet.has(assignKey(t.id, weekday, slot.slotNumber));
+  const confirmedOthers = others.filter((t) => isOn(t) || isSaved(t));
   const addable = others.filter((t) => !isOn(t));
   const people: Array<{ t: TutorView; tone: "yes" | "maybe" | "other" }> = [
     ...yes.map((t) => ({ t, tone: "yes" as const })),
@@ -831,6 +858,9 @@ function ScheduleCell({
       <div className="flex flex-col gap-0.5">
         {people.map(({ t, tone }) => {
           const on = isOn(t);
+          const saved = isSaved(t);
+          // 決定済み / 選んだ (未決定) / 決定済みから外す / 何もない
+          const state = on ? (saved ? "decided" : "picked") : saved ? "removing" : "none";
           const draft = t.submission?.status === "draft";
           return (
             <button
@@ -851,18 +881,24 @@ function ScheduleCell({
               className={cn(
                 "flex w-full items-center gap-1 rounded border px-1.5 py-0.5 text-left text-xs transition-colors disabled:opacity-60",
                 !isMatch(t) && "opacity-40",
-                on
+                state === "decided"
                   ? "border-primary bg-primary font-semibold text-primary-foreground"
-                  : tone === "maybe"
+                  : state === "picked"
+                    ? "border-2 border-sky-600 bg-sky-50 font-semibold text-sky-900 dark:bg-sky-950 dark:text-sky-100"
+                    : state === "removing"
+                      ? "border-dashed border-destructive bg-destructive/5 text-destructive line-through"
+                      : tone === "maybe"
                     ? "border-amber-300 bg-amber-50 text-amber-900 hover:bg-amber-100 dark:border-amber-800 dark:bg-amber-950 dark:text-amber-200"
                     : "border-input bg-background hover:bg-muted",
-                tone === "other" && "border-dashed",
+                tone === "other" && state === "none" && "border-dashed",
               )}
             >
               {on ? <Check className="size-3 shrink-0" /> : <TrackDot track={t.track} />}
               <span className="truncate">{t.displayName}</span>
-              {tone === "maybe" && !on && <span className="ml-auto">△</span>}
-              {draft && <span className="ml-auto opacity-70">下書</span>}
+              {tone === "maybe" && state === "none" && <span className="ml-auto">△</span>}
+              {state === "picked" && <span className="ml-auto text-[10px] font-normal">未決定</span>}
+              {state === "removing" && <span className="ml-auto text-[10px] no-underline">外す</span>}
+              {draft && state === "none" && <span className="ml-auto opacity-70">下書</span>}
             </button>
           );
         })}
@@ -905,9 +941,9 @@ function RateList({
 }) {
   return (
     <div className="space-y-2 xl:sticky xl:top-4 xl:self-start">
-      <p className="text-sm font-medium">講師ごとの確定の割合</p>
+      <p className="text-sm font-medium">講師ごとのレギュラーの割合</p>
       <p className="text-xs text-muted-foreground">
-        確定したコマ ÷ 出られるコマ（○と△）。低い順。
+        選んだコマ ÷ 出られるコマ（○と△）。低い順。
       </p>
       <ul className="space-y-1.5">
         {rates.map(({ tutor, available, confirmed, pct }) => (
