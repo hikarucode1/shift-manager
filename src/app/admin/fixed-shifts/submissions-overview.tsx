@@ -449,7 +449,7 @@ export function AdminSubmissionsOverview({
           <CardDescription>
             {tutors.length} 名分の提出状況です。
             {frozenCount > 0 &&
-              ` 凍結中の提出が ${frozenCount} 件あります（「全員分を見る」から解除できます）。`}
+              ` 凍結中の提出が ${frozenCount} 件あります（「提出状況を確認する」から解除できます）。`}
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
@@ -544,7 +544,7 @@ export function AdminSubmissionsOverview({
             ) : (
               <ChevronDown className="mr-1 size-4" />
             )}
-            {showAllStatus ? "全員分を閉じる" : "全員分を見る"}
+            {showAllStatus ? "提出状況を閉じる" : "提出状況を確認する"}
           </Button>
         </CardContent>
         {showAllStatus && (
@@ -574,8 +574,7 @@ export function AdminSubmissionsOverview({
                 <Badge variant={badge.variant}>{badge.label}</Badge>
                 {t.submission && (
                   <div className="text-xs text-muted-foreground">
-                    希望: {t.submission.desiredDays ?? "-"} 日 /{" "}
-                    {t.submission.desiredSlots ?? "-"} コマ
+                    希望: 週 {t.submission.desiredSlots ?? "-"} コマ
                     {t.submission.effectiveTo && (
                       <> ・終了 {t.submission.effectiveTo}</>
                     )}
