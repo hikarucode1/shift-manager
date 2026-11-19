@@ -14,7 +14,8 @@ import { createOpenSwapOnBehalf } from "./swap-actions";
 
 /**
  * #331: 指定した相手に断られ、代講が決まっていない欠勤。教室長が
- * 「別の講師を指定し直す」か「代講を募集に出す」(今ある代理募集) を選ぶ。
+ * 「別の講師を指定し直す」(その講師に直接依頼が届く) か「代講を募集に出す」
+ * (今ある代理募集) を選ぶ。
  */
 export function UnfilledAbsencesPanel({
   absences,
@@ -128,7 +129,7 @@ export function UnfilledAbsencesPanel({
                       absenceId: a.id,
                       designatedSubstituteId: picked[a.id],
                     }),
-                  `指定し直しました。${a.tutorName}さんの画面に依頼ボタンが出ます。`,
+                  "指定し直し、その講師に代講の依頼を送りました。",
                 )
               }
             >

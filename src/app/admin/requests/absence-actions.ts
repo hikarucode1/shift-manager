@@ -8,7 +8,6 @@ import { notify } from "@/lib/notifications";
 import { db } from "@/db/client";
 import {
   absenceRequests,
-  profiles,
   swapRequests,
   weeklyShifts,
 } from "@/db/schema";
@@ -23,6 +22,7 @@ import {
   ABSENCE_EXPIRED_UNASSIGNED_NOTE,
 } from "@/lib/absence-expiry";
 import { absenceTutorAssigned } from "@/lib/absences";
+import { sendDesignatedRequest } from "@/lib/designation-request";
 
 type ActionResult = { ok: true } | { ok: false; error: string };
 
@@ -397,13 +397,13 @@ const RedesignateInput = z.object({
 
 /**
  * 教室長: 指定した相手に断られた欠勤で、代講を頼む相手を指定し直す (#331)。
- * 休む講師の「欠勤等」に、新しい相手への依頼ボタンがまた出る
- * (`designationState` は今の指定相手への依頼だけを見るため)。
+ * 本番チェック メモ21: 新しい相手には、教室長からそのまま依頼が届く
+ * (休む講師が依頼し直す手順は無くした)。
  */
 export async function redesignateSubstitute(
   input: unknown,
 ): Promise<ActionResult> {
-  await requireRole("admin");
+  const { profile } = await requireRole("admin");
   const parsed = RedesignateInput.safeParse(input);
   if (!parsed.success) {
     return {
@@ -484,16 +484,22 @@ export async function redesignateSubstitute(
       ),
     );
 
-  const [nominee] = await db
-    .select({ name: profiles.displayName })
-    .from(profiles)
-    .where(eq(profiles.id, designatedSubstituteId))
-    .limit(1);
+  // 本番チェック メモ21: 休む講師を挟まず、新しい相手に直接依頼を送る
+  const sent = await sendDesignatedRequest({ absenceId, actorId: profile.id });
+  revalidatePath("/tutor/open-swaps");
+  if (!sent.ok) {
+    revalidatePath("/admin/requests");
+    revalidatePath("/tutor/absences");
+    return {
+      ok: false,
+      error: `指定し直しましたが、依頼を送れませんでした: ${sent.error}`,
+    };
+  }
   const slotLabel = await slotLabelSafe(absence.slotNumber);
   await notify([absence.tutorId], {
     type: "absence_result",
     title: "代講を頼む相手が変わりました",
-    body: `対象: ${noticeDate(absence.date)} ${slotLabel} ／ ${nominee?.name ?? "指定された講師"}さんに代講を依頼してください`,
+    body: `対象: ${noticeDate(absence.date)} ${slotLabel} ／ 代講は${sent.designeeName}さんに依頼しました（返事待ち）`,
     href: "/tutor/absences",
   });
 
