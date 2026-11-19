@@ -9,15 +9,16 @@ import { getApprovedDayOffs, getDayOffConflicts } from "@/lib/day-offs";
 import { dayOffSlotsLabel } from "@/lib/day-off-rule";
 import { getSlotMeta } from "@/lib/slot-meta";
 import { WeeklyGrid } from "./weekly-grid";
+import { UndoWeekButton } from "./undo-week-button";
 
 export default async function AdminWeeklyPage({
   searchParams,
 }: {
-  searchParams: Promise<{ week?: string }>;
+  searchParams: Promise<{ week?: string; undone?: string }>;
 }) {
   await requireRole("admin");
 
-  const { week } = await searchParams;
+  const { week, undone } = await searchParams;
   // 実在する YYYY-MM-DD のみ採用。不正・未指定は今週にフォールバック
   const range = isValidIsoDate(week) ? weekOf(week) : weekOf();
 
@@ -94,8 +95,22 @@ export default async function AdminWeeklyPage({
           )}
         </div>
       )}
+      {/* 本番チェック メモ16: 取り消した直後の知らせ */}
+      {undone === "1" && !schedule.upload && (
+        <p role="status" className="rounded-lg border px-4 py-3 text-sm text-primary print:hidden">
+          {noticeDate(range.start)}〜{noticeDate(range.end)} の座席表の登録を取り消しました。正しい座席表は「Excel取り込み」から取り込めます。
+        </p>
+      )}
       {/* 週が変わったらフィルタ等のローカル state をリセットするため key を付与 */}
       <WeeklyGrid key={schedule.range.start} schedule={schedule} />
+      {/* 本番チェック メモ16: 間違えて取り込んだ週を取り消す */}
+      {schedule.upload && schedule.upload.weekStart === range.start && (
+        <UndoWeekButton
+          weekStart={range.start}
+          weekLabel={`${noticeDate(range.start)}〜${noticeDate(range.end)}`}
+          shiftCount={schedule.totalShiftCount}
+        />
+      )}
     </div>
   );
 }
