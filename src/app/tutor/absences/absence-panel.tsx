@@ -374,8 +374,8 @@ export function AbsencePanel({
                     )}
                     {h.designation.kind === "requested" && (
                       <p className="mt-1 text-sm text-muted-foreground">
-                        {h.designatedName}
-                        さんに代講を依頼しました。返事を待っています。
+                        代講は教室長から{h.designatedName}
+                        さんに依頼しています。返事を待っています。
                       </p>
                     )}
                     {h.designation.kind === "accepted" && (

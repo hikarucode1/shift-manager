@@ -10,7 +10,6 @@ import { absenceRequestedNotice } from "@/lib/submission-notice";
 import { db } from "@/db/client";
 import {
   absenceRequests,
-  profiles,
   swapRequests,
   weeklyShifts,
 } from "@/db/schema";
@@ -20,6 +19,8 @@ import { hasSlotEnded } from "@/lib/swaps";
 import { designeeError } from "@/lib/designee-check";
 import { absenceTutorAssigned } from "@/lib/absences";
 import { pendingAbsenceActions } from "@/lib/pending-absence-actions";
+import { sendDesignatedRequest } from "@/lib/designation-request";
+import { createOpenSwapOnBehalf } from "@/app/admin/requests/swap-actions";
 
 type ActionResult = { ok: true } | { ok: false; error: string };
 
@@ -205,6 +206,14 @@ const DecideInput = z.object({
    * 相手に代講を依頼し、相手が引き受けるとその場で成立する
    */
   designatedSubstituteId: z.string().uuid().nullable().optional(),
+  /**
+   * 本番チェック メモ21・23: 承認と一緒にする次の一手。
+   * - designate: designatedSubstituteId の講師に、教室長から直接依頼を送る
+   * - recruit: 代講の募集に出す (出られる講師全員に知らせる)
+   * - none: 承認だけ
+   * 省略時は、相手があれば designate、無ければ none
+   */
+  followUp: z.enum(["designate", "recruit", "none"]).optional(),
 });
 
 /**
@@ -257,8 +266,18 @@ export async function decideAbsenceRequest(
     };
   }
   const { id, decision, decisionNote } = parsed.data;
+  const followUp =
+    decision !== "approved"
+      ? "none"
+      : (parsed.data.followUp ??
+        (parsed.data.designatedSubstituteId ? "designate" : "none"));
   const designatedSubstituteId =
-    decision === "approved" ? (parsed.data.designatedSubstituteId ?? null) : null;
+    followUp === "designate"
+      ? (parsed.data.designatedSubstituteId ?? null)
+      : null;
+  if (followUp === "designate" && designatedSubstituteId === null) {
+    return { ok: false, error: "代講に指名する講師を選んでください。" };
+  }
 
   if (decision === "rejected" && decisionNote.length === 0) {
     return { ok: false, error: "却下する場合は理由を入力してください。" };
@@ -353,16 +372,43 @@ export async function decideAbsenceRequest(
     };
   }
 
-  // #331: 通知に指定した相手の名前を入れる (依頼は「欠勤等」の画面から)
-  const designatedName = designatedSubstituteId
-    ? ((
-        await db
-          .select({ name: profiles.displayName })
-          .from(profiles)
-          .where(eq(profiles.id, designatedSubstituteId))
-          .limit(1)
-      )[0]?.name ?? null)
-    : null;
+  // 本番チェック メモ21・23: 承認と一緒に、代講の指名 (B に直接依頼) か
+  // 募集を済ませる。ここで失敗しても承認は戻さない (欠勤は確かなので)。
+  // 失敗の理由は教室長に返し、「代講が決まっていない欠勤」から続けてもらう
+  let followUpNote = "";
+  let followUpError: string | null = null;
+  if (followUp === "designate") {
+    const sent = await sendDesignatedRequest({
+      absenceId: updated[0].id,
+      actorId: profile.id,
+    });
+    if (sent.ok) {
+      followUpNote = ` ／ 代講は${sent.designeeName}さんに依頼しました（返事待ち）`;
+    } else {
+      followUpError = sent.error;
+    }
+  } else if (followUp === "recruit") {
+    const [target] = await db
+      .select({
+        slotNumber: absenceRequests.slotNumber,
+        reason: absenceRequests.reason,
+      })
+      .from(absenceRequests)
+      .where(eq(absenceRequests.id, updated[0].id))
+      .limit(1);
+    const res = await createOpenSwapOnBehalf({
+      tutorId: updated[0].tutorId,
+      date: updated[0].date,
+      slotNumber: target.slotNumber,
+      reason: `欠勤（${target.reason}）`.slice(0, 500),
+    });
+    if (res.ok) {
+      followUpNote = " ／ 代講は募集に出しました";
+    } else {
+      followUpError = res.error;
+    }
+  }
+
   await notify([updated[0].tutorId], {
     type: "absence_result",
     title:
@@ -372,10 +418,19 @@ export async function decideAbsenceRequest(
     body:
       `対象日: ${updated[0].date}` +
       (decisionNote.length > 0 ? ` ／ ${decisionNote}` : "") +
-      (designatedName ? ` ／ ${designatedName}さんに代講を依頼してください` : ""),
+      followUpNote,
     href: "/tutor/absences",
   });
 
+  revalidatePath("/tutor/open-swaps");
+  if (followUpError) {
+    revalidatePath("/admin/requests");
+    revalidatePath("/tutor/absences");
+    return {
+      ok: false,
+      error: `承認はしましたが、代講の${followUp === "designate" ? "依頼" : "募集"}ができませんでした: ${followUpError}`,
+    };
+  }
   revalidatePath("/admin/requests");
   revalidatePath("/tutor/absences");
   return { ok: true };

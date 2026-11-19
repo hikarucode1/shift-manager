@@ -33,6 +33,10 @@ export function RequestsPanel({
   const [rejectNote, setRejectNote] = useState("");
   // #331: カードごとの「代講を頼む相手」(承認時に送る。空 = 指定しない)
   const [designated, setDesignated] = useState<Record<string, string>>({});
+  // 本番チェック メモ21・23: 承認と一緒にする次の一手 (既定は「何もしない」)
+  const [followUp, setFollowUp] = useState<
+    Record<string, "designate" | "recruit" | "none">
+  >({});
 
   // 却下の入力中のカードが、読み直しで却下を出せなくなったら (担当でない,
   // #289)、入力内容を捨てる。どの操作の読み直しでも効くよう、描画のたびに
@@ -211,55 +215,107 @@ export function RequestsPanel({
                   </div>
                 ) : (
                   <div className="space-y-2">
-                    {/* #331: 承認するときに、代講を頼む相手を指定できる (任意)。
-                      指定すると、休む講師の画面に依頼ボタンが出る */}
+                    {/* 本番チェック メモ21・23: 承認と一緒に、代講を
+                      「指名する／募集に出す／何もしない」から選ぶ。指名は
+                      その講師に教室長から直接依頼が届く (休む講師は挟まない) */}
                     {actions.canApprove && !p.isEnded && (
-                      <div className="flex flex-wrap items-center gap-2">
-                        <label
-                          htmlFor={`designate-${p.id}`}
-                          className="text-xs text-muted-foreground"
-                        >
-                          代講を頼む相手（任意）
-                        </label>
-                        <select
-                          id={`designate-${p.id}`}
-                          value={designated[p.id] ?? ""}
-                          onChange={(e) =>
-                            setDesignated((prev) => ({
-                              ...prev,
-                              [p.id]: e.target.value,
-                            }))
-                          }
-                          className="h-8 min-w-[10rem] rounded-md border bg-background px-2 text-sm focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
-                        >
-                          <option value="">指定しない</option>
-                          {tutors
-                            .filter((t) => t.id !== p.tutorId)
-                            .map((t) => (
-                              <option key={t.id} value={t.id}>
-                                {t.name}
-                              </option>
-                            ))}
-                        </select>
-                      </div>
+                      <fieldset className="space-y-2 rounded-md border p-2.5">
+                        <legend className="px-1 text-xs text-muted-foreground">
+                          代講をどうしますか
+                        </legend>
+                        <div className="flex flex-wrap gap-x-4 gap-y-1 text-sm">
+                          {(
+                            [
+                              ["designate", "代講を指名する"],
+                              ["recruit", "代講を募集に出す"],
+                              ["none", "何もしない"],
+                            ] as const
+                          ).map(([v, label]) => (
+                            <label
+                              key={v}
+                              className="flex cursor-pointer items-center gap-1.5"
+                            >
+                              <input
+                                type="radio"
+                                name={`followup-${p.id}`}
+                                value={v}
+                                checked={(followUp[p.id] ?? "none") === v}
+                                onChange={() =>
+                                  setFollowUp((prev) => ({ ...prev, [p.id]: v }))
+                                }
+                              />
+                              {label}
+                            </label>
+                          ))}
+                        </div>
+                        {followUp[p.id] === "designate" && (
+                          <div className="flex flex-wrap items-center gap-2">
+                            <label
+                              htmlFor={`designate-${p.id}`}
+                              className="text-xs text-muted-foreground"
+                            >
+                              指名する講師
+                            </label>
+                            <select
+                              id={`designate-${p.id}`}
+                              value={designated[p.id] ?? ""}
+                              onChange={(e) =>
+                                setDesignated((prev) => ({
+                                  ...prev,
+                                  [p.id]: e.target.value,
+                                }))
+                              }
+                              className="h-8 min-w-[10rem] rounded-md border bg-background px-2 text-sm focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+                            >
+                              <option value="">選んでください</option>
+                              {tutors
+                                .filter((t) => t.id !== p.tutorId)
+                                .map((t) => (
+                                  <option key={t.id} value={t.id}>
+                                    {t.name}
+                                  </option>
+                                ))}
+                            </select>
+                          </div>
+                        )}
+                        <p className="text-xs text-muted-foreground">
+                          {followUp[p.id] === "designate"
+                            ? "承認すると、選んだ講師に代講の依頼が届きます。引き受けてもらえた時点で代講が決まります。"
+                            : followUp[p.id] === "recruit"
+                              ? "承認すると代講の募集に出し、出られる講師全員に知らせます。"
+                              : "承認だけします。代講はあとから決められます。"}
+                        </p>
+                      </fieldset>
                     )}
                     <div className="flex gap-2">
                       {actions.canApprove && (
                         <Button
                           size="sm"
-                          disabled={isPending}
+                          disabled={
+                            isPending ||
+                            (!p.isEnded &&
+                              followUp[p.id] === "designate" &&
+                              !designated[p.id])
+                          }
                           onClick={() =>
                             run(
                               () =>
                                 decideAbsenceRequest({
                                   id: p.id,
                                   decision: "approved",
+                                  followUp: p.isEnded
+                                    ? "none"
+                                    : (followUp[p.id] ?? "none"),
                                   designatedSubstituteId:
                                     designated[p.id] || null,
                                 }),
-                              designated[p.id]
-                                ? "承認しました。休む講師の画面に、代講の依頼ボタンが出ます。"
-                                : "承認しました。",
+                              (followUp[p.id] ?? "none") === "designate" &&
+                                !p.isEnded
+                                ? "承認しました。指名した講師に代講の依頼を送りました。"
+                                : (followUp[p.id] ?? "none") === "recruit" &&
+                                    !p.isEnded
+                                  ? "承認し、代講の募集に出しました。"
+                                  : "承認しました。",
                               { refreshOnError: true },
                             )
                           }
