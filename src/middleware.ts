@@ -16,7 +16,9 @@ export const config = {
      *   通すと /login へ飛ばされて、ホーム画面に追加してもアプリにならない)
      * - sw.js (#318: Service Worker の更新確認は cookie なしで来ることがある。
      *   /login へ飛ばされると登録・更新に失敗して Push が止まる)
+     * - api/cron/shift-reminders (メモ15: pg_cron が cookie なしで叩く。
+     *   route 側で CRON_SECRET を確かめる)
      */
-    "/((?!_next/static|_next/image|favicon.ico|api/health$|sw\\.js$|manifest\\.webmanifest$|.*\\.(?:svg|png|jpg|jpeg|gif|webp)$).*)",
+    "/((?!_next/static|_next/image|favicon.ico|api/health$|api/cron/shift-reminders$|sw\\.js$|manifest\\.webmanifest$|.*\\.(?:svg|png|jpg|jpeg|gif|webp)$).*)",
   ],
 };

@@ -1,6 +1,7 @@
 import Link from "next/link";
 import {
   Bell,
+  BellRing,
   CalendarCheck,
   CalendarOff,
   CalendarX,
@@ -32,6 +33,8 @@ const TYPE_ICON: Record<NotificationType, typeof Bell> = {
   day_off_result: CalendarOff,
   // 教室長からのお知らせ
   announcement: Megaphone,
+  // メモ15: 出勤前のリマインド
+  shift_reminder: BellRing,
 };
 
 function formatDateTime(d: Date): string {

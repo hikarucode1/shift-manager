@@ -4,6 +4,7 @@ import { db } from "@/db/client";
 import { profiles } from "@/db/schema";
 import { TRACKS, normalizeSubjects, type TrackKey } from "@/lib/tutor-subjects";
 import { TeachingProfileForm } from "@/components/teaching-profile-form";
+import { ShiftReminderForm } from "@/components/shift-reminder-form";
 
 /** #348: 講師のマイページ。文理と担当できる科目を自分で登録する */
 export default async function TutorMyPage() {
@@ -12,6 +13,7 @@ export default async function TutorMyPage() {
     .select({
       track: profiles.track,
       teachableSubjects: profiles.teachableSubjects,
+      shiftReminderHours: profiles.shiftReminderHours,
     })
     .from(profiles)
     .where(eq(profiles.id, profile.id))
@@ -33,6 +35,7 @@ export default async function TutorMyPage() {
         initialTrack={track}
         initialSubjects={normalizeSubjects(row?.teachableSubjects ?? [])}
       />
+      <ShiftReminderForm initialHours={row?.shiftReminderHours ?? null} />
     </div>
   );
 }
