@@ -128,6 +128,8 @@ export const notificationTypeEnum = pgEnum("notification_type", [
   "day_off_result",
   // 講師宛て。教室長が出したお知らせ (LINE で送っていた連絡の代わり)
   "announcement",
+  // メモ15: 講師宛て。出勤の○時間前のリマインド (dedupKey = 日付)
+  "shift_reminder",
 ]);
 
 /* ------------------------------------------------------------------ */
@@ -149,6 +151,11 @@ export const profiles = pgTable("profiles", {
   track: text("track"),
   /** #348: 担当できる科目の key (`src/lib/tutor-subjects.ts`)。未登録は空 */
   teachableSubjects: text("teachable_subjects").array().notNull().default([]),
+  /**
+   * メモ15: その日の最初のコマの何時間前に出勤のリマインドを送るか (1〜3)。
+   * null = 送らない。送るのは /api/cron/shift-reminders (Supabase pg_cron が叩く)
+   */
+  shiftReminderHours: smallint("shift_reminder_hours"),
   createdAt: timestamp("created_at", { withTimezone: true })
     .notNull()
     .defaultNow(),
