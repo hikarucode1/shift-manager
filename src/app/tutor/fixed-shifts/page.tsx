@@ -6,7 +6,6 @@ import { db } from "@/db/client";
 import {
   fixedShifts,
   fixedShiftSubmissions,
-  regularAssignments,
   regularShiftPeriods,
   slotDefinitions,
 } from "@/db/schema";
@@ -58,9 +57,9 @@ export default async function FixedShiftPage({
   // submissionOpensAt <= now <= submissionDueAt の active な期を 1 件、
   // 期の開始日が新しい順 (= 直近の期) で取る。
   // #156: この期の開始日が「提出対象の起点 (effective_from)」を決めるため、
-  // queryFrom に依存しない slots / confirmed とだけ並行取得し、queryFrom 依存の
+  // queryFrom に依存しない slots とだけ並行取得し、queryFrom 依存の
   // existing / submissionRows は activePeriod 解決後に別途投げる。
-  const [activePeriodRows, slotRows, confirmedRows] = await Promise.all([
+  const [activePeriodRows, slotRows] = await Promise.all([
     db
       .select({
         id: regularShiftPeriods.id,
@@ -85,27 +84,6 @@ export default async function FixedShiftPage({
       .from(slotDefinitions)
       .where(eq(slotDefinitions.isActive, true))
       .orderBy(asc(slotDefinitions.slotNumber)),
-    // Issue #74 (δ): 自分の確定済みレギュラー枠 (今日以降に有効な行のみ)。
-    // effective_from の早い順 + weekday 順で取り、UI で「期間ごとにグループ化して表示」する。
-    db
-      .select({
-        effectiveFrom: regularAssignments.effectiveFrom,
-        effectiveTo: regularAssignments.effectiveTo,
-        weekday: regularAssignments.weekday,
-        slotNumber: regularAssignments.slotNumber,
-      })
-      .from(regularAssignments)
-      .where(
-        and(
-          eq(regularAssignments.tutorId, profile.id),
-          gte(regularAssignments.effectiveTo, today),
-        ),
-      )
-      .orderBy(
-        asc(regularAssignments.effectiveFrom),
-        asc(regularAssignments.weekday),
-        asc(regularAssignments.slotNumber),
-      ),
   ]);
   const acceptingPeriod = activePeriodRows[0] ?? null;
 
@@ -148,55 +126,6 @@ export default async function FixedShiftPage({
     grantPeriod !== null ||
     (grant !== null && grant.regularPeriodId === null);
 
-  const confirmedCard = (
-    <>
-      {/* Issue #74 (δ): 自分の確定済みレギュラー枠 (期間範囲ごとに表示) */}
-      {confirmedRows.length > 0 && (
-        <Card className="border-emerald-300 bg-emerald-50/60 dark:bg-emerald-950/30">
-          <CardHeader>
-            <CardTitle className="text-base">確定済みレギュラー</CardTitle>
-            <CardDescription>
-              教室長が確定した出勤枠です。期間 (effective_from 〜 effective_to)
-              ごとに表示します。希望提出と異なる場合があります。
-            </CardDescription>
-          </CardHeader>
-          <CardContent className="space-y-2 text-xs">
-            {Array.from(
-              confirmedRows.reduce((acc, r) => {
-                const key = `${r.effectiveFrom}__${r.effectiveTo}`;
-                if (!acc.has(key)) acc.set(key, []);
-                acc.get(key)!.push(r);
-                return acc;
-              }, new Map<string, typeof confirmedRows>()),
-            ).map(([key, rows]) => {
-              const [from, to] = key.split("__");
-              return (
-                <div key={key}>
-                  <div className="font-medium">
-                    {from} 〜 {to}: {rows.length} 枠
-                  </div>
-                  <ul className="ml-4 text-muted-foreground">
-                    {rows.map((r) => (
-                      <li key={`${r.weekday}:${r.slotNumber}`}>
-                        {r.weekday === "mon" && "月"}
-                        {r.weekday === "tue" && "火"}
-                        {r.weekday === "wed" && "水"}
-                        {r.weekday === "thu" && "木"}
-                        {r.weekday === "fri" && "金"}
-                        {r.weekday === "sat" && "土"} {r.slotNumber}限
-                      </li>
-                    ))}
-                  </ul>
-                </div>
-              );
-            })}
-          </CardContent>
-        </Card>
-      )}
-
-    </>
-  );
-
   // #334: 期間の一覧。受付中の期 (無ければ許可された期・変更申請の対象の期) を
   // カードで出し、タップで編集画面へ。期がまったく無いときは今まで通り編集画面
   if (activePeriod && selectedPeriodId !== activePeriod.id) {
@@ -213,8 +142,6 @@ export default async function FixedShiftPage({
             期間を選んで、毎週出勤できるコマを登録します。締切までは何度でも変更できます。
           </p>
         </section>
-
-        {confirmedCard}
 
         <div className="grid gap-3">
           <Link href={`/tutor/fixed-shifts?period=${activePeriod.id}`}>
@@ -531,9 +458,6 @@ export default async function FixedShiftPage({
       {changeView && (
         <ChangeRequestCard target={{ kind: "regular" }} state={changeView} />
       )}
-
-      {/* 期が無いときは一覧を出さないので、確定済みはここに出す */}
-      {!activePeriod && confirmedCard}
 
       <Card>
         <CardHeader>
