@@ -2,7 +2,7 @@
 
 import { useEffect, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
-import { AlertCircle, Info } from "lucide-react";
+import { AlertCircle, CheckCircle2, Info } from "lucide-react";
 import { isIndeterminate, toFailedResult } from "@/lib/action-failure";
 import type { TutorAbsenceRow, UpcomingShift } from "@/lib/absences";
 import { Button } from "@/components/ui/button";
@@ -42,8 +42,10 @@ export function AbsencePanel({
 }) {
   const router = useRouter();
   const [isPending, startTransition] = useTransition();
+  // at: どこに出すか。申請フォームの結果は送信ボタンのすぐ上に出す
+  // (候補のコマが多いと画面上部の通知は見えず、送れたか分からなかった)
   const [notice, setNotice] = useState<
-    { type: "ok" | "error"; text: string } | null
+    { type: "ok" | "error"; text: string; at?: "form" } | null
   >(null);
 
   const [target, setTarget] = useState("");
@@ -53,7 +55,7 @@ export function AbsencePanel({
 
   useEffect(() => {
     if (!notice) return;
-    const t = setTimeout(() => setNotice(null), 4000);
+    const t = setTimeout(() => setNotice(null), 6000);
     return () => clearTimeout(t);
   }, [notice]);
 
@@ -61,16 +63,17 @@ export function AbsencePanel({
     fn: () => Promise<{ ok: boolean; error?: string }>,
     okMsg: string,
     onOk?: () => void,
+    at?: "form",
   ) {
     setNotice(null);
     startTransition(async () => {
       const res = await fn().catch(toFailedResult);
       if (res.ok) {
-        setNotice({ type: "ok", text: okMsg });
+        setNotice({ type: "ok", text: okMsg, at });
         onOk?.();
         router.refresh();
       } else {
-        setNotice({ type: "error", text: res.error ?? "失敗しました。" });
+        setNotice({ type: "error", text: res.error ?? "失敗しました。", at });
         // #202: reject 由来は「書いたか不明」。画面を古いまま放置せず
         // サーバーの真実を取りに行く (返り値の { ok: false } は確実に
         // 書いていないので触らない)。
@@ -85,11 +88,11 @@ export function AbsencePanel({
       (u) => `${u.date}|${u.slotNumber}` === target,
     );
     if (!sel) {
-      setNotice({ type: "error", text: "対象のコマを選択してください。" });
+      setNotice({ type: "error", text: "対象のコマを選択してください。", at: "form" });
       return;
     }
     if (!category) {
-      setNotice({ type: "error", text: "理由区分を選択してください。" });
+      setNotice({ type: "error", text: "理由区分を選択してください。", at: "form" });
       return;
     }
     const trimmed = memo.trim();
@@ -97,6 +100,7 @@ export function AbsencePanel({
       setNotice({
         type: "error",
         text: "「その他」を選んだ場合は詳細メモを入力してください。",
+        at: "form",
       });
       return;
     }
@@ -115,23 +119,13 @@ export function AbsencePanel({
         setCategory("");
         setMemo("");
       },
+      "form",
     );
   }
 
   return (
     <div className="space-y-4">
-      {notice && (
-        <p
-          role="status"
-          className={cn(
-            "flex items-center gap-1 text-sm",
-            notice.type === "ok" ? "text-primary" : "text-destructive",
-          )}
-        >
-          {notice.type === "error" && <AlertCircle className="size-4" />}
-          {notice.text}
-        </p>
-      )}
+      {notice && !notice.at && <Notice notice={notice} />}
 
       <Card>
         <CardHeader>
@@ -142,9 +136,13 @@ export function AbsencePanel({
         </CardHeader>
         <CardContent>
           {upcoming.length === 0 ? (
-            <p className="py-4 text-center text-sm text-muted-foreground">
-              申請できる今後のシフトがありません。
-            </p>
+            <div className="space-y-2">
+              {/* 最後のコマを申請するとフォームが消えるので、結果はここに出す */}
+              {notice?.at === "form" && <Notice notice={notice} />}
+              <p className="py-4 text-center text-sm text-muted-foreground">
+                申請できる今後のシフトがありません。
+              </p>
+            </div>
           ) : (
             <form className="space-y-5" onSubmit={handleSubmit}>
               {/* 1. 対象シフト選択 (排他選択 = native radio + fieldset/legend) */}
@@ -252,6 +250,8 @@ export function AbsencePanel({
                   </span>
                 </p>
               </div>
+
+              {notice?.at === "form" && <Notice notice={notice} />}
 
               {/* 5. 下部 primary 全幅 */}
               <Button type="submit" disabled={isPending} className="w-full">
@@ -397,5 +397,28 @@ export function AbsencePanel({
         </CardContent>
       </Card>
     </div>
+  );
+}
+
+function Notice({
+  notice,
+}: {
+  notice: { type: "ok" | "error"; text: string };
+}) {
+  return (
+    <p
+      role="status"
+      className={cn(
+        "flex items-center gap-1 text-sm",
+        notice.type === "ok" ? "text-primary" : "text-destructive",
+      )}
+    >
+      {notice.type === "error" ? (
+        <AlertCircle className="size-4" />
+      ) : (
+        <CheckCircle2 className="size-4" />
+      )}
+      {notice.text}
+    </p>
   );
 }
