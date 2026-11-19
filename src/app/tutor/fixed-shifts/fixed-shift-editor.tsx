@@ -122,9 +122,9 @@ export function FixedShiftEditor({
   );
   const [effectiveFrom, setEffectiveFrom] = useState(initialEffectiveFrom);
   const [effectiveTo, setEffectiveTo] = useState<string>(initialMeta.effectiveTo ?? "");
-  const [desiredDays, setDesiredDays] = useState<string>(
-    initialMeta.desiredDays != null ? String(initialMeta.desiredDays) : "",
-  );
+  // 月の日数の欄は出さなくなった (11/19)。保存で消えないよう、前の値をそのまま送る
+  const desiredDays =
+    initialMeta.desiredDays != null ? String(initialMeta.desiredDays) : "";
   const [desiredSlots, setDesiredSlots] = useState<string>(
     initialMeta.desiredSlots != null ? String(initialMeta.desiredSlots) : "",
   );
@@ -446,35 +446,21 @@ export function FixedShiftEditor({
             </p>
           </div>
           <div className="space-y-2">
-            <Label htmlFor="desired-days">希望出勤日数 (任意)</Label>
-            <Input
-              id="desired-days"
-              type="number"
-              inputMode="numeric"
-              min={0}
-              max={31}
-              value={desiredDays}
-              onChange={(e) => setDesiredDays(e.target.value)}
-              className="w-32"
-            />
-            <p className="text-xs text-muted-foreground">
-              目安として 1 ヶ月で出勤したい日数を記入 (整数)。
-            </p>
-          </div>
-          <div className="space-y-2">
-            <Label htmlFor="desired-slots">希望出勤コマ数 (任意)</Label>
+            {/* 本番チェックの気づき5 (2026-11-19 本人): 聞きたいのは「1 週間に何コマ出たいか」だけ。
+                月の日数の欄は出さない (既存の値は保存時もそのまま残す) */}
+            <Label htmlFor="desired-slots">1 週間に出たいコマ数 (任意)</Label>
             <Input
               id="desired-slots"
               type="number"
               inputMode="numeric"
               min={0}
-              max={200}
+              max={56}
               value={desiredSlots}
               onChange={(e) => setDesiredSlots(e.target.value)}
               className="w-32"
             />
             <p className="text-xs text-muted-foreground">
-              目安として 1 ヶ月で出勤したいコマ数を記入 (整数)。
+              目安として、1 週間に何コマ出たいかを数字で書いてください。
             </p>
           </div>
         </div>
