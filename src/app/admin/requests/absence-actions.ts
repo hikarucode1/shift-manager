@@ -23,6 +23,7 @@ import {
 } from "@/lib/absence-expiry";
 import { absenceTutorAssigned } from "@/lib/absences";
 import { sendDesignatedRequest } from "@/lib/designation-request";
+import { createOpenSwapOnBehalf } from "./swap-actions";
 
 type ActionResult = { ok: true } | { ok: false; error: string };
 
@@ -197,6 +198,9 @@ const OnBehalfInput = z.object({
     .trim()
     .min(1, "理由を入力してください（連絡手段も書いてください）。")
     .max(500, "理由は 500 文字以内で入力してください。"),
+  /** 本番チェック メモ25: 登録と一緒にする代講の次の一手 (省略時は none) */
+  followUp: z.enum(["designate", "recruit", "none"]).optional().default("none"),
+  designatedSubstituteId: z.string().uuid().nullable().optional(),
 });
 
 /**
@@ -222,7 +226,15 @@ const OnBehalfInput = z.object({
 export async function createAbsenceOnBehalf(
   input: unknown,
 ): Promise<
-  { ok: true; pendingSwap: boolean } | { ok: false; error: string }
+  | {
+      ok: true;
+      pendingSwap: boolean;
+      /** 代講の指名・募集ができなかった理由 (欠勤の登録はできている) */
+      followUpError: string | null;
+      /** 指名した講師の名前 (指名できたとき) */
+      designeeName: string | null;
+    }
+  | { ok: false; error: string }
 > {
   const { profile } = await requireRole("admin");
 
@@ -230,7 +242,27 @@ export async function createAbsenceOnBehalf(
   if (!parsed.success) {
     return { ok: false, error: parsed.error.issues[0]?.message ?? "入力が不正です。" };
   }
-  const { tutorId, date, slotNumber, reason } = parsed.data;
+  const { tutorId, date, slotNumber, reason, followUp } = parsed.data;
+  const designatedSubstituteId =
+    followUp === "designate" ? (parsed.data.designatedSubstituteId ?? null) : null;
+  if (followUp !== "none" && (await hasSlotEnded(date, slotNumber))) {
+    return {
+      ok: false,
+      error: "終了したコマには代講の指名・募集はできません。「何もしない」で登録してください。",
+    };
+  }
+  if (followUp === "designate") {
+    if (!designatedSubstituteId) {
+      return { ok: false, error: "代講に指名する講師を選んでください。" };
+    }
+    const error = await designeeError({
+      absentTutorId: tutorId,
+      designeeId: designatedSubstituteId,
+      date,
+      slotNumber,
+    });
+    if (error) return { ok: false, error };
+  }
 
   // 実在する確定シフトか (クライアントを信用しない)。交代が承認済みなら
   // weekly_shifts は代講者に付け替わっているので、ここで弾かれる
@@ -255,17 +287,23 @@ export async function createAbsenceOnBehalf(
   // 記録・取り消し (#253 / #283) と同じ関数で探す
   const swapDup = await findPendingSwap(tutorId, date, slotNumber);
 
+  let absenceId: string;
   try {
-    await db.insert(absenceRequests).values({
-      tutorId,
-      createdBy: profile.id,
-      date,
-      slotNumber,
-      reason,
-      status: "approved",
-      decidedBy: profile.id,
-      decidedAt: new Date(),
-    });
+    const [row] = await db
+      .insert(absenceRequests)
+      .values({
+        tutorId,
+        createdBy: profile.id,
+        date,
+        slotNumber,
+        reason,
+        status: "approved",
+        decidedBy: profile.id,
+        decidedAt: new Date(),
+        designatedSubstituteId,
+      })
+      .returning({ id: absenceRequests.id });
+    absenceId = row.id;
   } catch (e) {
     if (isUniqueViolation(e, "absence_requests_active_uniq")) {
       return { ok: false, error: "このコマには既に欠勤の記録があります。" };
@@ -277,6 +315,30 @@ export async function createAbsenceOnBehalf(
     };
   }
 
+  // 本番チェック メモ25: 登録と一緒に、代講を指名 (B に直接依頼) か募集する。
+  // 失敗しても欠勤の登録は戻さず、理由を返す
+  let followUpError: string | null = null;
+  let followUpNote = "";
+  let designeeName: string | null = null;
+  if (followUp === "designate") {
+    const sent = await sendDesignatedRequest({ absenceId, actorId: profile.id });
+    if (sent.ok) {
+      designeeName = sent.designeeName;
+      followUpNote = ` ／ 代講は${sent.designeeName}さんに依頼しました（返事待ち）`;
+    } else {
+      followUpError = sent.error;
+    }
+  } else if (followUp === "recruit") {
+    const res = await createOpenSwapOnBehalf({
+      tutorId,
+      date,
+      slotNumber,
+      reason: `欠勤（${reason}）`.slice(0, 500),
+    });
+    if (res.ok) followUpNote = " ／ 代講は募集に出しました";
+    else followUpError = res.error;
+  }
+
   // ⚠️ 本人が申請していないので、記録したことは通知でしか本人に届かない。
   // 「聞いた内容と違う」に気づける唯一の経路
   // ⚠️ 登録はもうコミット済み。コマ名の取得で投げると通知が届かず、押し直しは
@@ -285,13 +347,19 @@ export async function createAbsenceOnBehalf(
   await notify([tutorId], {
     type: "absence_result",
     title: "欠勤が登録されました（教室長による代理登録）",
-    body: `対象日: ${noticeDate(date)}${slotLabel} ／ ${reason}`,
+    body: `対象日: ${noticeDate(date)}${slotLabel} ／ ${reason}${followUpNote}`,
     href: "/tutor/absences",
   });
 
   revalidatePath("/admin/requests");
   revalidatePath("/tutor/absences");
-  return { ok: true, pendingSwap: swapDup !== null };
+  revalidatePath("/tutor/open-swaps");
+  return {
+    ok: true,
+    pendingSwap: swapDup !== null,
+    followUpError,
+    designeeName,
+  };
 }
 
 const CloseUnassignedInput = z.object({
@@ -431,7 +499,7 @@ export async function redesignateSubstitute(
     return { ok: false, error: "対象の欠勤が見つかりません（取り消された可能性があります）。" };
   }
   if (await hasSlotEnded(absence.date, absence.slotNumber)) {
-    return { ok: false, error: "終了したコマです。実際に入った代講は「代講を記録する」から記録してください。" };
+    return { ok: false, error: "終了したコマです。実際に入った代講は「あとから代講を記録する」から記録してください。" };
   }
   const error = await designeeError({
     absentTutorId: absence.tutorId,

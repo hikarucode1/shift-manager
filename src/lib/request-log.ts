@@ -377,7 +377,7 @@ export function toSwapLogEntry(i: SwapLogInput): RequestLogEntry {
     swapCancelWarning(i),
     // 講師の再申請は hasSlotEnded で塞がるので、戻すには #215 の記録が要る
     i.isEnded
-      ? "このコマは既に終了しているため、講師の再申請では戻せません。戻す場合は「代講を記録する」から記録し直してください。"
+      ? "このコマは既に終了しているため、講師の再申請では戻せません。戻す場合は「あとから代講を記録する」から記録し直してください。"
       : null,
   );
 }

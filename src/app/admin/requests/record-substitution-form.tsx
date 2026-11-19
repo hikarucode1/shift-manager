@@ -18,8 +18,8 @@ import {
 /**
  * 教室長が「このコマは誰が入ったか」を記録するフォーム (#215)。
  *
- * ⚠️ 代講の**募集** (#227) とは別物で、日付に制限がない。過去は「実際は B が
- * 入っていた」の事後記録、当日・未来は「電話で B に頼んで確定した」の記録。
+ * 本番チェック メモ26: **終わったコマ専用** (「実際は B が入っていた」の事後記録)。
+ * これからのコマは「代理で欠勤を登録する」で代講を指名する (B が引き受けて決まる)。
  */
 export function RecordSubstitutionForm({ today }: { today: string }) {
   const router = useRouter();
@@ -48,7 +48,8 @@ export function RecordSubstitutionForm({ today }: { today: string }) {
         setNotice({ type: "error", text: res.error });
         return;
       }
-      setAssignments(res.assignments);
+      // 終わったコマだけ (メモ26)
+      setAssignments(res.assignments.filter((a) => a.isEnded));
       setPicked("");
       setSubs(null);
       setSubId("");
@@ -133,7 +134,7 @@ export function RecordSubstitutionForm({ today }: { today: string }) {
   if (!open) {
     return (
       <Button variant="outline" size="sm" onClick={() => setOpen(true)}>
-        代講を記録する
+        あとから代講を記録する
       </Button>
     );
   }
@@ -143,9 +144,9 @@ export function RecordSubstitutionForm({ today }: { today: string }) {
       <CardContent className="space-y-3 p-4 text-sm">
         <p className="flex items-start gap-1.5 text-xs text-muted-foreground">
           <Info className="mt-0.5 size-3.5 shrink-0" aria-hidden />
-          「このコマは実際に誰が入ったか」を記録します。登録済みシフトの担当が
-          その場で差し替わります。実施済みのコマも、これから入ることが決まっている
-          コマも記録できます。間違えた場合は「記録」タブから取り消せます。
+          終わったコマについて「実際に誰が入ったか」を記録します。登録済みシフトの
+          担当がその場で差し替わります。これからのコマの代講は「代理で欠勤を登録する」
+          から指名してください。間違えた場合は「記録」タブから取り消せます。
         </p>
 
         {notice && (
@@ -169,6 +170,7 @@ export function RecordSubstitutionForm({ today }: { today: string }) {
             id="record-date"
             type="date"
             value={date}
+            max={today}
             onChange={(e) => setDate(e.target.value)}
             className="rounded-md border bg-background px-2 py-1 text-sm"
           />
@@ -189,7 +191,7 @@ export function RecordSubstitutionForm({ today }: { today: string }) {
               {loading
                 ? "読み込み中…"
                 : !assignments || assignments.length === 0
-                  ? "この日に確定シフトがありません"
+                  ? "この日に終わったコマがありません"
                   : "選択してください"}
             </option>
             {(assignments ?? []).map((a) => (
