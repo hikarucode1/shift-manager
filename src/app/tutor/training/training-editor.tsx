@@ -1,6 +1,5 @@
 "use client";
 
-import Link from "next/link";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { AlertCircle, Lock } from "lucide-react";
@@ -81,6 +80,13 @@ export function TrainingEditor({ data }: TrainingEditorProps) {
     { type: "ok" | "error"; text: string } | null
   >(null);
   const [savingCount, setSavingCount] = useState(0);
+  // 「一覧へ戻る」で保存の終わりを待つため、state と同じ値を ref にも持つ
+  const savingRef = useRef(0);
+  const bumpSaving = useCallback((d: 1 | -1) => {
+    savingRef.current += d;
+    setSavingCount((c) => c + d);
+  }, []);
+  const [leaving, setLeaving] = useState(false);
 
   useEffect(() => {
     if (!notice) return;
@@ -120,7 +126,7 @@ export function TrainingEditor({ data }: TrainingEditorProps) {
         });
         return next;
       });
-      setSavingCount((c) => c + 1);
+      bumpSaving(1);
 
       // action が例外で落ちた場合 (通信断など) もロールバック + エラー表示する
       const res = await (
@@ -139,7 +145,7 @@ export function TrainingEditor({ data }: TrainingEditorProps) {
             })
       ).catch(toFailedResult);
       keys.forEach((k) => pendingSlots.current.delete(k));
-      setSavingCount((c) => c - 1);
+      bumpSaving(-1);
 
       if (!res.ok) {
         // #202: reject 由来 = サーバーが書いたか不明。ここでロールバックすると
@@ -162,7 +168,7 @@ export function TrainingEditor({ data }: TrainingEditorProps) {
         setNotice({ type: "error", text: res.error });
       }
     },
-    [period.id, router],
+    [period.id, router, bumpSaving],
   );
 
   const toggle = useCallback(
@@ -200,17 +206,17 @@ export function TrainingEditor({ data }: TrainingEditorProps) {
     if (pendingNote.current === null) return;
     const v = pendingNote.current;
     pendingNote.current = null;
-    if (mounted.current) setSavingCount((c) => c + 1);
+    if (mounted.current) bumpSaving(1);
     const res = await saveTrainingNote({ periodId: period.id, note: v }).catch(
       toFailedResult,
     );
     // unmount 後は state 更新できない (失敗していても通知は出せない。
     // 失敗内容は toFailedResult が console に残す)
     if (!mounted.current) return;
-    setSavingCount((c) => c - 1);
+    bumpSaving(-1);
     if (!res.ok) setNotice({ type: "error", text: res.error });
     else setNotice({ type: "ok", text: "保存しました" });
-  }, [period.id]);
+  }, [period.id, bumpSaving]);
 
   // unmount 時: タイマー解除し、未保存があれば最後に保存を投げる
   useEffect(() => {
@@ -254,14 +260,14 @@ export function TrainingEditor({ data }: TrainingEditorProps) {
   async function saveRange(kind: TrainingRangeKind, next: DateRange) {
     const saved = savedRanges.current[kind];
     if (saved.from === next.from && saved.to === next.to) return;
-    setSavingCount((c) => c + 1);
+    bumpSaving(1);
     const res = await saveTrainingRange({
       periodId: period.id,
       kind,
       ...next,
     }).catch(toFailedResult);
     if (!mounted.current) return;
-    setSavingCount((c) => c - 1);
+    bumpSaving(-1);
     if (res.ok) {
       savedRanges.current = { ...savedRanges.current, [kind]: next };
       setNotice({ type: "ok", text: "保存しました" });
@@ -269,6 +275,19 @@ export function TrainingEditor({ data }: TrainingEditorProps) {
       setNotice({ type: "error", text: res.error });
       if (isIndeterminate(res)) router.refresh();
     }
+  }
+
+  async function goBackToList() {
+    setLeaving(true);
+    if (editable) {
+      await flushNote();
+      await rangeQueue.current;
+      // コマの保存が残っていれば終わるまで待つ (最大 10 秒)
+      for (let i = 0; i < 100 && savingRef.current > 0; i++) {
+        await new Promise((r) => setTimeout(r, 100));
+      }
+    }
+    router.push("/tutor/training");
   }
 
   const selectedCount = selected.size;
@@ -430,10 +449,20 @@ export function TrainingEditor({ data }: TrainingEditorProps) {
                     className="min-w-0 flex-1"
                   />
                 </div>
+                {editable && (r.from !== null || r.to !== null) && (
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    onClick={() => onRangeChange(kind, { from: null, to: null })}
+                  >
+                    {label}を消す
+                  </Button>
+                )}
                 {!check.ok && (
                   <p className="text-xs text-destructive">
                     {check.reason === "partial"
-                      ? "開始日と終了日の両方を入れると保存されます（消すときは両方消してください）。"
+                      ? "開始日と終了日の両方を入れると保存されます（消すときは下の「消す」ボタンを押してください）。"
                       : "終了日は開始日以降にしてください。"}
                   </p>
                 )}
@@ -441,7 +470,7 @@ export function TrainingEditor({ data }: TrainingEditorProps) {
             );
           })}
           <p className="text-xs text-muted-foreground">
-            学校のテストや夏休みの期間があれば入れてください。開始日と終了日の両方を入れると自動保存されます。
+            学校のテストや夏休みの期間があれば入れてください。開始日と終了日の両方を入れると自動保存されます。消すときは「〇〇を消す」を押してください。
           </p>
         </CardContent>
       </Card>
@@ -485,17 +514,16 @@ export function TrainingEditor({ data }: TrainingEditorProps) {
             <span>選んだコマは自動で保存されます</span>
           )}
         </div>
-        <Button asChild className="w-full">
-          <Link
-            href="/tutor/training"
-            aria-disabled={savingCount > 0}
-            tabIndex={savingCount > 0 ? -1 : undefined}
-            className={cn(
-              savingCount > 0 && "pointer-events-none opacity-60",
-            )}
-          >
-            {savingCount > 0 ? "保存中..." : "一覧へ戻る"}
-          </Link>
+        {/* PC ではクリックの押し下げで備考欄のフォーカスが外れて保存が始まり、
+            ボタンが押せない状態に変わってクリックが消えていた。押せるまま
+            にして、押したら保存の終わりを待ってから一覧へ移る */}
+        <Button
+          type="button"
+          className="w-full"
+          disabled={leaving}
+          onClick={() => void goBackToList()}
+        >
+          {leaving ? "保存中..." : "一覧へ戻る"}
         </Button>
       </div>
     </div>
