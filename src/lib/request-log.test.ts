@@ -57,7 +57,7 @@ describe("toAbsenceLogEntry", () => {
     // 手続きを主張することになる
     const e = toAbsenceLogEntry(absence({ isProxy: true }));
     expect(e.event).toBe("registered");
-    expect(e.eventLabel).toBe("代理登録");
+    expect(e.eventLabel).toBe("室長が登録");
   });
 
   it("自動失効は、講師の自己取り下げと区別する (#225)", () => {
@@ -337,14 +337,14 @@ describe("取り消しの安全網 (#213 / #219 の引き継ぎ)", () => {
 
   it("代講: 終了済みのコマは講師の再申請で戻せないことを出す (#215)", () => {
     expect(toSwapLogEntry(swap({ isEnded: true })).cancelHint).toContain(
-      "「代講を記録する」から記録し直してください",
+      "「あとから代講を記録する」から記録し直してください",
     );
     expect(toSwapLogEntry(swap({ isEnded: false })).cancelHint).toBeNull();
   });
 
   it("欠勤: 過去日は講師が登録し直せないことを出す (#217)", () => {
     expect(toAbsenceLogEntry(absence({ isPastDate: true })).cancelHint).toContain(
-      "「代理で欠勤を登録する」から登録してください",
+      "「室長が欠勤を登録する」から登録してください",
     );
     expect(toAbsenceLogEntry(absence({ isPastDate: false })).cancelHint).toBeNull();
   });
@@ -406,7 +406,7 @@ describe("eventLabel", () => {
     expect(EVENT_LABEL).toEqual({
       pending: "未対応",
       approved: "承認",
-      registered: "代理登録",
+      registered: "室長が登録",
       recorded: "記録",
       rejected: "却下",
       "cancelled-by-admin": "取り消し",

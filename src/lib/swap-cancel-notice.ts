@@ -51,7 +51,7 @@ export function swapCancelNotice(res: {
   const parts = ["取り消しました。"];
   if (res.expiredAbsences > 0) {
     parts.push(
-      "このコマの欠勤申請が交代成立時に自動失効しています。必要なら「代理で欠勤を登録する」から登録し直してください。",
+      "このコマの欠勤申請が交代成立時に自動失効しています。必要なら「室長が欠勤を登録する」から登録し直してください。",
     );
   }
   // ⚠️ 代講者の失効は、ふだんは「登録し直して」と案内しない (代講者はもう
@@ -59,7 +59,7 @@ export function swapCancelNotice(res: {
   // ので、取り消しが誤りだった場合の戻し方だけ書く (#291)
   if (res.substituteExpiredName) {
     parts.push(
-      `代講者の ${res.substituteExpiredName} さんがこのコマに出していた欠勤申請は、担当でなくなったため失効させました（取り消しが誤りで、${res.substituteExpiredName} さんが実際には休む場合は、記録し直したあと「代理で欠勤を登録する」から登録してください）。`,
+      `代講者の ${res.substituteExpiredName} さんがこのコマに出していた欠勤申請は、担当でなくなったため失効させました（取り消しが誤りで、${res.substituteExpiredName} さんが実際には休む場合は、記録し直したあと「室長が欠勤を登録する」から登録してください）。`,
     );
   }
   if (res.substituteSwapClosedName) {
@@ -69,7 +69,7 @@ export function swapCancelNotice(res: {
   }
   if (res.requesterSwapClosedName) {
     parts.push(
-      `${res.requesterSwapClosedName} さんがこのコマに出していた交代・代講の募集は、記録したときに締め切っています。代講が必要なら「代理で代講を募集する」から募集し直してください。`,
+      `${res.requesterSwapClosedName} さんがこのコマに出していた交代・代講の募集は、記録したときに締め切っています。代講が必要なら「室長が代講を募集する」から募集し直してください。`,
     );
   }
   // 承認できない理由と閉じ方 (却下 / 取り下げ) は「未対応」タブと同じ

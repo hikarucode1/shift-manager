@@ -91,7 +91,7 @@ export function OpenSwapOnBehalfForm({ today }: { today: string }) {
   if (!open) {
     return (
       <Button variant="outline" size="sm" onClick={() => setOpen(true)}>
-        代理で代講を募集する
+        室長が代講を募集する
       </Button>
     );
   }
