@@ -37,6 +37,7 @@ import {
   resendInvite,
   sendPasswordReset,
   setTutorActive,
+  countUpcomingShifts,
 } from "./actions";
 
 export type TutorRow = {
@@ -615,7 +616,22 @@ export function TutorManager({
                                       ? "最後の有効な教室長は無効化できません"
                                       : undefined
                                 }
-                                onClick={() =>
+                                onClick={async () => {
+                                  // 本番チェック メモ28: 今後のシフトに入っていたら先に確かめる
+                                  if (t.isActive) {
+                                    const up = await countUpcomingShifts({
+                                      id: t.id,
+                                    }).catch(() => null);
+                                    if (
+                                      up?.ok &&
+                                      up.count > 0 &&
+                                      !window.confirm(
+                                        `${t.displayName}さんは、登録済みシフトにこれから ${up.count} コマ入っています（最初は ${up.firstLabel}）。\n\n無効にしても登録済みシフトからは消えません。代わりの講師を決める必要があります。\n\n無効にしますか？`,
+                                      )
+                                    ) {
+                                      return;
+                                    }
+                                  }
                                   run(
                                     () =>
                                       setTutorActive({
@@ -625,8 +641,8 @@ export function TutorManager({
                                     t.isActive
                                       ? "無効化しました。"
                                       : "有効化しました。",
-                                  )
-                                }
+                                  );
+                                }}
                               >
                                 {t.isActive ? "無効化" : "有効化"}
                               </Button>
