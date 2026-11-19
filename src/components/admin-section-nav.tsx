@@ -20,7 +20,8 @@ export function AdminTutorsNav() {
 
 /**
  * 管理者「期間管理」グループのサブナビ (#120)。
- * トップナビ「期間管理」配下に 講習期間 / 月別提出期間 / レギュラー期間 を統合。
+ * トップナビ「期間管理」配下に 講習期間 / レギュラー期間 を統合。
+ * (月別提出期間はどこからも使われていなかったので 11/19 に画面ごと消した)
  * #329: 期間管理は期間の設定だけにした。レギュラーの提出内容 (旧「固定シフト俯瞰」)
  * は「シフト希望」グループへ移した (AdminShiftWishNav)。
  */
@@ -29,7 +30,6 @@ export function AdminPeriodsNav() {
     <SegmentedNav
       items={[
         { href: "/admin/periods", label: "講習期間" },
-        { href: "/admin/submission-periods", label: "月別提出期間" },
         { href: "/admin/regular-periods", label: "レギュラー期間" },
       ]}
     />

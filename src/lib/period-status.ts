@@ -1,6 +1,6 @@
 /**
  * 期間管理グループ (#126 UI 刷新) の状態バッジ用トークンと、提出受付の状態判定。
- * 月別提出 (submission-periods) とレギュラー (regular-periods) で共通利用する
+ * レギュラー (regular-periods) などで使う
  * (両画面で byte-identical に重複していたものを集約)。
  */
 
