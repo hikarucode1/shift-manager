@@ -25,7 +25,10 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { cn } from "@/lib/utils";
-import { cancelApprovedAbsence } from "./absence-actions";
+import {
+  cancelApprovedAbsence,
+  revertAbsenceApproval,
+} from "./absence-actions";
 import { cancelApprovedSwap } from "./swap-actions";
 
 // 選択肢は候補の定数から作る (描画のたびに作り直さない)
@@ -76,6 +79,25 @@ export function RequestLogPanel({
   ) {
     const next = { tab: "log" as const, period, type, state, ...patch };
     startTransition(() => router.replace(requestsHref(next)));
+  }
+
+  function revert(entry: RequestLogEntry) {
+    setNotice(null);
+    startTransition(async () => {
+      const res = await revertAbsenceApproval({ id: entry.id }).catch(
+        toFailedResult,
+      );
+      if (!res.ok) {
+        setNotice({ type: "error", text: res.error });
+        if (isIndeterminate(res)) router.refresh();
+        return;
+      }
+      setNotice({
+        type: "ok",
+        text: "承認前に戻しました。「未対応」の欠勤申請から、もう一度承認か却下を選んでください。",
+      });
+      router.refresh();
+    });
   }
 
   function submit(entry: RequestLogEntry) {
@@ -264,18 +286,31 @@ export function RequestLogPanel({
                       </div>
                     </div>
                   ) : (
-                    <Button
-                      size="sm"
-                      variant="outline"
-                      disabled={isPending}
-                      onClick={() => {
-                        setOpenId(`${r.kind}-${r.id}`);
-                        setReason("");
-                        setNotice(null);
-                      }}
-                    >
-                      {r.cancelLabel}
-                    </Button>
+                    <div className="flex flex-wrap gap-2">
+                      {/* 本番チェック メモ18: 間違えて承認した欠勤を、
+                          未対応に戻して承認をやり直せるようにする */}
+                      {r.kind === "absence" && (
+                        <Button
+                          size="sm"
+                          disabled={isPending}
+                          onClick={() => revert(r)}
+                        >
+                          承認前に戻す
+                        </Button>
+                      )}
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        disabled={isPending}
+                        onClick={() => {
+                          setOpenId(`${r.kind}-${r.id}`);
+                          setReason("");
+                          setNotice(null);
+                        }}
+                      >
+                        {r.cancelLabel}
+                      </Button>
+                    </div>
                   ))}
               </CardContent>
             </Card>
