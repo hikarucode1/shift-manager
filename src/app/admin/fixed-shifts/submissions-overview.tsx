@@ -99,6 +99,15 @@ function formatMonth(iso: string): string {
   return `${Number(y)}年${Number(m)}月`;
 }
 
+/** ISO → JST "MM/DD" (本番チェック メモ3: 提出受付は日付だけ) */
+function fmtJstDate(iso: string): string {
+  return new Date(iso).toLocaleDateString("ja-JP", {
+    timeZone: "Asia/Tokyo",
+    month: "2-digit",
+    day: "2-digit",
+  });
+}
+
 /** ISO → JST "MM/DD HH:mm" */
 function fmtJst(iso: string): string {
   return new Date(iso).toLocaleString("ja-JP", {
@@ -441,8 +450,8 @@ export function AdminSubmissionsOverview({
                 {period.startDate} 〜 {period.endDate})
               </div>
               <div>
-                提出受付: {fmtJst(period.submissionOpensAt)} 〜{" "}
-                {fmtJst(period.submissionDueAt)}
+                提出受付: {fmtJstDate(period.submissionOpensAt)} 〜{" "}
+                {fmtJstDate(period.submissionDueAt)} まで
               </div>
             </div>
           )}

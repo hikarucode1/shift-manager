@@ -39,27 +39,33 @@ function fmtDate(iso: string): string {
   return `${y}/${m}/${d}`;
 }
 
-function fmtDateTime(iso: string): string {
-  return new Date(iso).toLocaleString("ja-JP", {
+/** 本番チェック メモ3: 提出開始・締切 (ISO 日時) は日付だけで見せる */
+function fmtJstDate(iso: string): string {
+  return new Date(iso).toLocaleDateString("ja-JP", {
     timeZone: "Asia/Tokyo",
     year: "numeric",
     month: "2-digit",
     day: "2-digit",
-    hour: "2-digit",
-    minute: "2-digit",
   });
 }
 
-/** ISO(UTC) → datetime-local 用 "YYYY-MM-DDTHH:mm" (JST) */
-function toLocalInput(iso: string): string {
+/** ISO(UTC) → date input 用 "YYYY-MM-DD" (JST) */
+function toDateInput(iso: string): string {
   const d = new Date(new Date(iso).getTime() + 9 * 60 * 60 * 1000);
-  return d.toISOString().slice(0, 16);
+  return d.toISOString().slice(0, 10);
 }
 
-/** datetime-local input ("YYYY-MM-DDTHH:mm") は JST 想定で ISO に戻す */
-function fromLocalInput(local: string): string {
-  if (!local) return "";
-  return new Date(`${local}:00+09:00`).toISOString();
+/**
+ * 本番チェック メモ3: 時刻は入れさせない。提出開始はその日の 0:00、
+ * 締切はその日の 23:59:59 (JST) として保存する (講習の締切日と同じ扱い)
+ */
+function opensFromDate(date: string): string {
+  if (!date) return "";
+  return new Date(`${date}T00:00:00+09:00`).toISOString();
+}
+function dueFromDate(date: string): string {
+  if (!date) return "";
+  return new Date(`${date}T23:59:59+09:00`).toISOString();
 }
 
 export function RegularPeriodManager({
@@ -146,8 +152,8 @@ export function RegularPeriodManager({
           label,
           startDate,
           endDate,
-          submissionOpensAt: fromLocalInput(opens),
-          submissionDueAt: fromLocalInput(due),
+          submissionOpensAt: opensFromDate(opens),
+          submissionDueAt: dueFromDate(due),
         }),
       "期を作成しました。",
       () => {
@@ -165,8 +171,8 @@ export function RegularPeriodManager({
     setELabel(p.label);
     setEStart(p.startDate);
     setEEnd(p.endDate);
-    setEOpens(toLocalInput(p.submissionOpensAt));
-    setEDue(toLocalInput(p.submissionDueAt));
+    setEOpens(toDateInput(p.submissionOpensAt));
+    setEDue(toDateInput(p.submissionDueAt));
   }
 
   function handleUpdate(p: RegularPeriodRow) {
@@ -177,8 +183,8 @@ export function RegularPeriodManager({
           label: eLabel,
           startDate: eStart,
           endDate: eEnd,
-          submissionOpensAt: fromLocalInput(eOpens),
-          submissionDueAt: fromLocalInput(eDue),
+          submissionOpensAt: opensFromDate(eOpens),
+          submissionDueAt: dueFromDate(eDue),
         }),
       "期を更新しました。",
       () => setEditId(null),
@@ -208,7 +214,7 @@ export function RegularPeriodManager({
           </CardTitle>
           <CardDescription>
             期の長さは可変です。ラベル (例: 2026年春期 (4-6月))、開始日、終了日、
-            提出開始 / 締切日時を指定してください。
+            提出開始日 / 締切日を指定してください。
           </CardDescription>
         </CardHeader>
         <CardContent>
@@ -250,20 +256,20 @@ export function RegularPeriodManager({
             </div>
             <div className="hidden lg:block" />
             <div className="space-y-1">
-              <Label htmlFor="rp-opens">提出開始 (JST)</Label>
+              <Label htmlFor="rp-opens">提出開始日</Label>
               <Input
                 id="rp-opens"
-                type="datetime-local"
+                type="date"
                 value={opens}
                 onChange={(e) => setOpens(e.target.value)}
                 required
               />
             </div>
             <div className="space-y-1">
-              <Label htmlFor="rp-due">提出締切 (JST)</Label>
+              <Label htmlFor="rp-due">提出締切日（その日の 23:59 まで）</Label>
               <Input
                 id="rp-due"
-                type="datetime-local"
+                type="date"
                 value={due}
                 onChange={(e) => setDue(e.target.value)}
                 required
@@ -433,9 +439,9 @@ function PeriodList({
                           />
                         </div>
                         <div className="space-y-1">
-                          <Label className="text-xs">提出開始</Label>
+                          <Label className="text-xs">提出開始日</Label>
                           <Input
-                            type="datetime-local"
+                            type="date"
                             value={rowEditing.eOpens}
                             onChange={(e) =>
                               rowEditing.setEOpens(e.target.value)
@@ -444,9 +450,9 @@ function PeriodList({
                           />
                         </div>
                         <div className="space-y-1">
-                          <Label className="text-xs">提出締切</Label>
+                          <Label className="text-xs">提出締切日</Label>
                           <Input
-                            type="datetime-local"
+                            type="date"
                             value={rowEditing.eDue}
                             onChange={(e) => rowEditing.setEDue(e.target.value)}
                             className="h-8"
@@ -482,9 +488,9 @@ function PeriodList({
                         期間 {fmtDate(p.startDate)} 〜 {fmtDate(p.endDate)}
                       </div>
                       <div className="mt-0.5 text-xs text-muted-foreground">
-                        受付 {fmtDateTime(p.submissionOpensAt)} 〜 締切{" "}
+                        受付 {fmtJstDate(p.submissionOpensAt)} 〜 締切{" "}
                         <span className="font-medium text-accent">
-                          {fmtDateTime(p.submissionDueAt)}
+                          {fmtJstDate(p.submissionDueAt)} まで
                         </span>
                       </div>
                     </div>
