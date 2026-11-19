@@ -2,11 +2,17 @@
 
 import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
-import { Check } from "lucide-react";
+import { Check, Lock, Pencil } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { isIndeterminate, toFailedResult } from "@/lib/action-failure";
-import { SUBJECT_GROUPS, TRACKS, type TrackKey } from "@/lib/tutor-subjects";
+import {
+  SUBJECT_GROUPS,
+  TRACKS,
+  subjectShortLabel,
+  trackLabel,
+  type TrackKey,
+} from "@/lib/tutor-subjects";
 import { cn } from "@/lib/utils";
 import { saveMyTeachingProfile } from "@/app/tutor/me/actions";
 import { saveTutorTeachingProfile } from "@/app/admin/tutors/actions";
@@ -33,6 +39,13 @@ export function TeachingProfileForm({
   const [notice, setNotice] = useState<
     { type: "ok" | "error"; text: string } | null
   >(null);
+  // 本番チェック メモ1: 講師本人のマイページは、保存したら読むだけの表示に
+  // して「編集する」で開く。まだ何も登録して
+  // いなければ最初から編集できる。教室長の画面 (profileId あり) は今まで通り
+  const [editing, setEditing] = useState(
+    profileId !== undefined ||
+      (initialTrack === null && initialSubjects.length === 0),
+  );
 
   function toggle(key: string) {
     setNotice(null);
@@ -55,6 +68,7 @@ export function TeachingProfileForm({
       ).catch(toFailedResult);
       if (res.ok) {
         setNotice({ type: "ok", text: "保存しました。" });
+        if (!profileId) setEditing(false);
         router.refresh();
       } else {
         setNotice({ type: "error", text: res.error ?? "保存できませんでした。" });
@@ -65,6 +79,67 @@ export function TeachingProfileForm({
 
   // 中学生 / 高校生 の見出しごとにまとめる (高校生は小見出しの公共・地歴を含む)
   const levels = [...new Set(SUBJECT_GROUPS.map((g) => g.level))];
+
+  if (!editing) {
+    const chosen = SUBJECT_GROUPS.flatMap((g) => g.subjects)
+      .filter((x) => subjects.has(x.key))
+      .map((x) => subjectShortLabel(x.key));
+    return (
+      <div className="space-y-4">
+        {notice && (
+          <p
+            role="status"
+            className="flex items-center gap-1.5 rounded-lg border border-green-200 bg-green-50 px-3 py-2 text-sm text-green-800"
+          >
+            <Check className="size-4" />
+            {notice.text}
+          </p>
+        )}
+        <Card>
+          <CardHeader className="flex-row items-center justify-between space-y-0">
+            <CardTitle className="flex items-center gap-1.5 text-base">
+              <Lock className="size-4 text-muted-foreground" />
+              登録した内容
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-4 text-sm">
+            <div className="space-y-1">
+              <p className="text-xs text-muted-foreground">理系・文系</p>
+              <p className="font-medium">{trackLabel(track) ?? "未登録"}</p>
+            </div>
+            <div className="space-y-1.5">
+              <p className="text-xs text-muted-foreground">担当できる科目</p>
+              {chosen.length === 0 ? (
+                <p className="font-medium">未登録</p>
+              ) : (
+                <div className="flex flex-wrap gap-1.5">
+                  {chosen.map((label) => (
+                    <span
+                      key={label}
+                      className="rounded-full border bg-muted px-2.5 py-1 text-xs font-medium"
+                    >
+                      {label}
+                    </span>
+                  ))}
+                </div>
+              )}
+            </div>
+          </CardContent>
+        </Card>
+        <Button
+          variant="outline"
+          className="w-full"
+          onClick={() => {
+            setNotice(null);
+            setEditing(true);
+          }}
+        >
+          <Pencil className="mr-1 size-4" />
+          編集する
+        </Button>
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-4">
