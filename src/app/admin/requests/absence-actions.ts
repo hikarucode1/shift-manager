@@ -2,12 +2,13 @@
 
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
-import { and, eq, not } from "drizzle-orm";
+import { and, eq, inArray, isNull, not, or } from "drizzle-orm";
 import { requireRole } from "@/lib/auth";
 import { notify } from "@/lib/notifications";
 import { db } from "@/db/client";
 import {
   absenceRequests,
+  swapApplications,
   swapRequests,
   weeklyShifts,
 } from "@/db/schema";
@@ -505,5 +506,151 @@ export async function redesignateSubstitute(
 
   revalidatePath("/admin/requests");
   revalidatePath("/tutor/absences");
+  return { ok: true };
+}
+
+/* ------------------------------------------------------------------ */
+/*  本番チェック メモ18: 間違えて承認した欠勤を「承認前に戻す」          */
+/* ------------------------------------------------------------------ */
+
+const RevertApprovalInput = z.object({
+  id: z.string().uuid("対象が正しく指定されていません。"),
+});
+
+/**
+ * 承認済みの欠勤を「未対応 (pending)」に戻す。承認をやり直せるようにする。
+ *
+ * `cancelApprovedAbsence` (取り消し) は欠勤そのものを閉じるので、講師に
+ * 出し直してもらうしかなかった。こちらは承認の判断だけを無かったことにし、
+ * 欠勤申請の一覧に戻す (講師の申請はそのまま)。
+ *
+ * - 承認と一緒に出した代講の依頼 (返事待ち) と、休む講師のコマに出した
+ *   代講の募集 (応募待ち) は取り下げ、相手・応募者に知らせる
+ * - 代講が決まっていれば欠勤は自動失効 (cancelled) しているので、
+ *   approved の行だけを対象にすれば、決まった代講を戻すことは無い
+ * - 部分 unique `absence_requests_active_uniq` は pending / approved の
+ *   両方が対象なので、行を 1 つのまま状態だけ変えれば衝突しない
+ */
+export async function revertAbsenceApproval(
+  input: unknown,
+): Promise<ActionResult> {
+  const { profile } = await requireRole("admin");
+  const parsed = RevertApprovalInput.safeParse(input);
+  if (!parsed.success) {
+    return {
+      ok: false,
+      error: parsed.error.issues[0]?.message ?? "入力が不正です。",
+    };
+  }
+  const { id } = parsed.data;
+  const now = new Date();
+
+  const reverted = await db
+    .update(absenceRequests)
+    .set({
+      status: "pending",
+      decidedBy: null,
+      decidedAt: null,
+      decisionNote: null,
+      designatedSubstituteId: null,
+      updatedAt: now,
+    })
+    .where(
+      and(eq(absenceRequests.id, id), eq(absenceRequests.status, "approved")),
+    )
+    .returning({
+      tutorId: absenceRequests.tutorId,
+      date: absenceRequests.date,
+      slotNumber: absenceRequests.slotNumber,
+    });
+  if (reverted.length === 0) {
+    return {
+      ok: false,
+      error:
+        "戻せませんでした（代講が決まった・取り消し済みなど、既に承認済みではない可能性があります）。",
+    };
+  }
+  const absence = reverted[0];
+  const slotLabel = await slotLabelSafe(absence.slotNumber);
+  const note = "欠勤の承認が取り消され、確認中に戻ったため";
+
+  // 承認と一緒に出した代講の依頼 (指名) と、休む講師のこのコマの募集
+  const closed = await db
+    .update(swapRequests)
+    .set({
+      status: "cancelled",
+      closeKind: "admin_withdraw",
+      decidedBy: profile.id,
+      decidedAt: now,
+      decisionNote: note,
+      updatedAt: now,
+    })
+    .where(
+      and(
+        eq(swapRequests.status, "pending"),
+        or(
+          eq(swapRequests.absenceRequestId, id),
+          and(
+            eq(swapRequests.requesterId, absence.tutorId),
+            eq(swapRequests.date, absence.date),
+            eq(swapRequests.slotNumber, absence.slotNumber),
+            eq(swapRequests.kind, "open"),
+          ),
+        ),
+      ),
+    )
+    .returning({
+      id: swapRequests.id,
+      kind: swapRequests.kind,
+      nomineeId: swapRequests.nominatedTutorId,
+    });
+
+  const nominees = closed
+    .filter((r) => r.kind === "named" && r.nomineeId !== null)
+    .map((r) => r.nomineeId as string);
+  const openIds = closed.filter((r) => r.kind === "open").map((r) => r.id);
+  const applicants =
+    openIds.length > 0
+      ? (
+          await db
+            .select({ id: swapApplications.applicantId })
+            .from(swapApplications)
+            .where(
+              and(
+                inArray(swapApplications.swapRequestId, openIds),
+                isNull(swapApplications.withdrawnAt),
+              ),
+            )
+        ).map((r) => r.id)
+      : [];
+  const body = `対象: ${noticeDate(absence.date)} ${slotLabel} ／ ${note}`;
+  await Promise.all([
+    notify([absence.tutorId], {
+      type: "absence_result",
+      title: "欠勤申請の承認を取り消し、確認中に戻しました",
+      body: `対象: ${noticeDate(absence.date)} ${slotLabel} ／ 教室長があらためて確認します`,
+      href: "/tutor/absences",
+    }),
+    nominees.length > 0
+      ? notify(nominees, {
+          type: "swap_result",
+          title: "代講の依頼が取り下げられました",
+          body,
+          href: "/tutor/open-swaps",
+        })
+      : Promise.resolve(),
+    applicants.length > 0
+      ? notify([...new Set(applicants)], {
+          type: "swap_result",
+          title: "応募していた代講の募集が取り下げられました",
+          body,
+          href: "/tutor/open-swaps",
+        })
+      : Promise.resolve(),
+  ]);
+
+  revalidatePath("/admin/requests");
+  revalidatePath("/tutor/absences");
+  revalidatePath("/tutor/open-swaps");
   return { ok: true };
 }
