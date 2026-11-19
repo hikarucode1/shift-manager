@@ -21,7 +21,7 @@ import {
 } from "@/components/ui/card";
 import { isIndeterminate, toFailedResult } from "@/lib/action-failure";
 import { cn } from "@/lib/utils";
-import { INPUT_WEEKDAYS, type InputWeekday } from "@/lib/shift-constants";
+import { INPUT_WEEKDAYS } from "@/lib/shift-constants";
 import { setSubmissionFrozen } from "./actions";
 import {
   saveMonthlyConfirmation,
@@ -204,9 +204,6 @@ export function AdminSubmissionsOverview({
       (t.submission.note || t.submission.preferredStudents.length > 0),
   );
 
-  // #361: いま見ている曜日
-  const [weekday, setWeekday] = useState<InputWeekday>("mon");
-
   // 月選択用 input ("YYYY-MM")
   const [monthInput, setMonthInput] = useState(targetMonth.slice(0, 7));
 
@@ -241,6 +238,35 @@ export function AdminSubmissionsOverview({
     }
     return m;
   }, [confirmedSet]);
+
+  // メモ27: 講師ごとの「確定 ÷ 出られる (○と△)」。押すたびに変わる
+  const rates = (() => {
+    const cells = new Set(
+      INPUT_WEEKDAYS.flatMap((w) =>
+        slots.map((sl) => `${w.key}:${sl.slotNumber}`),
+      ),
+    );
+    const list = sortedTutors.map((t) => {
+      const available = t.entries.filter(
+        (e) =>
+          (e.availability === "yes" || e.availability === "maybe") &&
+          cells.has(`${e.weekday}:${e.slotNumber}`),
+      ).length;
+      let confirmed = 0;
+      for (const key of confirmedSet) {
+        if (key.startsWith(`${t.id}:`)) confirmed++;
+      }
+      const pct = available > 0 ? Math.round((confirmed / available) * 100) : null;
+      return { tutor: t, available, confirmed, pct };
+    });
+    // % の低い順。出られるコマが無い人 (未提出など) は最後
+    return list.sort((a, b) => {
+      if (a.pct === null && b.pct === null) return 0;
+      if (a.pct === null) return 1;
+      if (b.pct === null) return -1;
+      return a.pct - b.pct;
+    });
+  })();
 
   function handleFreeze(tutorId: string, effectiveFrom: string, freeze: boolean) {
     setNotice(null);
@@ -621,156 +647,80 @@ export function AdminSubmissionsOverview({
         )}
       </Card>
 
-      {/* #361: 曜日ごとに「このコマに誰が来られるか」を名前で並べ、名前を押して
-          確定する。以前の 曜日×コマ × 講師 の表は、講師が増えると横に長く、
-          希望の一覧と確定の操作が混ざっていて分かりにくかった */}
+      {/* 本番チェック メモ10・27: 今の Excel「スケジュール」シートと同じく、
+          曜日×コマの表に出られる講師を並べ、押して確定する。横に講師ごとの
+          「確定 ÷ 出られる」の % を出し、偏りを見ながら組めるようにする */}
       <Card>
         <CardHeader>
           <CardTitle className="text-base">
             出られる人と確定 ({formatMonth(targetMonth)})
           </CardTitle>
           <CardDescription>
-            曜日を選ぶと、コマごとに「出られる人（○）」と「できれば避けたい人（△）」が出ます。名前を押すと確定（✓）、もう一度押すと外れます。決め終わったら下の「保存」を押してください。日曜は休校のため出ません。
+            各マスに、そのコマに出られると出した講師が並びます（白＝○、オレンジ＝△ できれば避けたい）。名前を押すと確定（✓）、もう一度押すと外れます。右の % は講師ごとの「確定したコマ ÷ 出られるコマ（○と△）」です。決め終わったら下の「保存」を押してください。
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
-          <div
-            role="group"
-            aria-label="曜日"
-            className="grid grid-cols-6 gap-1 rounded-lg bg-muted p-1"
-          >
-            {INPUT_WEEKDAYS.map((w) => {
-              const n = confirmedCountByWeekday.get(w.key) ?? 0;
-              const active = weekday === w.key;
-              return (
-                <button
-                  key={w.key}
-                  type="button"
-                  aria-pressed={active}
-                  onClick={() => setWeekday(w.key)}
-                  className={cn(
-                    "rounded-md px-1 py-1.5 text-sm font-medium transition-colors",
-                    active
-                      ? "bg-background text-foreground shadow-sm"
-                      : "text-muted-foreground hover:text-foreground",
-                  )}
-                >
-                  {w.label}
-                  <span className="ml-0.5 text-xs text-muted-foreground">
-                    {n > 0 ? `✓${n}` : ""}
-                  </span>
-                </button>
-              );
-            })}
-          </div>
-
-          <div className="space-y-2">
-            {slots.map((slot) => {
-              const cellKey = `${weekday}:${slot.slotNumber}`;
-              const yes = sortedTutors.filter(
-                (t) => entryMaps.get(t.id)?.get(cellKey) === "yes",
-              );
-              const maybe = sortedTutors.filter(
-                (t) => entryMaps.get(t.id)?.get(cellKey) === "maybe",
-              );
-              // 希望に無いのに確定している人 (前に手で入れた等) も見せる
-              const others = sortedTutors.filter(
-                (t) =>
-                  !entryMaps.get(t.id)?.has(cellKey) ||
-                  entryMaps.get(t.id)?.get(cellKey) === "no",
-              );
-              const confirmedOthers = others.filter((t) =>
-                confirmedSet.has(assignKey(t.id, weekday, slot.slotNumber)),
-              );
-              const addable = others.filter(
-                (t) =>
-                  !confirmedSet.has(assignKey(t.id, weekday, slot.slotNumber)),
-              );
-              const confirmedCount = tutors.filter((t) =>
-                confirmedSet.has(assignKey(t.id, weekday, slot.slotNumber)),
-              ).length;
-              return (
-                <div
-                  key={slot.slotNumber}
-                  className="space-y-2 rounded-md border p-3"
-                >
-                  <div className="flex flex-wrap items-baseline gap-x-2 text-sm">
-                    <span className="font-semibold">{slot.label}</span>
-                    <span className="text-xs text-muted-foreground">
-                      {slot.startTime}〜{slot.endTime}
-                    </span>
-                    <span className="ml-auto text-xs text-muted-foreground">
-                      確定 {confirmedCount} 人
-                    </span>
-                  </div>
-                  <NameRow
-                    mark="○"
-                    people={yes}
-                    tone="yes"
-                    weekday={weekday}
-                    slotNumber={slot.slotNumber}
-                    confirmedSet={confirmedSet}
-                    disabled={isPending}
-                    onToggle={toggleConfirmed}
-                    isMatch={isMatch}
-                  />
-                  <NameRow
-                    mark="△"
-                    people={maybe}
-                    tone="maybe"
-                    weekday={weekday}
-                    slotNumber={slot.slotNumber}
-                    confirmedSet={confirmedSet}
-                    disabled={isPending}
-                    onToggle={toggleConfirmed}
-                    isMatch={isMatch}
-                  />
-                  {confirmedOthers.length > 0 && (
-                    <NameRow
-                      mark="希望外"
-                      people={confirmedOthers}
-                      tone="other"
-                      weekday={weekday}
-                      slotNumber={slot.slotNumber}
-                      confirmedSet={confirmedSet}
-                      disabled={isPending}
-                      onToggle={toggleConfirmed}
-                      isMatch={isMatch}
-                    />
-                  )}
-                  {addable.length > 0 && (
-                    <select
-                      aria-label={`${slot.label} にほかの講師を入れる`}
-                      value=""
-                      disabled={isPending}
-                      onChange={(e) => {
-                        if (e.target.value) {
-                          toggleConfirmed(
-                            e.target.value,
-                            weekday,
-                            slot.slotNumber,
-                          );
-                        }
-                      }}
-                      className="h-8 rounded-md border bg-background px-2 text-xs text-muted-foreground"
-                    >
-                      <option value="">＋ 希望に無い講師を入れる</option>
-                      {addable.map((t) => (
-                        <option key={t.id} value={t.id}>
-                          {filterOn && isMatch(t) ? "● " : ""}
-                          {t.displayName}
-                        </option>
+          <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_15rem]">
+            <div className="overflow-x-auto">
+              <table className="w-full min-w-[56rem] table-fixed border-collapse text-xs">
+                <thead>
+                  <tr>
+                    <th className="w-16 border bg-muted/50 p-1.5 text-left font-medium">
+                      コマ
+                    </th>
+                    {INPUT_WEEKDAYS.map((w) => (
+                      <th
+                        key={w.key}
+                        className={cn(
+                          "border p-1.5 font-semibold",
+                          WEEKDAY_HEAD_TONE[w.key],
+                        )}
+                      >
+                        {w.label}
+                        <span className="ml-1 font-normal text-muted-foreground">
+                          {confirmedCountByWeekday.get(w.key)
+                            ? `✓${confirmedCountByWeekday.get(w.key)}`
+                            : ""}
+                        </span>
+                      </th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody>
+                  {slots.map((slot) => (
+                    <tr key={slot.slotNumber}>
+                      <th className="border bg-muted/30 p-1.5 text-left align-top font-medium">
+                        {slot.label}
+                        <div className="font-normal text-muted-foreground">
+                          {slot.startTime}
+                        </div>
+                      </th>
+                      {INPUT_WEEKDAYS.map((w) => (
+                        <ScheduleCell
+                          key={w.key}
+                          weekday={w.key}
+                          slot={slot}
+                          tutors={sortedTutors}
+                          entryMaps={entryMaps}
+                          confirmedSet={confirmedSet}
+                          disabled={isPending}
+                          onToggle={toggleConfirmed}
+                          isMatch={isMatch}
+                          filterOn={filterOn}
+                        />
                       ))}
-                    </select>
-                  )}
-                </div>
-              );
-            })}
-            {tutors.length === 0 && (
-              <p className="text-sm text-muted-foreground">
-                講師がいないため表示できるものがありません。
-              </p>
-            )}
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+              {tutors.length === 0 && (
+                <p className="mt-2 text-sm text-muted-foreground">
+                  講師がいないため表示できるものがありません。
+                </p>
+              )}
+            </div>
+
+            <RateList rates={rates} isMatch={isMatch} />
           </div>
 
           <div className="space-y-3 rounded-md border bg-muted/40 p-3 text-sm">
@@ -825,75 +775,168 @@ export function AdminSubmissionsOverview({
   );
 }
 
-/** #361: 1 コマの ○ / △ / 希望外 の人を名前のボタンで並べる。押すと確定を切り替える */
-function NameRow({
-  mark,
-  people,
-  tone,
+/** 曜日の見出しの色 (Excel の色分けに合わせる) */
+const WEEKDAY_HEAD_TONE: Record<string, string> = {
+  mon: "bg-rose-50 dark:bg-rose-950/40",
+  tue: "bg-orange-50 dark:bg-orange-950/40",
+  wed: "bg-sky-50 dark:bg-sky-950/40",
+  thu: "bg-emerald-50 dark:bg-emerald-950/40",
+  fri: "bg-amber-50 dark:bg-amber-950/40",
+  sat: "bg-indigo-50 dark:bg-indigo-950/40",
+};
+
+/** メモ27: 表の 1 マス。○・△・希望外で確定した人を名前のボタンで縦に並べる */
+function ScheduleCell({
   weekday,
-  slotNumber,
+  slot,
+  tutors,
+  entryMaps,
   confirmedSet,
   disabled,
   onToggle,
   isMatch,
+  filterOn,
 }: {
-  mark: string;
-  people: TutorView[];
-  tone: "yes" | "maybe" | "other";
   weekday: string;
-  slotNumber: number;
+  slot: Slot;
+  tutors: TutorView[];
+  entryMaps: Map<string, Map<string, "yes" | "maybe" | "no">>;
   confirmedSet: Set<string>;
   disabled: boolean;
   onToggle: (tutorId: string, weekday: string, slot: number) => void;
-  /** #350: 絞り込みに合う人か。合わない人は薄くする */
+  isMatch: (t: TutorView) => boolean;
+  filterOn: boolean;
+}) {
+  const cellKey = `${weekday}:${slot.slotNumber}`;
+  const isOn = (t: TutorView) =>
+    confirmedSet.has(assignKey(t.id, weekday, slot.slotNumber));
+  const yes = tutors.filter((t) => entryMaps.get(t.id)?.get(cellKey) === "yes");
+  const maybe = tutors.filter(
+    (t) => entryMaps.get(t.id)?.get(cellKey) === "maybe",
+  );
+  const others = tutors.filter((t) => {
+    const a = entryMaps.get(t.id)?.get(cellKey);
+    return a === undefined || a === "no";
+  });
+  // 希望に無いのに確定している人 (手で入れた等) も見せる
+  const confirmedOthers = others.filter(isOn);
+  const addable = others.filter((t) => !isOn(t));
+  const people: Array<{ t: TutorView; tone: "yes" | "maybe" | "other" }> = [
+    ...yes.map((t) => ({ t, tone: "yes" as const })),
+    ...maybe.map((t) => ({ t, tone: "maybe" as const })),
+    ...confirmedOthers.map((t) => ({ t, tone: "other" as const })),
+  ];
+  return (
+    <td className="border p-1 align-top">
+      <div className="flex flex-col gap-0.5">
+        {people.map(({ t, tone }) => {
+          const on = isOn(t);
+          const draft = t.submission?.status === "draft";
+          return (
+            <button
+              key={t.id}
+              type="button"
+              aria-pressed={on}
+              disabled={disabled}
+              onClick={() => onToggle(t.id, weekday, slot.slotNumber)}
+              title={
+                tone === "maybe"
+                  ? "△ できれば避けたい"
+                  : tone === "other"
+                    ? "希望に無いコマです"
+                    : draft
+                      ? "まだ提出していない下書きの希望です"
+                      : undefined
+              }
+              className={cn(
+                "flex w-full items-center gap-1 rounded border px-1.5 py-0.5 text-left text-xs transition-colors disabled:opacity-60",
+                !isMatch(t) && "opacity-40",
+                on
+                  ? "border-primary bg-primary font-semibold text-primary-foreground"
+                  : tone === "maybe"
+                    ? "border-amber-300 bg-amber-50 text-amber-900 hover:bg-amber-100 dark:border-amber-800 dark:bg-amber-950 dark:text-amber-200"
+                    : "border-input bg-background hover:bg-muted",
+                tone === "other" && "border-dashed",
+              )}
+            >
+              {on ? <Check className="size-3 shrink-0" /> : <TrackDot track={t.track} />}
+              <span className="truncate">{t.displayName}</span>
+              {tone === "maybe" && !on && <span className="ml-auto">△</span>}
+              {draft && <span className="ml-auto opacity-70">下書</span>}
+            </button>
+          );
+        })}
+        {addable.length > 0 && (
+          <select
+            aria-label={`${slot.label} にほかの講師を入れる`}
+            value=""
+            disabled={disabled}
+            onChange={(e) => {
+              if (e.target.value) onToggle(e.target.value, weekday, slot.slotNumber);
+            }}
+            className="h-6 w-full rounded border border-dashed bg-background px-1 text-[11px] text-muted-foreground"
+          >
+            <option value="">＋</option>
+            {addable.map((t) => (
+              <option key={t.id} value={t.id}>
+                {filterOn && isMatch(t) ? "● " : ""}
+                {t.displayName}
+              </option>
+            ))}
+          </select>
+        )}
+      </div>
+    </td>
+  );
+}
+
+/** メモ27: 講師ごとの「確定 ÷ 出られる (○と△)」。% の低い順 */
+function RateList({
+  rates,
+  isMatch,
+}: {
+  rates: Array<{
+    tutor: TutorView;
+    available: number;
+    confirmed: number;
+    pct: number | null;
+  }>;
   isMatch: (t: TutorView) => boolean;
 }) {
   return (
-    <div className="flex items-start gap-2">
-      <span
-        className={cn(
-          "w-10 shrink-0 pt-1 text-center text-xs font-semibold",
-          tone === "yes" && "text-primary",
-          tone === "maybe" && "text-amber-700 dark:text-amber-300",
-          tone === "other" && "text-muted-foreground",
+    <div className="space-y-2 xl:sticky xl:top-4 xl:self-start">
+      <p className="text-sm font-medium">講師ごとの確定の割合</p>
+      <p className="text-xs text-muted-foreground">
+        確定したコマ ÷ 出られるコマ（○と△）。低い順。
+      </p>
+      <ul className="space-y-1.5">
+        {rates.map(({ tutor, available, confirmed, pct }) => (
+          <li
+            key={tutor.id}
+            className={cn("space-y-0.5", !isMatch(tutor) && "opacity-40")}
+          >
+            <div className="flex items-baseline gap-1.5 text-xs">
+              <TrackDot track={tutor.track} />
+              <span className="truncate font-medium">{tutor.displayName}</span>
+              <span className="ml-auto tabular-nums text-muted-foreground">
+                {confirmed}/{available}
+              </span>
+              <span className="w-10 text-right font-semibold tabular-nums">
+                {pct === null ? "—" : `${pct}%`}
+              </span>
+            </div>
+            <div className="h-1.5 overflow-hidden rounded-full bg-muted">
+              <div
+                className="h-full rounded-full bg-primary"
+                style={{ width: `${Math.min(pct ?? 0, 100)}%` }}
+              />
+            </div>
+          </li>
+        ))}
+        {rates.length === 0 && (
+          <li className="text-xs text-muted-foreground">講師がいません。</li>
         )}
-      >
-        {mark}
-      </span>
-      {people.length === 0 ? (
-        <span className="pt-1 text-xs text-muted-foreground">なし</span>
-      ) : (
-        <div className="flex flex-wrap gap-1.5">
-          {people.map((t) => {
-            const on = confirmedSet.has(assignKey(t.id, weekday, slotNumber));
-            // 下書きのままの希望は、まだ本人が出していないので印を付ける
-            const draft = t.submission?.status === "draft";
-            return (
-              <button
-                key={t.id}
-                type="button"
-                aria-pressed={on}
-                disabled={disabled}
-                onClick={() => onToggle(t.id, weekday, slotNumber)}
-                title={draft ? "まだ提出していない下書きの希望です" : undefined}
-                className={cn(
-                  "inline-flex items-center gap-1 rounded-full border px-2.5 py-1 text-xs font-medium transition-colors disabled:opacity-60",
-                  !isMatch(t) && "opacity-40",
-                  on
-                    ? "border-primary bg-primary text-primary-foreground"
-                    : tone === "maybe"
-                      ? "border-amber-300 bg-amber-50 hover:bg-amber-100 dark:border-amber-800 dark:bg-amber-950"
-                      : "border-input bg-background hover:bg-muted",
-                )}
-              >
-                {on ? "✓" : <TrackDot track={t.track} />}
-                {t.displayName}
-                {draft && <span className="ml-1 opacity-70">（下書き）</span>}
-              </button>
-            );
-          })}
-        </div>
-      )}
+      </ul>
     </div>
   );
 }
