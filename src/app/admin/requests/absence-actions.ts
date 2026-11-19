@@ -346,7 +346,7 @@ export async function createAbsenceOnBehalf(
   const slotLabel = await slotLabelSafe(slotNumber);
   await notify([tutorId], {
     type: "absence_result",
-    title: "欠勤が登録されました（教室長による代理登録）",
+    title: "欠勤が登録されました（室長が登録）",
     body: `対象日: ${noticeDate(date)}${slotLabel} ／ ${reason}${followUpNote}`,
     href: "/tutor/absences",
   });

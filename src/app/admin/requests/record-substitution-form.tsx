@@ -19,7 +19,7 @@ import {
  * 教室長が「このコマは誰が入ったか」を記録するフォーム (#215)。
  *
  * 本番チェック メモ26: **終わったコマ専用** (「実際は B が入っていた」の事後記録)。
- * これからのコマは「代理で欠勤を登録する」で代講を指名する (B が引き受けて決まる)。
+ * これからのコマは「室長が欠勤を登録する」で代講を指名する (B が引き受けて決まる)。
  */
 export function RecordSubstitutionForm({ today }: { today: string }) {
   const router = useRouter();
@@ -145,7 +145,7 @@ export function RecordSubstitutionForm({ today }: { today: string }) {
         <p className="flex items-start gap-1.5 text-xs text-muted-foreground">
           <Info className="mt-0.5 size-3.5 shrink-0" aria-hidden />
           終わったコマについて「実際に誰が入ったか」を記録します。登録済みシフトの
-          担当がその場で差し替わります。これからのコマの代講は「代理で欠勤を登録する」
+          担当がその場で差し替わります。これからのコマの代講は「室長が欠勤を登録する」
           から指名してください。間違えた場合は「記録」タブから取り消せます。
         </p>
 

@@ -322,7 +322,7 @@ const CancelApprovedInput = z.object({
  *
  * ⚠️ 承認時に自動失効させた同一コマの欠勤申請は**戻さない**。失効前が pending
  * だったか approved だったかは記録されておらず、推測で復元すると別の嘘になる。
- * 代わりに戻り値で呼び出し側に伝え、画面で「代理で欠勤を登録する」(#217) を
+ * 代わりに戻り値で呼び出し側に伝え、画面で「室長が欠勤を登録する」(#217) を
  * 促す。**講師の再申請を促してはいけない** — `createAbsenceRequest` は過去日を
  * 弾くので、終了したコマでは実行不能な案内になる。
  *
@@ -818,7 +818,7 @@ export async function createOpenSwapOnBehalf(
         // 交代チャンネルはこれ)。href は本人の申請一覧へ向ける
         notify([tutorId], {
           type: "swap_result",
-          title: "代講の募集が作成されました（教室長による代理）",
+          title: "代講の募集が作成されました（室長が募集）",
           body: `対象: ${noticeDate(date)} ${slotLabel} ／ ${reason}`,
           href: "/tutor/swaps",
         }),
@@ -905,13 +905,13 @@ export async function recordSubstitution(
     return { ok: false, error: "同じ講師を代講者にはできません。" };
   }
   // 本番チェック メモ26: 記録は終わったコマ専用にした。これからのコマは
-  // 「代理で欠勤を登録する」で代講を指名し、B が引き受けた時点で決まる
+  // 「室長が欠勤を登録する」で代講を指名し、B が引き受けた時点で決まる
   // (B の知らないうちに担当が差し替わらないように)
   if (!(date < jstToday() || (await hasSlotEnded(date, slotNumber)))) {
     return {
       ok: false,
       error:
-        "まだ終わっていないコマです。これからの代講は「代理で欠勤を登録する」から指名してください。",
+        "まだ終わっていないコマです。これからの代講は「室長が欠勤を登録する」から指名してください。",
     };
   }
 

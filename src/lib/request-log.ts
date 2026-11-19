@@ -119,7 +119,7 @@ export type RequestLogEntry = {
 export const EVENT_LABEL: Record<RequestLogEvent, string> = {
   pending: "未対応",
   approved: "承認",
-  registered: "代理登録",
+  registered: "室長が登録",
   recorded: "記録",
   rejected: "却下",
   "cancelled-by-admin": "取り消し",
@@ -299,7 +299,7 @@ export function toAbsenceLogEntry(i: AbsenceLogInput): RequestLogEntry {
     "取り消すと、登録済みシフトからこのコマの欠勤表示が消えます。実際に休んだ場合は取り消さないでください。",
     // 講師の createAbsenceRequest は過去日を弾くので、戻すには代理登録が要る
     i.isPastDate
-      ? "このコマは過去日のため、講師は自分で登録し直せません。必要なら「代理で欠勤を登録する」から登録してください。"
+      ? "このコマは過去日のため、講師は自分で登録し直せません。必要なら「室長が欠勤を登録する」から登録してください。"
       : null,
   );
 }

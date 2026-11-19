@@ -146,7 +146,7 @@ export function AbsenceOnBehalfForm({ today }: { today: string }) {
   if (!open) {
     return (
       <Button variant="outline" size="sm" onClick={() => setOpen(true)}>
-        代理で欠勤を登録する
+        室長が欠勤を登録する
       </Button>
     );
   }

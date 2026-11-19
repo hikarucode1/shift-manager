@@ -145,7 +145,7 @@ export function SwapRequestsPanel({
                     <div className="flex flex-wrap items-center gap-2">
                       <span className="font-medium">{r.requesterName}</span>
                       <Badge variant="accent">未対応</Badge>
-                      {r.isProxy && <Badge variant="secondary">代理募集</Badge>}
+                      {r.isProxy && <Badge variant="secondary">室長が募集</Badge>}
                       {/* #331: 欠勤で指定した相手への依頼。相手が引き受けると
                           その場で成立するので、承認は要らない */}
                       {r.designated && (
