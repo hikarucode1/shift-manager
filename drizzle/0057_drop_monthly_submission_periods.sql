@@ -1,0 +1,1 @@
+DROP TABLE "monthly_submission_periods" CASCADE;
