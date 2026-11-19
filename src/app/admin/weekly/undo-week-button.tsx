@@ -40,7 +40,8 @@ export function UndoWeekButton({
     startTransition(async () => {
       const res = await undoWeekUpload({ weekStart }).catch(toFailedResult);
       if (res.ok) {
-        setResult({ type: "ok", text: `${weekLabel} の座席表の登録を取り消しました。` });
+        // 取り消すとこのボタンごと消えるので、結果はページ側で出す
+        router.push(`/admin/weekly?week=${weekStart}&undone=1`);
         router.refresh();
       } else {
         setResult({
