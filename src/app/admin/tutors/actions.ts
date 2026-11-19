@@ -2,11 +2,13 @@
 
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
-import { and, arrayContains, eq, isNotNull, isNull, ne, sql } from "drizzle-orm";
+import { and, arrayContains, asc, eq, gte, isNotNull, isNull, ne, sql } from "drizzle-orm";
+import { jstToday, noticeDate } from "@/lib/week";
+import { slotLabelSafe } from "@/lib/slot-meta";
 import { staleRefusal, type StaleRefusal } from "@/lib/action-failure";
 import { requireRole } from "@/lib/auth";
 import { db } from "@/db/client";
-import { profiles } from "@/db/schema";
+import { profiles, weeklyShifts } from "@/db/schema";
 import { isUniqueViolation } from "@/lib/db-errors";
 import { setProfileActive } from "@/lib/profile-active";
 import { checkTeachingProfile } from "@/lib/tutor-subjects";
@@ -401,6 +403,36 @@ export async function sendPasswordReset(input: unknown): Promise<ActionResult> {
   }
 
   return { ok: true };
+}
+
+const UpcomingSchema = z.object({ id: z.string().uuid() });
+
+/**
+ * 本番チェック メモ28: 無効にする前に、今日以降の登録済みシフトに何コマ
+ * 入っているかを返す (無効にしても登録済みシフトからは消えないため)。
+ */
+export async function countUpcomingShifts(
+  input: unknown,
+): Promise<
+  | { ok: true; count: number; firstLabel: string | null }
+  | { ok: false; error: string }
+> {
+  await requireRole("admin");
+  const parsed = UpcomingSchema.safeParse(input);
+  if (!parsed.success) return { ok: false, error: "入力が不正です。" };
+  const today = jstToday();
+  const rows = await db
+    .select({ date: weeklyShifts.date, slotNumber: weeklyShifts.slotNumber })
+    .from(weeklyShifts)
+    .where(
+      and(eq(weeklyShifts.tutorId, parsed.data.id), gte(weeklyShifts.date, today)),
+    )
+    .orderBy(asc(weeklyShifts.date), asc(weeklyShifts.slotNumber));
+  const first = rows[0];
+  const firstLabel = first
+    ? `${noticeDate(first.date)} ${await slotLabelSafe(first.slotNumber)}`
+    : null;
+  return { ok: true, count: rows.length, firstLabel };
 }
 
 const SetActiveSchema = z.object({

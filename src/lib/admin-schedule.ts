@@ -32,6 +32,8 @@ export type AdminCellStudent = {
 export type AdminCell = {
   tutorId: string;
   tutorName: string;
+  /** 本番チェック メモ28: 無効にした講師が残っているコマに印を付ける */
+  tutorInactive: boolean;
   seatNumber: string | null;
   isOverride: boolean;
   /** 承認済み欠勤があるコマ */
@@ -169,6 +171,7 @@ export async function getAdminWeekSchedule(
         isTraining: weeklyShifts.isTraining,
         tutorId: weeklyShifts.tutorId,
         tutorName: profiles.displayName,
+        tutorActive: profiles.isActive,
         studentName: students.name,
         subject: shiftAssignments.subject,
         isTrial: shiftAssignments.isTrial,
@@ -214,6 +217,7 @@ export async function getAdminWeekSchedule(
         cell: {
           tutorId: r.tutorId,
           tutorName: r.tutorName,
+          tutorInactive: !r.tutorActive,
           seatNumber: r.seatNumber,
           isOverride: r.isOverride,
           isAbsent: absentKeys.has(

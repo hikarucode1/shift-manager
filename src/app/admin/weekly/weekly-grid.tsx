@@ -217,6 +217,15 @@ export function WeeklyGrid({ schedule }: { schedule: AdminWeekSchedule }) {
                               >
                                 {c.tutorName}
                               </span>
+                              {c.tutorInactive && (
+                                <Badge
+                                  variant="outline"
+                                  className="border-destructive px-1 py-0 text-[10px] font-normal text-destructive"
+                                  title="無効にした講師です。代わりの講師を決めてください"
+                                >
+                                  無効
+                                </Badge>
+                              )}
                               {c.isAbsent && (
                                 <Badge
                                   variant="destructive"
