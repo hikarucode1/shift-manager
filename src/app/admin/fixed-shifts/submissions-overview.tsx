@@ -182,6 +182,8 @@ export function AdminSubmissionsOverview({
         ),
       ),
   );
+  // 11/19 本人: 決定した人だけを表に出す切り替え
+  const [decidedOnly, setDecidedOnly] = useState(false);
   const addedCount = [...confirmedSet].filter((k) => !savedSet.has(k)).length;
   const removedCount = [...savedSet].filter((k) => !confirmedSet.has(k)).length;
   // 初期確定セットからの変更検知 (未保存変更がある時 ボタン強調)
@@ -671,6 +673,38 @@ export function AdminSubmissionsOverview({
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
+          <div
+            role="group"
+            aria-label="表に出す人"
+            className="inline-flex rounded-lg bg-muted p-1 text-sm"
+          >
+            {(
+              [
+                [false, "全員を表示"],
+                [true, "決定した人だけ表示"],
+              ] as const
+            ).map(([v, label]) => (
+              <button
+                key={label}
+                type="button"
+                aria-pressed={decidedOnly === v}
+                onClick={() => setDecidedOnly(v)}
+                className={cn(
+                  "rounded-md px-3 py-1 font-medium transition-colors",
+                  decidedOnly === v
+                    ? "bg-background text-foreground shadow-sm"
+                    : "text-muted-foreground hover:text-foreground",
+                )}
+              >
+                {label}
+              </button>
+            ))}
+          </div>
+          {decidedOnly && addedCount + removedCount > 0 && (
+            <p className="text-xs text-amber-700 dark:text-amber-300">
+              まだ決定していない変更は、この表示には出ません（「全員を表示」で確かめてください）。
+            </p>
+          )}
           <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-muted-foreground">
             <span className="flex items-center gap-1"><span className="inline-block h-3 w-5 rounded border border-input bg-background" />出られる（○）</span>
             <span className="flex items-center gap-1"><span className="inline-block h-3 w-5 rounded border border-amber-300 bg-amber-50" />できれば避けたい（△）</span>
@@ -722,6 +756,7 @@ export function AdminSubmissionsOverview({
                           entryMaps={entryMaps}
                           confirmedSet={confirmedSet}
                           savedSet={savedSet}
+                          decidedOnly={decidedOnly}
                           disabled={isPending}
                           onToggle={toggleConfirmed}
                           isMatch={isMatch}
@@ -815,6 +850,7 @@ function ScheduleCell({
   entryMaps,
   confirmedSet,
   savedSet,
+  decidedOnly,
   disabled,
   onToggle,
   isMatch,
@@ -827,6 +863,8 @@ function ScheduleCell({
   confirmedSet: Set<string>;
   /** 決定済み (保存済み)。選んだだけの人と見た目を分ける */
   savedSet: Set<string>;
+  /** 決定済みの人だけ出す (11/19 本人) */
+  decidedOnly: boolean;
   disabled: boolean;
   onToggle: (tutorId: string, weekday: string, slot: number) => void;
   isMatch: (t: TutorView) => boolean;
@@ -848,11 +886,12 @@ function ScheduleCell({
     savedSet.has(assignKey(t.id, weekday, slot.slotNumber));
   const confirmedOthers = others.filter((t) => isOn(t) || isSaved(t));
   const addable = others.filter((t) => !isOn(t));
-  const people: Array<{ t: TutorView; tone: "yes" | "maybe" | "other" }> = [
+  const all: Array<{ t: TutorView; tone: "yes" | "maybe" | "other" }> = [
     ...yes.map((t) => ({ t, tone: "yes" as const })),
     ...maybe.map((t) => ({ t, tone: "maybe" as const })),
     ...confirmedOthers.map((t) => ({ t, tone: "other" as const })),
   ];
+  const people = decidedOnly ? all.filter(({ t }) => isSaved(t)) : all;
   return (
     <td className="border p-1 align-top">
       <div className="flex flex-col gap-0.5">
@@ -902,7 +941,7 @@ function ScheduleCell({
             </button>
           );
         })}
-        {addable.length > 0 && (
+        {!decidedOnly && addable.length > 0 && (
           <select
             aria-label={`${slot.label} にほかの講師を入れる`}
             value=""
