@@ -21,7 +21,7 @@ import {
 } from "@/components/ui/card";
 import { isIndeterminate, toFailedResult } from "@/lib/action-failure";
 import { cn } from "@/lib/utils";
-import { INPUT_WEEKDAYS, type InputWeekday } from "@/lib/shift-constants";
+import { INPUT_WEEKDAYS } from "@/lib/shift-constants";
 import { setSubmissionFrozen } from "./actions";
 import {
   saveMonthlyConfirmation,
@@ -172,6 +172,20 @@ export function AdminSubmissionsOverview({
         ),
       ),
   );
+  // 11/19 本人: 「押す＝選ぶ」と「レギュラーに決定する」を見た目で分ける。
+  // 決定済み (保存済み) の集合。選んだだけで未決定の人と区別して表示する
+  const [savedSet, setSavedSet] = useState<Set<string>>(
+    () =>
+      new Set(
+        initialConfirmed.map((a) =>
+          assignKey(a.tutorId, a.weekday, a.slotNumber),
+        ),
+      ),
+  );
+  // 11/19 本人: 決定した人だけを表に出す切り替え
+  const [decidedOnly, setDecidedOnly] = useState(false);
+  const addedCount = [...confirmedSet].filter((k) => !savedSet.has(k)).length;
+  const removedCount = [...savedSet].filter((k) => !confirmedSet.has(k)).length;
   // 初期確定セットからの変更検知 (未保存変更がある時 ボタン強調)
   const [confirmDirty, setConfirmDirty] = useState(false);
 
@@ -203,9 +217,6 @@ export function AdminSubmissionsOverview({
       t.submission &&
       (t.submission.note || t.submission.preferredStudents.length > 0),
   );
-
-  // #361: いま見ている曜日
-  const [weekday, setWeekday] = useState<InputWeekday>("mon");
 
   // 月選択用 input ("YYYY-MM")
   const [monthInput, setMonthInput] = useState(targetMonth.slice(0, 7));
@@ -241,6 +252,35 @@ export function AdminSubmissionsOverview({
     }
     return m;
   }, [confirmedSet]);
+
+  // メモ27: 講師ごとの「確定 ÷ 出られる (○と△)」。押すたびに変わる
+  const rates = (() => {
+    const cells = new Set(
+      INPUT_WEEKDAYS.flatMap((w) =>
+        slots.map((sl) => `${w.key}:${sl.slotNumber}`),
+      ),
+    );
+    const list = sortedTutors.map((t) => {
+      const available = t.entries.filter(
+        (e) =>
+          (e.availability === "yes" || e.availability === "maybe") &&
+          cells.has(`${e.weekday}:${e.slotNumber}`),
+      ).length;
+      let confirmed = 0;
+      for (const key of confirmedSet) {
+        if (key.startsWith(`${t.id}:`)) confirmed++;
+      }
+      const pct = available > 0 ? Math.round((confirmed / available) * 100) : null;
+      return { tutor: t, available, confirmed, pct };
+    });
+    // % の低い順。出られるコマが無い人 (未提出など) は最後
+    return list.sort((a, b) => {
+      if (a.pct === null && b.pct === null) return 0;
+      if (a.pct === null) return 1;
+      if (b.pct === null) return -1;
+      return a.pct - b.pct;
+    });
+  })();
 
   function handleFreeze(tutorId: string, effectiveFrom: string, freeze: boolean) {
     setNotice(null);
@@ -304,9 +344,10 @@ export function AdminSubmissionsOverview({
       }).catch(toFailedResult);
       if (result.ok) {
         setConfirmDirty(false);
+        setSavedSet(new Set(confirmedSet));
         setNotice({
           type: "ok",
-          text: `確定 ${result.inserted} 枠を保存しました。`,
+          text: `${formatMonth(targetMonth)}だけ、${result.inserted} コマをレギュラーに決定しました。`,
         });
         router.refresh();
       } else {
@@ -325,12 +366,9 @@ export function AdminSubmissionsOverview({
     if (!period) return;
     const assignments = currentAssignments();
     const confirmed = window.confirm(
-      `期「${period.label}」(${period.startDate} 〜 ${period.endDate}) ` +
-        `のすべての月に同じ ${assignments.length} 枠を保存します。\n\n` +
-        `※ 適用される ${assignments.length} 枠は ${formatMonth(targetMonth)} の画面で ✓ を付けたものです。\n` +
-        `ほかの月で「その月だけ保存」をしていた場合、その分は\n` +
-        `この内容で上書きされます。\n\n` +
-        `続行しますか?`,
+      `選んだ ${assignments.length} コマを、${period.label}（${period.startDate} 〜 ${period.endDate}）のレギュラーに決定します。\n\n` +
+        `ほかの月で「この月だけ別にする」で決めていた分は、この内容で置き換わります。\n\n` +
+        `決定しますか?`,
     );
     if (!confirmed) return;
     setNotice(null);
@@ -341,9 +379,10 @@ export function AdminSubmissionsOverview({
       }).catch(toFailedResult);
       if (result.ok) {
         setConfirmDirty(false);
+        setSavedSet(new Set(confirmedSet));
         setNotice({
           type: "ok",
-          text: `期のすべての月に ${result.inserted} 枠を保存しました。`,
+          text: `${result.inserted} コマをレギュラーに決定しました（${period.label} の期間すべて）。`,
         });
         router.refresh();
       } else {
@@ -621,202 +660,170 @@ export function AdminSubmissionsOverview({
         )}
       </Card>
 
-      {/* #361: 曜日ごとに「このコマに誰が来られるか」を名前で並べ、名前を押して
-          確定する。以前の 曜日×コマ × 講師 の表は、講師が増えると横に長く、
-          希望の一覧と確定の操作が混ざっていて分かりにくかった */}
+      {/* 本番チェック メモ10・27: 今の Excel「スケジュール」シートと同じく、
+          曜日×コマの表に出られる講師を並べ、押して確定する。横に講師ごとの
+          「確定 ÷ 出られる」の % を出し、偏りを見ながら組めるようにする */}
       <Card>
         <CardHeader>
           <CardTitle className="text-base">
-            出られる人と確定 ({formatMonth(targetMonth)})
+            レギュラーを決める ({period ? period.label : formatMonth(targetMonth)})
           </CardTitle>
           <CardDescription>
-            曜日を選ぶと、コマごとに「出られる人（○）」と「できれば避けたい人（△）」が出ます。名前を押すと確定（✓）、もう一度押すと外れます。決め終わったら下の「保存」を押してください。日曜は休校のため出ません。
+            ① 表の名前を押して、レギュラーにする人を選びます（もう一度押すと外れます）。② 選び終わったら、下の「レギュラーに決定する」を押します。押すまでは決まりません。
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
           <div
             role="group"
-            aria-label="曜日"
-            className="grid grid-cols-6 gap-1 rounded-lg bg-muted p-1"
+            aria-label="表に出す人"
+            className="inline-flex rounded-lg bg-muted p-1 text-sm"
           >
-            {INPUT_WEEKDAYS.map((w) => {
-              const n = confirmedCountByWeekday.get(w.key) ?? 0;
-              const active = weekday === w.key;
-              return (
-                <button
-                  key={w.key}
-                  type="button"
-                  aria-pressed={active}
-                  onClick={() => setWeekday(w.key)}
-                  className={cn(
-                    "rounded-md px-1 py-1.5 text-sm font-medium transition-colors",
-                    active
-                      ? "bg-background text-foreground shadow-sm"
-                      : "text-muted-foreground hover:text-foreground",
-                  )}
-                >
-                  {w.label}
-                  <span className="ml-0.5 text-xs text-muted-foreground">
-                    {n > 0 ? `✓${n}` : ""}
-                  </span>
-                </button>
-              );
-            })}
+            {(
+              [
+                [false, "全員を表示"],
+                [true, "決定した人だけ表示"],
+              ] as const
+            ).map(([v, label]) => (
+              <button
+                key={label}
+                type="button"
+                aria-pressed={decidedOnly === v}
+                onClick={() => setDecidedOnly(v)}
+                className={cn(
+                  "rounded-md px-3 py-1 font-medium transition-colors",
+                  decidedOnly === v
+                    ? "bg-background text-foreground shadow-sm"
+                    : "text-muted-foreground hover:text-foreground",
+                )}
+              >
+                {label}
+              </button>
+            ))}
           </div>
-
-          <div className="space-y-2">
-            {slots.map((slot) => {
-              const cellKey = `${weekday}:${slot.slotNumber}`;
-              const yes = sortedTutors.filter(
-                (t) => entryMaps.get(t.id)?.get(cellKey) === "yes",
-              );
-              const maybe = sortedTutors.filter(
-                (t) => entryMaps.get(t.id)?.get(cellKey) === "maybe",
-              );
-              // 希望に無いのに確定している人 (前に手で入れた等) も見せる
-              const others = sortedTutors.filter(
-                (t) =>
-                  !entryMaps.get(t.id)?.has(cellKey) ||
-                  entryMaps.get(t.id)?.get(cellKey) === "no",
-              );
-              const confirmedOthers = others.filter((t) =>
-                confirmedSet.has(assignKey(t.id, weekday, slot.slotNumber)),
-              );
-              const addable = others.filter(
-                (t) =>
-                  !confirmedSet.has(assignKey(t.id, weekday, slot.slotNumber)),
-              );
-              const confirmedCount = tutors.filter((t) =>
-                confirmedSet.has(assignKey(t.id, weekday, slot.slotNumber)),
-              ).length;
-              return (
-                <div
-                  key={slot.slotNumber}
-                  className="space-y-2 rounded-md border p-3"
-                >
-                  <div className="flex flex-wrap items-baseline gap-x-2 text-sm">
-                    <span className="font-semibold">{slot.label}</span>
-                    <span className="text-xs text-muted-foreground">
-                      {slot.startTime}〜{slot.endTime}
-                    </span>
-                    <span className="ml-auto text-xs text-muted-foreground">
-                      確定 {confirmedCount} 人
-                    </span>
-                  </div>
-                  <NameRow
-                    mark="○"
-                    people={yes}
-                    tone="yes"
-                    weekday={weekday}
-                    slotNumber={slot.slotNumber}
-                    confirmedSet={confirmedSet}
-                    disabled={isPending}
-                    onToggle={toggleConfirmed}
-                    isMatch={isMatch}
-                  />
-                  <NameRow
-                    mark="△"
-                    people={maybe}
-                    tone="maybe"
-                    weekday={weekday}
-                    slotNumber={slot.slotNumber}
-                    confirmedSet={confirmedSet}
-                    disabled={isPending}
-                    onToggle={toggleConfirmed}
-                    isMatch={isMatch}
-                  />
-                  {confirmedOthers.length > 0 && (
-                    <NameRow
-                      mark="希望外"
-                      people={confirmedOthers}
-                      tone="other"
-                      weekday={weekday}
-                      slotNumber={slot.slotNumber}
-                      confirmedSet={confirmedSet}
-                      disabled={isPending}
-                      onToggle={toggleConfirmed}
-                      isMatch={isMatch}
-                    />
-                  )}
-                  {addable.length > 0 && (
-                    <select
-                      aria-label={`${slot.label} にほかの講師を入れる`}
-                      value=""
-                      disabled={isPending}
-                      onChange={(e) => {
-                        if (e.target.value) {
-                          toggleConfirmed(
-                            e.target.value,
-                            weekday,
-                            slot.slotNumber,
-                          );
-                        }
-                      }}
-                      className="h-8 rounded-md border bg-background px-2 text-xs text-muted-foreground"
-                    >
-                      <option value="">＋ 希望に無い講師を入れる</option>
-                      {addable.map((t) => (
-                        <option key={t.id} value={t.id}>
-                          {filterOn && isMatch(t) ? "● " : ""}
-                          {t.displayName}
-                        </option>
+          {decidedOnly && addedCount + removedCount > 0 && (
+            <p className="text-xs text-amber-700 dark:text-amber-300">
+              まだ決定していない変更は、この表示には出ません（「全員を表示」で確かめてください）。
+            </p>
+          )}
+          <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-muted-foreground">
+            <span className="flex items-center gap-1"><span className="inline-block h-3 w-5 rounded border border-input bg-background" />出られる（○）</span>
+            <span className="flex items-center gap-1"><span className="inline-block h-3 w-5 rounded border border-amber-300 bg-amber-50" />できれば避けたい（△）</span>
+            <span className="flex items-center gap-1"><span className="inline-block h-3 w-5 rounded border-2 border-sky-600 bg-sky-50" />選んだ（まだ決定していない）</span>
+            <span className="flex items-center gap-1"><span className="inline-block h-3 w-5 rounded border border-primary bg-primary" />レギュラーに決定済み</span>
+            <span className="flex items-center gap-1"><span className="inline-block h-3 w-5 rounded border border-dashed border-destructive bg-destructive/5" />決定済みから外す</span>
+          </div>
+          <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_15rem]">
+            <div className="overflow-x-auto">
+              <table className="w-full min-w-[56rem] table-fixed border-collapse text-xs">
+                <thead>
+                  <tr>
+                    <th className="w-16 border bg-muted/50 p-1.5 text-left font-medium">
+                      コマ
+                    </th>
+                    {INPUT_WEEKDAYS.map((w) => (
+                      <th
+                        key={w.key}
+                        className={cn(
+                          "border p-1.5 font-semibold",
+                          WEEKDAY_HEAD_TONE[w.key],
+                        )}
+                      >
+                        {w.label}
+                        <span className="ml-1 font-normal text-muted-foreground">
+                          {confirmedCountByWeekday.get(w.key)
+                            ? `✓${confirmedCountByWeekday.get(w.key)}`
+                            : ""}
+                        </span>
+                      </th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody>
+                  {slots.map((slot) => (
+                    <tr key={slot.slotNumber}>
+                      <th className="border bg-muted/30 p-1.5 text-left align-top font-medium">
+                        {slot.label}
+                        <div className="font-normal text-muted-foreground">
+                          {slot.startTime}
+                        </div>
+                      </th>
+                      {INPUT_WEEKDAYS.map((w) => (
+                        <ScheduleCell
+                          key={w.key}
+                          weekday={w.key}
+                          slot={slot}
+                          tutors={sortedTutors}
+                          entryMaps={entryMaps}
+                          confirmedSet={confirmedSet}
+                          savedSet={savedSet}
+                          decidedOnly={decidedOnly}
+                          disabled={isPending}
+                          onToggle={toggleConfirmed}
+                          isMatch={isMatch}
+                          filterOn={filterOn}
+                        />
                       ))}
-                    </select>
-                  )}
-                </div>
-              );
-            })}
-            {tutors.length === 0 && (
-              <p className="text-sm text-muted-foreground">
-                講師がいないため表示できるものがありません。
-              </p>
-            )}
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+              {tutors.length === 0 && (
+                <p className="mt-2 text-sm text-muted-foreground">
+                  講師がいないため表示できるものがありません。
+                </p>
+              )}
+            </div>
+
+            <RateList rates={rates} isMatch={isMatch} />
           </div>
 
           <div className="space-y-3 rounded-md border bg-muted/40 p-3 text-sm">
-            <div className="space-y-1">
+            <div className="flex flex-wrap items-center gap-3">
+              {period && (
+                <Button
+                  size="lg"
+                  onClick={handleSaveRegularConfirmation}
+                  disabled={isPending || (!confirmDirty && addedCount + removedCount === 0)}
+                >
+                  <Check className="mr-1 h-4 w-4" />
+                  レギュラーに決定する
+                </Button>
+              )}
+              <div className="text-xs">
+                {addedCount + removedCount > 0 ? (
+                  <span className="font-medium text-amber-700 dark:text-amber-300">
+                    まだ決定していない変更があります（新しく選んだ {addedCount} コマ・外す {removedCount} コマ）
+                  </span>
+                ) : (
+                  <span className="text-muted-foreground">
+                    決定済みのレギュラー: {savedSet.size} コマ（変更なし）
+                  </span>
+                )}
+              </div>
+            </div>
+            <div className="flex flex-wrap items-center gap-x-4 gap-y-1">
               <Button
                 variant="outline"
                 size="sm"
                 onClick={bulkConfirmAllSubmittedYes}
                 disabled={isPending || tutors.length === 0}
               >
-                提出済みの ○ をまとめて確定にする
+                提出済みの ○ をまとめて選ぶ
               </Button>
-              <p className="text-xs text-muted-foreground">
-                全曜日の、提出済みの人の ○ をすべて ✓ にします。そこから外したい人を押して直すと早いです。
-              </p>
-            </div>
-            <div className="flex flex-wrap items-center gap-2">
-              {period && (
-                <Button
-                  onClick={handleSaveRegularConfirmation}
-                  disabled={isPending}
-                  className={cn(confirmDirty && "ring-2 ring-primary/40")}
-                >
-                  <Check className="mr-1 h-4 w-4" />
-                  期の全部の月に保存（{confirmedSet.size} 枠）
-                </Button>
-              )}
               <Button
-                variant={period ? "outline" : "default"}
+                variant="link"
+                size="sm"
+                className="h-auto px-0 text-xs text-muted-foreground"
                 onClick={handleSaveConfirmation}
                 disabled={isPending}
-                className={cn(confirmDirty && "ring-2 ring-primary/40")}
               >
-                <Check className="mr-1 h-4 w-4" />
-                {formatMonth(targetMonth)}だけ保存
+                {formatMonth(targetMonth)}だけ別にする（例外）
               </Button>
-              {confirmDirty && (
-                <span className="text-xs text-amber-700 dark:text-amber-300">
-                  まだ保存していない変更があります
-                </span>
-              )}
             </div>
             <p className="text-xs text-muted-foreground">
               {period
-                ? `ふつうは「期の全部の月に保存」です（${period.label}: ${period.startDate} 〜 ${period.endDate} のどの月も同じ確定になります）。この月だけ違うときに「${formatMonth(targetMonth)}だけ保存」を使います。`
-                : "この月を含む期がまだ無いため、保存できません。先に「レギュラー期間」で期を作ってください。"}
+                ? `決定すると、${period.label}（${period.startDate} 〜 ${period.endDate}）の期間すべてのレギュラーになります。ある月だけ違うときは「${formatMonth(targetMonth)}だけ別にする」を使います。`
+                : "この月を含む期がまだ無いため、決定できません。先に「レギュラー期間」で期を作ってください。"}
             </p>
           </div>
         </CardContent>
@@ -825,75 +832,186 @@ export function AdminSubmissionsOverview({
   );
 }
 
-/** #361: 1 コマの ○ / △ / 希望外 の人を名前のボタンで並べる。押すと確定を切り替える */
-function NameRow({
-  mark,
-  people,
-  tone,
+/** 曜日の見出しの色 (Excel の色分けに合わせる) */
+const WEEKDAY_HEAD_TONE: Record<string, string> = {
+  mon: "bg-rose-50 dark:bg-rose-950/40",
+  tue: "bg-orange-50 dark:bg-orange-950/40",
+  wed: "bg-sky-50 dark:bg-sky-950/40",
+  thu: "bg-emerald-50 dark:bg-emerald-950/40",
+  fri: "bg-amber-50 dark:bg-amber-950/40",
+  sat: "bg-indigo-50 dark:bg-indigo-950/40",
+};
+
+/** メモ27: 表の 1 マス。○・△・希望外で確定した人を名前のボタンで縦に並べる */
+function ScheduleCell({
   weekday,
-  slotNumber,
+  slot,
+  tutors,
+  entryMaps,
   confirmedSet,
+  savedSet,
+  decidedOnly,
   disabled,
   onToggle,
   isMatch,
+  filterOn,
 }: {
-  mark: string;
-  people: TutorView[];
-  tone: "yes" | "maybe" | "other";
   weekday: string;
-  slotNumber: number;
+  slot: Slot;
+  tutors: TutorView[];
+  entryMaps: Map<string, Map<string, "yes" | "maybe" | "no">>;
   confirmedSet: Set<string>;
+  /** 決定済み (保存済み)。選んだだけの人と見た目を分ける */
+  savedSet: Set<string>;
+  /** 決定済みの人だけ出す (11/19 本人) */
+  decidedOnly: boolean;
   disabled: boolean;
   onToggle: (tutorId: string, weekday: string, slot: number) => void;
-  /** #350: 絞り込みに合う人か。合わない人は薄くする */
+  isMatch: (t: TutorView) => boolean;
+  filterOn: boolean;
+}) {
+  const cellKey = `${weekday}:${slot.slotNumber}`;
+  const isOn = (t: TutorView) =>
+    confirmedSet.has(assignKey(t.id, weekday, slot.slotNumber));
+  const yes = tutors.filter((t) => entryMaps.get(t.id)?.get(cellKey) === "yes");
+  const maybe = tutors.filter(
+    (t) => entryMaps.get(t.id)?.get(cellKey) === "maybe",
+  );
+  const others = tutors.filter((t) => {
+    const a = entryMaps.get(t.id)?.get(cellKey);
+    return a === undefined || a === "no";
+  });
+  // 希望に無いのに確定している人 (手で入れた等) も見せる
+  const isSaved = (t: TutorView) =>
+    savedSet.has(assignKey(t.id, weekday, slot.slotNumber));
+  const confirmedOthers = others.filter((t) => isOn(t) || isSaved(t));
+  const addable = others.filter((t) => !isOn(t));
+  const all: Array<{ t: TutorView; tone: "yes" | "maybe" | "other" }> = [
+    ...yes.map((t) => ({ t, tone: "yes" as const })),
+    ...maybe.map((t) => ({ t, tone: "maybe" as const })),
+    ...confirmedOthers.map((t) => ({ t, tone: "other" as const })),
+  ];
+  const people = decidedOnly ? all.filter(({ t }) => isSaved(t)) : all;
+  return (
+    <td className="border p-1 align-top">
+      <div className="flex flex-col gap-0.5">
+        {people.map(({ t, tone }) => {
+          const on = isOn(t);
+          const saved = isSaved(t);
+          // 決定済み / 選んだ (未決定) / 決定済みから外す / 何もない
+          const state = on ? (saved ? "decided" : "picked") : saved ? "removing" : "none";
+          const draft = t.submission?.status === "draft";
+          return (
+            <button
+              key={t.id}
+              type="button"
+              aria-pressed={on}
+              disabled={disabled}
+              onClick={() => onToggle(t.id, weekday, slot.slotNumber)}
+              title={
+                tone === "maybe"
+                  ? "△ できれば避けたい"
+                  : tone === "other"
+                    ? "希望に無いコマです"
+                    : draft
+                      ? "まだ提出していない下書きの希望です"
+                      : undefined
+              }
+              className={cn(
+                "flex w-full items-center gap-1 rounded border px-1.5 py-0.5 text-left text-xs transition-colors disabled:opacity-60",
+                !isMatch(t) && "opacity-40",
+                state === "decided"
+                  ? "border-primary bg-primary font-semibold text-primary-foreground"
+                  : state === "picked"
+                    ? "border-2 border-sky-600 bg-sky-50 font-semibold text-sky-900 dark:bg-sky-950 dark:text-sky-100"
+                    : state === "removing"
+                      ? "border-dashed border-destructive bg-destructive/5 text-destructive line-through"
+                      : tone === "maybe"
+                    ? "border-amber-300 bg-amber-50 text-amber-900 hover:bg-amber-100 dark:border-amber-800 dark:bg-amber-950 dark:text-amber-200"
+                    : "border-input bg-background hover:bg-muted",
+                tone === "other" && state === "none" && "border-dashed",
+              )}
+            >
+              {on ? <Check className="size-3 shrink-0" /> : <TrackDot track={t.track} />}
+              <span className="truncate">{t.displayName}</span>
+              {tone === "maybe" && state === "none" && <span className="ml-auto">△</span>}
+              {state === "picked" && <span className="ml-auto text-[10px] font-normal">未決定</span>}
+              {state === "removing" && <span className="ml-auto text-[10px] no-underline">外す</span>}
+              {draft && state === "none" && <span className="ml-auto opacity-70">下書</span>}
+            </button>
+          );
+        })}
+        {!decidedOnly && addable.length > 0 && (
+          <select
+            aria-label={`${slot.label} にほかの講師を入れる`}
+            value=""
+            disabled={disabled}
+            onChange={(e) => {
+              if (e.target.value) onToggle(e.target.value, weekday, slot.slotNumber);
+            }}
+            className="h-6 w-full rounded border border-dashed bg-background px-1 text-[11px] text-muted-foreground"
+          >
+            <option value="">＋</option>
+            {addable.map((t) => (
+              <option key={t.id} value={t.id}>
+                {filterOn && isMatch(t) ? "● " : ""}
+                {t.displayName}
+              </option>
+            ))}
+          </select>
+        )}
+      </div>
+    </td>
+  );
+}
+
+/** メモ27: 講師ごとの「確定 ÷ 出られる (○と△)」。% の低い順 */
+function RateList({
+  rates,
+  isMatch,
+}: {
+  rates: Array<{
+    tutor: TutorView;
+    available: number;
+    confirmed: number;
+    pct: number | null;
+  }>;
   isMatch: (t: TutorView) => boolean;
 }) {
   return (
-    <div className="flex items-start gap-2">
-      <span
-        className={cn(
-          "w-10 shrink-0 pt-1 text-center text-xs font-semibold",
-          tone === "yes" && "text-primary",
-          tone === "maybe" && "text-amber-700 dark:text-amber-300",
-          tone === "other" && "text-muted-foreground",
+    <div className="space-y-2 xl:sticky xl:top-4 xl:self-start">
+      <p className="text-sm font-medium">講師ごとのレギュラーの割合</p>
+      <p className="text-xs text-muted-foreground">
+        選んだコマ ÷ 出られるコマ（○と△）。低い順。
+      </p>
+      <ul className="space-y-1.5">
+        {rates.map(({ tutor, available, confirmed, pct }) => (
+          <li
+            key={tutor.id}
+            className={cn("space-y-0.5", !isMatch(tutor) && "opacity-40")}
+          >
+            <div className="flex items-baseline gap-1.5 text-xs">
+              <TrackDot track={tutor.track} />
+              <span className="truncate font-medium">{tutor.displayName}</span>
+              <span className="ml-auto tabular-nums text-muted-foreground">
+                {confirmed}/{available}
+              </span>
+              <span className="w-10 text-right font-semibold tabular-nums">
+                {pct === null ? "—" : `${pct}%`}
+              </span>
+            </div>
+            <div className="h-1.5 overflow-hidden rounded-full bg-muted">
+              <div
+                className="h-full rounded-full bg-primary"
+                style={{ width: `${Math.min(pct ?? 0, 100)}%` }}
+              />
+            </div>
+          </li>
+        ))}
+        {rates.length === 0 && (
+          <li className="text-xs text-muted-foreground">講師がいません。</li>
         )}
-      >
-        {mark}
-      </span>
-      {people.length === 0 ? (
-        <span className="pt-1 text-xs text-muted-foreground">なし</span>
-      ) : (
-        <div className="flex flex-wrap gap-1.5">
-          {people.map((t) => {
-            const on = confirmedSet.has(assignKey(t.id, weekday, slotNumber));
-            // 下書きのままの希望は、まだ本人が出していないので印を付ける
-            const draft = t.submission?.status === "draft";
-            return (
-              <button
-                key={t.id}
-                type="button"
-                aria-pressed={on}
-                disabled={disabled}
-                onClick={() => onToggle(t.id, weekday, slotNumber)}
-                title={draft ? "まだ提出していない下書きの希望です" : undefined}
-                className={cn(
-                  "inline-flex items-center gap-1 rounded-full border px-2.5 py-1 text-xs font-medium transition-colors disabled:opacity-60",
-                  !isMatch(t) && "opacity-40",
-                  on
-                    ? "border-primary bg-primary text-primary-foreground"
-                    : tone === "maybe"
-                      ? "border-amber-300 bg-amber-50 hover:bg-amber-100 dark:border-amber-800 dark:bg-amber-950"
-                      : "border-input bg-background hover:bg-muted",
-                )}
-              >
-                {on ? "✓" : <TrackDot track={t.track} />}
-                {t.displayName}
-                {draft && <span className="ml-1 opacity-70">（下書き）</span>}
-              </button>
-            );
-          })}
-        </div>
-      )}
+      </ul>
     </div>
   );
 }
