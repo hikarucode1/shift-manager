@@ -134,6 +134,20 @@ export default async function FixedShiftPage({
       (Date.parse(dueDate) - Date.parse(today)) / 86_400_000,
     );
     const dl = deadlineLabel(daysLeft);
+    // 本番チェック メモ7: その期の提出状態を一覧にも出す
+    const [mySubmission] = await db
+      .select({ status: fixedShiftSubmissions.status })
+      .from(fixedShiftSubmissions)
+      .where(
+        and(
+          eq(fixedShiftSubmissions.tutorId, profile.id),
+          eq(fixedShiftSubmissions.effectiveFrom, activePeriod.startDate),
+        ),
+      )
+      .limit(1);
+    const submitted =
+      mySubmission?.status === "submitted" || mySubmission?.status === "frozen";
+    const overdue = now > activePeriod.submissionDueAt;
     return (
       <div className="space-y-5">
         <section className="rounded-xl bg-primary p-4 text-primary-foreground">
@@ -157,13 +171,18 @@ export default async function FixedShiftPage({
                   </CardDescription>
                 </div>
                 <div className="flex shrink-0 items-center gap-2">
-                  {acceptingPeriod ? (
+                  {submitted ? (
+                    <Badge variant="default">提出済み</Badge>
+                  ) : overdue && !editableNow ? (
+                    <Badge variant="destructive">期限切れ</Badge>
+                  ) : null}
+                  {submitted && !acceptingPeriod && !editableNow ? null : acceptingPeriod ? (
                     <Badge variant={dl.urgent ? "accent" : "secondary"}>
                       {dl.text}
                     </Badge>
                   ) : editableNow ? (
                     <Badge variant="accent">変更できます</Badge>
-                  ) : (
+                  ) : overdue && !submitted ? null : (
                     <Badge variant="outline">締切終了</Badge>
                   )}
                   <ChevronRight className="size-4 text-muted-foreground" />
