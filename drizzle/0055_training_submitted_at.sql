@@ -1,0 +1,1 @@
+ALTER TABLE "training_period_notes" ADD COLUMN "submitted_at" timestamp with time zone;

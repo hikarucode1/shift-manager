@@ -214,3 +214,54 @@ export async function saveTrainingRange(input: unknown): Promise<ActionResult> {
 
   return { ok: true };
 }
+
+const PeriodInput = z.object({ periodId: z.string().uuid() });
+
+/**
+ * 本番チェック No.12: 講習希望を「提出」する。提出済みのあいだは編集できない。
+ * 選んだコマが 0 でも出せる (この期間は出られない、という回答になる)
+ */
+export async function submitTraining(input: unknown): Promise<ActionResult> {
+  const { profile } = await requireRole("tutor");
+  const parsed = PeriodInput.safeParse(input);
+  if (!parsed.success) return { ok: false, error: "入力が不正です。" };
+  const { periodId } = parsed.data;
+
+  const gate = await assertTrainingEditable(periodId, profile.id);
+  if (!gate.ok) return { ok: false, error: gate.reason };
+
+  const now = new Date();
+  await db
+    .insert(trainingPeriodNotes)
+    .values({ periodId, tutorId: profile.id, submittedAt: now })
+    .onConflictDoUpdate({
+      target: [trainingPeriodNotes.periodId, trainingPeriodNotes.tutorId],
+      set: { submittedAt: now, updatedAt: now },
+    });
+  return { ok: true };
+}
+
+/** 本番チェック No.12: 提出を取り下げて、もう一度編集できるようにする */
+export async function unsubmitTraining(input: unknown): Promise<ActionResult> {
+  const { profile } = await requireRole("tutor");
+  const parsed = PeriodInput.safeParse(input);
+  if (!parsed.success) return { ok: false, error: "入力が不正です。" };
+  const { periodId } = parsed.data;
+
+  // 締切後 (変更許可なし) は取り下げも不可。提出済みかどうかは問わない
+  const gate = await assertTrainingEditable(periodId, profile.id, {
+    rejectSubmitted: false,
+  });
+  if (!gate.ok) return { ok: false, error: gate.reason };
+
+  await db
+    .update(trainingPeriodNotes)
+    .set({ submittedAt: null, updatedAt: new Date() })
+    .where(
+      and(
+        eq(trainingPeriodNotes.periodId, periodId),
+        eq(trainingPeriodNotes.tutorId, profile.id),
+      ),
+    );
+  return { ok: true };
+}
