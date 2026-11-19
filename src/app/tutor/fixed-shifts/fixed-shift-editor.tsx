@@ -206,18 +206,23 @@ export function FixedShiftEditor({
     );
   }
 
+  /** 今の画面の中身を下書きとして保存する (提出の前にも必ず通す) */
+  function saveCurrent() {
+    return saveFixedShifts({
+      effectiveFrom,
+      effectiveTo: effectiveTo === "" ? null : effectiveTo,
+      desiredDays: numberOrNull(desiredDays),
+      desiredSlots: numberOrNull(desiredSlots),
+      note: note.trim() === "" ? null : note,
+      preferredStudents,
+      entries,
+    }).catch(toFailedResult);
+  }
+
   function handleSave() {
     setMessage(null);
     startTransition(async () => {
-      const result = await saveFixedShifts({
-        effectiveFrom,
-        effectiveTo: effectiveTo === "" ? null : effectiveTo,
-        desiredDays: numberOrNull(desiredDays),
-        desiredSlots: numberOrNull(desiredSlots),
-        note: note.trim() === "" ? null : note,
-        preferredStudents,
-        entries,
-      }).catch(toFailedResult);
+      const result = await saveCurrent();
       if (result.ok) {
         // 保存成功時は draft 状態 (none → draft も含む)
         setStatus("draft");
@@ -234,6 +239,17 @@ export function FixedShiftEditor({
   function handleSubmit() {
     setMessage(null);
     startTransition(async () => {
+      // 本番チェック No.6: 下書き保存を押していなくても提出できるように、
+      // 先に今の画面の中身を保存してから提出する (保存し忘れた変更が
+      // 提出から漏れるのも防ぐ)
+      const saved = await saveCurrent();
+      if (!saved.ok) {
+        setMessage({ type: "error", text: saved.error });
+        if (isIndeterminate(saved)) router.refresh();
+        return;
+      }
+      setStatus("draft");
+      setSubmittedAt(null);
       // PR #67 B-2: 引数なしでサーバ側が「最新 draft 行」を解決して submit する
       const result = await submitFixedShifts().catch(toFailedResult);
       if (result.ok) {
@@ -555,7 +571,7 @@ export function FixedShiftEditor({
             <Button
               className="w-full"
               onClick={handleSubmit}
-              disabled={isPending || status === "none"}
+              disabled={isPending}
             >
               {isPending ? "..." : "この内容で提出"}
             </Button>
