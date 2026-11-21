@@ -44,7 +44,12 @@ type SlotDef = {
   startTime: string;
   endTime: string;
 };
-type Day = { date: string; weekdayLabel: string; isWeekend: boolean };
+type Day = {
+  date: string;
+  weekday: string;
+  weekdayLabel: string;
+  isWeekend: boolean;
+};
 type Period = {
   id: string;
   name: string;
@@ -65,6 +70,8 @@ export type TrainingEditorProps = {
     note: string;
     ranges: Record<TrainingRangeKind, DateRange>;
     submittedAt: string | null;
+    /** 室長レビュー要望7: 普段レギュラーで入っている "weekday|slot" */
+    regularSlots: string[];
   };
 };
 
@@ -72,6 +79,7 @@ const key = (date: string, slot: number) => `${date}|${slot}`;
 
 export function TrainingEditor({ data }: TrainingEditorProps) {
   const { period, slots, days } = data;
+  const regularSet = new Set(data.regularSlots);
   // 本番チェック No.12: 提出済みのあいだは締切前でも編集させない
   // (「修正する」で提出を取り下げると、また編集できる)
   const [submittedAt, setSubmittedAt] = useState(data.submittedAt);
@@ -380,6 +388,14 @@ export function TrainingEditor({ data }: TrainingEditorProps) {
         </p>
       )}
 
+      {/* 室長レビュー要望7: 普段のレギュラーの曜日・時間を強調する */}
+      {regularSet.size > 0 && (
+        <p className="flex items-center gap-2 text-xs text-muted-foreground">
+          <span className="inline-block h-4 w-6 shrink-0 rounded bg-primary/5 ring-2 ring-inset ring-primary" />
+          紺の太い枠は、普段レギュラーで入っている曜日・時間です。
+        </p>
+      )}
+
       {/* 日付カードの縦リスト */}
       <div className="space-y-2">
         {days.map((d) => {
@@ -427,6 +443,7 @@ export function TrainingEditor({ data }: TrainingEditorProps) {
               <div className="grid grid-cols-4 gap-2">
                 {slots.map((s) => {
                   const on = selected.has(key(d.date, s.slotNumber));
+                  const regular = regularSet.has(`${d.weekday}|${s.slotNumber}`);
                   return (
                     <button
                       key={s.slotNumber}
@@ -436,14 +453,22 @@ export function TrainingEditor({ data }: TrainingEditorProps) {
                       title={`${s.startTime}〜${s.endTime}`}
                       aria-pressed={on}
                       className={cn(
-                        "min-h-11 rounded-md border px-1 text-sm font-medium transition-colors",
+                        "flex min-h-11 flex-col items-center justify-center rounded-md border px-1 text-sm font-medium leading-tight transition-colors",
                         on
                           ? "border-accent bg-accent text-accent-foreground"
-                          : "border-input bg-background hover:bg-muted",
+                          : regular
+                            ? "bg-primary/5 text-primary hover:bg-primary/10"
+                            : "border-input bg-background hover:bg-muted",
+                        regular && "ring-2 ring-inset ring-primary",
                         !editable && "cursor-not-allowed opacity-60",
                       )}
                     >
                       {s.label}
+                      {regular && (
+                        <span className="text-[10px] font-normal">
+                          レギュラー
+                        </span>
+                      )}
                     </button>
                   );
                 })}
