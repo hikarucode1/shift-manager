@@ -14,7 +14,7 @@ import {
   weeklyShifts,
 } from "@/db/schema";
 import { isUniqueViolation } from "@/lib/db-errors";
-import { isValidIsoDate, jstToday } from "@/lib/week";
+import { isValidIsoDate, jstToday, noticeDate } from "@/lib/week";
 import { hasSlotEnded } from "@/lib/swaps";
 import { designeeError } from "@/lib/designee-check";
 import { absenceTutorAssigned } from "@/lib/absences";
@@ -24,31 +24,28 @@ import { createOpenSwapOnBehalf } from "@/app/admin/requests/swap-actions";
 
 type ActionResult = { ok: true } | { ok: false; error: string };
 
-const CreateInput = z.object({
+const TargetInput = z.object({
   date: z.string().refine(isValidIsoDate, "日付が不正です。"),
   slotNumber: z.number().int().min(1).max(20),
+});
+
+const CreateInput = z.object({
+  /** 室長レビュー要望1: 複数のコマをまとめて申請できる (理由は共通) */
+  targets: z
+    .array(TargetInput)
+    .min(1, "申請するコマを選んでください。")
+    .max(20, "一度に申請できるのは 20 コマまでです。"),
   reason: z.string().trim().min(1, "理由を入力してください。").max(500),
 });
 
-/** 講師: 欠勤申請を作成 (自分の今後の確定シフトに対してのみ) */
-export async function createAbsenceRequest(
-  input: unknown,
-): Promise<ActionResult> {
-  const { profile } = await requireRole("tutor");
-
-  const parsed = CreateInput.safeParse(input);
-  if (!parsed.success) {
-    return {
-      ok: false,
-      error: parsed.error.issues[0]?.message ?? "入力が不正です。",
-    };
-  }
-  const { date, slotNumber, reason } = parsed.data;
-
+/** 1 コマ分の検証。問題があればエラー文、なければ null */
+async function absenceTargetError(
+  tutorId: string,
+  date: string,
+  slotNumber: number,
+): Promise<string | null> {
   // 過去日は不可
-  if (date < jstToday()) {
-    return { ok: false, error: "過去の日付は申請できません。" };
-  }
+  if (date < jstToday()) return "過去の日付は申請できません。";
 
   // 実在する自分の確定シフトか (クライアントを信用しない)
   const shift = await db
@@ -56,15 +53,13 @@ export async function createAbsenceRequest(
     .from(weeklyShifts)
     .where(
       and(
-        eq(weeklyShifts.tutorId, profile.id),
+        eq(weeklyShifts.tutorId, tutorId),
         eq(weeklyShifts.date, date),
         eq(weeklyShifts.slotNumber, slotNumber),
       ),
     )
     .limit(1);
-  if (shift.length === 0) {
-    return { ok: false, error: "対象の確定シフトが見つかりません。" };
-  }
+  if (shift.length === 0) return "対象の確定シフトが見つかりません。";
 
   // 既存の未処理/承認済み申請があれば重複させない
   // 事前チェック (UX 用のわかりやすいエラー)。最終的な一意性は
@@ -74,16 +69,14 @@ export async function createAbsenceRequest(
     .from(absenceRequests)
     .where(
       and(
-        eq(absenceRequests.tutorId, profile.id),
+        eq(absenceRequests.tutorId, tutorId),
         eq(absenceRequests.date, date),
         eq(absenceRequests.slotNumber, slotNumber),
         inArray(absenceRequests.status, ["pending", "approved"]),
       ),
     )
     .limit(1);
-  if (dup.length > 0) {
-    return { ok: false, error: "このコマには既に申請があります。" };
-  }
+  if (dup.length > 0) return "このコマには既に申請があります。";
 
   // クロス整合 (#33): 同一コマに非終端の交代申請があれば欠勤申請は不可
   // (1コマ = 1ワークフローに収束させる)。
@@ -104,7 +97,7 @@ export async function createAbsenceRequest(
     .from(swapRequests)
     .where(
       and(
-        eq(swapRequests.requesterId, profile.id),
+        eq(swapRequests.requesterId, tutorId),
         eq(swapRequests.date, date),
         eq(swapRequests.slotNumber, slotNumber),
         inArray(swapRequests.status, ["pending", "approved"]),
@@ -114,40 +107,89 @@ export async function createAbsenceRequest(
   if (swapDup.length > 0) {
     // ⚠️ #231 で講師は代理募集を取り下げられなくなったので、「交代申請で対応
     // してください」だけだと閉じたドアを指す。作成者で文言を分ける
+    return swapDup[0].createdBy !== null && swapDup[0].createdBy !== tutorId
+      ? "このコマには教室長が出した代講の募集があります。欠勤の扱いは教室長にご相談ください。"
+      : "このコマには交代申請があります。欠勤申請ではなく交代申請で対応してください。";
+  }
+  return null;
+}
+
+/** 講師: 欠勤申請を作成 (自分の今後の確定シフトに対してのみ) */
+export async function createAbsenceRequest(
+  input: unknown,
+): Promise<ActionResult> {
+  const { profile } = await requireRole("tutor");
+
+  const parsed = CreateInput.safeParse(input);
+  if (!parsed.success) {
     return {
       ok: false,
-      error:
-        swapDup[0].createdBy !== null && swapDup[0].createdBy !== profile.id
-          ? "このコマには教室長が出した代講の募集があります。欠勤の扱いは教室長にご相談ください。"
-          : "このコマには交代申請があります。欠勤申請ではなく交代申請で対応してください。",
+      error: parsed.error.issues[0]?.message ?? "入力が不正です。",
     };
+  }
+  const { reason } = parsed.data;
+
+  // 同じコマの重複を除き、日付・コマ順に並べる
+  const byKey = new Map<string, { date: string; slotNumber: number }>();
+  for (const t of parsed.data.targets) byKey.set(`${t.date}|${t.slotNumber}`, t);
+  const targets = [...byKey.values()].sort((a, b) =>
+    a.date === b.date ? a.slotNumber - b.slotNumber : a.date < b.date ? -1 : 1,
+  );
+  const multiple = targets.length > 1;
+
+  const labeled = await Promise.all(
+    targets.map(async (t) => ({
+      ...t,
+      slotLabel: await slotLabelSafe(t.slotNumber),
+    })),
+  );
+
+  // 1 つでも出せないコマがあれば、どれも出さない (どのコマか分かるように添える)
+  for (const t of labeled) {
+    const error = await absenceTargetError(profile.id, t.date, t.slotNumber);
+    if (error) {
+      return {
+        ok: false,
+        error: multiple
+          ? `${noticeDate(t.date)} ${t.slotLabel}: ${error}`
+          : error,
+      };
+    }
   }
 
   try {
-    await db.insert(absenceRequests).values({
-      tutorId: profile.id,
-      // #217: 本人申告であることを残す。教室長の代理登録
-      // (createAbsenceOnBehalf) と DB 上で区別できるのはこの列だけ
-      createdBy: profile.id,
-      date,
-      slotNumber,
-      reason,
-    });
+    // 1 回の INSERT なので、全部入るか 1 つも入らないかのどちらか
+    await db.insert(absenceRequests).values(
+      targets.map((t) => ({
+        tutorId: profile.id,
+        // #217: 本人申告であることを残す。教室長の代理登録
+        // (createAbsenceOnBehalf) と DB 上で区別できるのはこの列だけ
+        createdBy: profile.id,
+        date: t.date,
+        slotNumber: t.slotNumber,
+        reason,
+      })),
+    );
   } catch (e) {
     // 同時送信などで部分ユニーク制約に当たった場合
     if (isUniqueViolation(e, "absence_requests_active_uniq")) {
-      return { ok: false, error: "このコマには既に申請があります。" };
+      return {
+        ok: false,
+        error: multiple
+          ? "選んだコマのどれかに既に申請があります。画面を開き直してお試しください。"
+          : "このコマには既に申請があります。",
+      };
     }
     console.error("createAbsenceRequest insert failed", e);
     return { ok: false, error: "申請に失敗しました。時間をおいてお試しください。" };
   }
 
   // #338: 教室長のベルに知らせる (代講探しをすぐ始めるため)。失敗しても申請は成功のまま
+  // まとめて出したときも通知は 1 件にする
   await notifyAdmins(
     absenceRequestedNotice(
       profile.displayName,
-      date,
-      await slotLabelSafe(slotNumber),
+      labeled.map(({ date, slotLabel }) => ({ date, slotLabel })),
       reason,
     ),
     { exceptProfileId: profile.id },
