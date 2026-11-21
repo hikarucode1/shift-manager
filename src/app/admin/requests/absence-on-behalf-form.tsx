@@ -66,9 +66,13 @@ export function AbsenceOnBehalfForm({ today }: { today: string }) {
     (a) => `${a.tutorId}|${a.slotNumber}` === picked,
   );
   const pickedEnded = pickedOption?.isEnded ?? false;
-  // 研修のコマは欠勤だけ。代講の指名・募集はしない (2026/11/21 本人の判断)
-  const pickedTraining = pickedOption?.isTraining ?? false;
-  const noFollowUp = pickedEnded || pickedTraining;
+  // 研修・未定のコマは欠勤だけ。代講の指名・募集はしない (2026/11/21 本人の判断)
+  const pickedNoSubLabel = pickedOption?.isTraining
+    ? "研修"
+    : pickedOption?.isUndecided
+      ? "未定"
+      : null;
+  const noFollowUp = pickedEnded || pickedNoSubLabel !== null;
 
   // 指名できる講師 (そのコマに入っていない有効な講師) を読み込む
   const subsKey = `${date}|${picked}`;
@@ -239,9 +243,10 @@ export function AbsenceOnBehalfForm({ today }: { today: string }) {
         </div>
 
         {/* 本番チェック メモ25: 承認時と同じ 3 択。終わったコマでは出さない */}
-        {picked && pickedTraining && (
+        {picked && pickedNoSubLabel && (
           <p className="rounded-md bg-muted px-2.5 py-2 text-xs text-muted-foreground">
-            研修のコマなので、代講の指名・募集はしません（欠勤の登録だけします）。
+            {pickedNoSubLabel}
+            のコマなので、代講の指名・募集はしません（欠勤の登録だけします）。
           </p>
         )}
         {picked && !noFollowUp && (

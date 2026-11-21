@@ -15,8 +15,7 @@ import {
 import {
   findPendingSwap,
   hasSlotEnded,
-  isTrainingShift,
-  TRAINING_NO_SUBSTITUTE,
+  noSubstituteReason,
 } from "@/lib/swaps";
 import { designeeError } from "@/lib/designee-check";
 import { isUniqueViolation } from "@/lib/db-errors";
@@ -300,12 +299,10 @@ export async function createAbsenceOnBehalf(
       error: "その講師はこのコマの担当ではありません。",
     };
   }
-  // 2026/11/21 本人: 研修のコマは欠勤だけ (代講の指名・募集はしない)
-  if (
-    followUp !== "none" &&
-    (await isTrainingShift(tutorId, date, slotNumber))
-  ) {
-    return { ok: false, error: TRAINING_NO_SUBSTITUTE };
+  // 2026/11/21 本人: 研修・未定のコマは欠勤だけ (代講の指名・募集はしない)
+  if (followUp !== "none") {
+    const noSub = await noSubstituteReason(tutorId, date, slotNumber);
+    if (noSub) return { ok: false, error: noSub };
   }
 
   // 記録・取り消し (#253 / #283) と同じ関数で探す

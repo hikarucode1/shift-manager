@@ -14,6 +14,11 @@ import { decideAbsenceRequest } from "@/app/tutor/absences/actions";
 import { pendingAbsenceActions } from "@/lib/pending-absence-actions";
 import { closeUnassignedAbsence } from "./absence-actions";
 
+/** 研修・未定のコマは欠勤だけで、代講 (指名・募集) を出さない (2026/11/21 本人) */
+function noSubstitute(p: { isTraining: boolean; isUndecided: boolean }) {
+  return p.isTraining || p.isUndecided;
+}
+
 export function RequestsPanel({
   pending,
   tutors,
@@ -141,6 +146,9 @@ export function RequestsPanel({
                       {/* 2026/11/21 本人: 研修・体験の印 */}
                       {p.isTraining && <Badge variant="secondary">研修</Badge>}
                       {p.isTrial && <Badge variant="secondary">体験</Badge>}
+                      {p.isUndecided && (
+                        <Badge variant="secondary">未定</Badge>
+                      )}
                     </div>
                     <p className="text-sm text-muted-foreground">
                       {shortDate(p.date)}（{p.weekdayLabel}） {p.slotLabel}
@@ -222,13 +230,14 @@ export function RequestsPanel({
                     {/* 本番チェック メモ21・23: 承認と一緒に、代講を
                       「指名する／募集に出す／何もしない」から選ぶ。指名は
                       その講師に教室長から直接依頼が届く (休む講師は挟まない) */}
-                    {/* 2026/11/21 本人: 研修のコマは欠勤だけ (代講は出さない) */}
-                    {actions.canApprove && !p.isEnded && p.isTraining && (
+                    {/* 2026/11/21 本人: 研修・未定のコマは欠勤だけ (代講は出さない) */}
+                    {actions.canApprove && !p.isEnded && noSubstitute(p) && (
                       <p className="text-xs text-muted-foreground">
-                        研修のコマなので、代講の指名・募集はしません。
+                        {p.isTraining ? "研修" : "未定"}
+                        のコマなので、代講の指名・募集はしません。
                       </p>
                     )}
-                    {actions.canApprove && !p.isEnded && !p.isTraining && (
+                    {actions.canApprove && !p.isEnded && !noSubstitute(p) && (
                       <fieldset className="space-y-2 rounded-md border p-2.5">
                         <legend className="px-1 text-xs text-muted-foreground">
                           代講をどうしますか
@@ -320,7 +329,7 @@ export function RequestsPanel({
                           disabled={
                             isPending ||
                             (!p.isEnded &&
-                              !p.isTraining &&
+                              !noSubstitute(p) &&
                               followUp[p.id] === "designate" &&
                               (designated[p.id] ?? []).length === 0)
                           }
@@ -331,7 +340,7 @@ export function RequestsPanel({
                                   id: p.id,
                                   decision: "approved",
                                   followUp:
-                                    p.isEnded || p.isTraining
+                                    p.isEnded || noSubstitute(p)
                                       ? "none"
                                       : (followUp[p.id] ?? "none"),
                                   designatedSubstituteIds:
@@ -339,11 +348,11 @@ export function RequestsPanel({
                                 }),
                               (followUp[p.id] ?? "none") === "designate" &&
                                 !p.isEnded &&
-                                !p.isTraining
+                                !noSubstitute(p)
                                 ? "承認しました。指名した講師に代講の依頼を送りました。"
                                 : (followUp[p.id] ?? "none") === "recruit" &&
                                     !p.isEnded &&
-                                    !p.isTraining
+                                    !noSubstitute(p)
                                   ? "承認し、代講の募集に出しました。"
                                   : "承認しました。",
                               { refreshOnError: true },

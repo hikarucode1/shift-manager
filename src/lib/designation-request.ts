@@ -11,9 +11,8 @@ import { notify } from "@/lib/notifications";
 import { isUniqueViolation } from "@/lib/db-errors";
 import {
   hasSlotEnded,
-  isTrainingShift,
+  noSubstituteReason,
   isTutorBusyAt,
-  TRAINING_NO_SUBSTITUTE,
 } from "@/lib/swaps";
 import { slotLabelSafe } from "@/lib/slot-meta";
 import { noticeDate } from "@/lib/week";
@@ -92,11 +91,12 @@ export async function sendDesignatedRequest(i: {
       error: "このコマは今は休む講師の担当ではないので、依頼できません。",
     };
   }
-  if (
-    await isTrainingShift(absence.tutorId, absence.date, absence.slotNumber)
-  ) {
-    return { ok: false, error: TRAINING_NO_SUBSTITUTE };
-  }
+  const noSub = await noSubstituteReason(
+    absence.tutorId,
+    absence.date,
+    absence.slotNumber,
+  );
+  if (noSub) return { ok: false, error: noSub };
   if (await isTutorBusyAt(absence.date, absence.slotNumber, designatedId)) {
     return {
       ok: false,

@@ -31,6 +31,7 @@ import {
 import { getApprovedDayOffs, getDayOffConflicts } from "@/lib/day-offs";
 import { dayOffSlotsLabel } from "@/lib/day-off-rule";
 import { getSlotMeta } from "@/lib/slot-meta";
+import { shiftChangeBody } from "@/lib/shift-change-notice";
 
 /** #360: 取り込む週の承認済みの休み (取り込む前に教室長に見せる) */
 export type DayOffNotice = {
@@ -268,7 +269,32 @@ export async function commitUploadedCsv(
     // #317: コマが変わって確認が外れた講師に、確認し直してもらう。取り込み
     // 自体は済んでいるので、通知の失敗で取り込みを失敗扱いにしない
     // (notify は失敗を握り潰す)
+    //
+    // 室長レビュー要望9: 確認していなかった講師にも、コマが変わったら何が
+    // 変わったかを知らせる (未定のコマに授業・体験が入った、など)。確認が
+    // 外れた講師には、同じ 1 通で確認し直しも頼む
+    const resetTutorIds = new Set(
+      result.resetConfirmations.map((r) => r.tutorId),
+    );
+    const slotMeta = await getSlotMeta().catch(() => null);
+    const slotLabel = (n: number) => slotMeta?.get(n)?.label ?? `${n}限`;
+    const changedTutorIds = new Set<string>();
+    for (const ch of result.shiftChanges) {
+      changedTutorIds.add(ch.tutorId);
+      const reset = resetTutorIds.has(ch.tutorId);
+      await notify([ch.tutorId], {
+        type: "shifts_published",
+        title: reset
+          ? "シフトが変わりました。もう一度確認してください"
+          : "シフトが変わりました",
+        body:
+          shiftChangeBody(ch.changes, slotLabel) +
+          (reset ? "。ホームの「確認しました」をもう一度押してください" : ""),
+        href: "/tutor",
+      });
+    }
     for (const r of result.resetConfirmations) {
+      if (changedTutorIds.has(r.tutorId)) continue;
       await notify([r.tutorId], {
         type: "shifts_published",
         title: "シフトが変わりました。もう一度確認してください",

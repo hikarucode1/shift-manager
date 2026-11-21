@@ -1,7 +1,7 @@
 "use server";
 
 import { z } from "zod";
-import { and, arrayContains, asc, eq, inArray, ne } from "drizzle-orm";
+import { and, arrayContains, asc, eq, inArray, ne, sql } from "drizzle-orm";
 import { requireRole } from "@/lib/auth";
 import { db } from "@/db/client";
 import {
@@ -24,6 +24,8 @@ export type AssignmentOption = {
   isEnded: boolean;
   /** 研修のコマか。研修は欠勤だけで、代講の指名・募集はしない */
   isTraining: boolean;
+  /** 未定のコマか (生徒も研修も体験も無い)。研修と同じく代講はしない */
+  isUndecided: boolean;
   /** その用途では選べないコマ */
   blocked: boolean;
   /** 選択肢に添える短い注記。blocked の理由か、判断材料 */
@@ -70,6 +72,12 @@ export async function listAssignmentsForDate(
         date: weeklyShifts.date,
         slotNumber: weeklyShifts.slotNumber,
         isTraining: weeklyShifts.isTraining,
+        // ⚠️ join があるので drizzle は外側の列をテーブル名つきで出すが、
+        // absences.ts と揃えて名前を直書きする
+        hasStudent: sql<boolean>`exists (
+          select 1 from "shift_assignments" sa
+          where sa."weekly_shift_id" = "weekly_shifts"."id"
+        )`,
       })
       .from(weeklyShifts)
       .innerJoin(profiles, eq(profiles.id, weeklyShifts.tutorId))
@@ -138,6 +146,7 @@ export async function listAssignmentsForDate(
         hasPendingSwap: swapping.has(k),
         isEnded,
         isTraining: s.isTraining,
+        isUndecided: !s.isTraining && !s.hasStudent,
       });
       return {
         tutorId: s.tutorId,
@@ -146,6 +155,7 @@ export async function listAssignmentsForDate(
         slotLabel: slot?.label ?? `${s.slotNumber}限`,
         isEnded,
         isTraining: s.isTraining,
+        isUndecided: !s.isTraining && !s.hasStudent,
         blocked,
         note,
       };

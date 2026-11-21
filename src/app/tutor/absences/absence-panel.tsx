@@ -238,6 +238,18 @@ export function AbsencePanel({
                               体験
                             </span>
                           )}
+                          {u.isUndecided && (
+                            <span
+                              className={cn(
+                                "rounded px-1.5 py-0.5 text-[11px] font-medium",
+                                on
+                                  ? "bg-primary-foreground/20 text-primary-foreground"
+                                  : "bg-slate-100 text-slate-600",
+                              )}
+                            >
+                              未定
+                            </span>
+                          )}
                         </span>
                         <span
                           className={cn(

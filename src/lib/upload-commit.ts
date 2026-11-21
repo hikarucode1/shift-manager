@@ -1,5 +1,5 @@
 import "server-only";
-import { and, arrayContains, eq, inArray } from "drizzle-orm";
+import { and, arrayContains, eq, inArray, sql } from "drizzle-orm";
 import { db } from "@/db/client";
 import {
   profiles,
@@ -15,6 +15,10 @@ import { findMappingDuplicates } from "@/lib/mapping-validation";
 import { findNonTutorIds } from "@/lib/tutor-validation";
 import { substitutionNote } from "@/lib/substitution-note";
 import { changedTutorWeeks } from "@/lib/weekly-confirmation";
+import {
+  shiftChangesByTutor,
+  type CellChange,
+} from "@/lib/shift-change-notice";
 import {
   planSwapReapplication,
   type InsertedShift,
@@ -69,6 +73,11 @@ export type CommitUploadResult = {
    * 確認し直してもらうための通知に使う。確認していなかった講師は入らない
    */
   resetConfirmations: { tutorId: string; weekStart: string }[];
+  /**
+   * 室長レビュー要望9: 取り込み直しでコマが変わった講師と、変わったコマ。
+   * 初めての取り込みでは空
+   */
+  shiftChanges: { tutorId: string; changes: CellChange[] }[];
 };
 
 /**
@@ -230,6 +239,12 @@ export async function commitShiftUpload(
               tutorId: weeklyShifts.tutorId,
               date: weeklyShifts.date,
               slotNumber: weeklyShifts.slotNumber,
+              // 要望9: 生徒 (体験を含む) か研修が入っているか。false = 未定。
+              // ⚠️ select 列の相関サブクエリなので外側はテーブル名を直書き
+              filled: sql<boolean>`("weekly_shifts"."is_training" or exists (
+                select 1 from "shift_assignments" sa
+                where sa."weekly_shift_id" = "weekly_shifts"."id"
+              ))`,
             })
             .from(weeklyShifts)
             .where(inArray(weeklyShifts.date, uploadedDates))
@@ -438,6 +453,12 @@ export async function commitShiftUpload(
               tutorId: weeklyShifts.tutorId,
               date: weeklyShifts.date,
               slotNumber: weeklyShifts.slotNumber,
+              // 要望9: 生徒 (体験を含む) か研修が入っているか。false = 未定。
+              // ⚠️ select 列の相関サブクエリなので外側はテーブル名を直書き
+              filled: sql<boolean>`("weekly_shifts"."is_training" or exists (
+                select 1 from "shift_assignments" sa
+                where sa."weekly_shift_id" = "weekly_shifts"."id"
+              ))`,
             })
             .from(weeklyShifts)
             .where(inArray(weeklyShifts.date, uploadedDates))
@@ -456,7 +477,18 @@ export async function commitShiftUpload(
       if (removed.length > 0) resetConfirmations.push(ch);
     }
 
+    // 室長レビュー要望9: コマが変わった講師全員に知らせる。取り込む前にその
+    // 日付のコマが 1 つも無かった (初めての取り込み) ときは「変更」ではないので
+    // 送らない
+    const shiftChanges =
+      cellsBefore.length > 0
+        ? [...shiftChangesByTutor(cellsBefore, cellsAfter)].map(
+            ([tutorId, changes]) => ({ tutorId, changes }),
+          )
+        : [];
+
     return {
+      shiftChanges,
       resetConfirmations,
       uploadId,
       insertedShiftRows,
