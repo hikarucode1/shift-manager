@@ -4,6 +4,7 @@ import {
   BellRing,
   CalendarCheck,
   CalendarOff,
+  CalendarPlus,
   CalendarX,
   ClipboardCheck,
   ClipboardPen,
@@ -35,6 +36,8 @@ const TYPE_ICON: Record<NotificationType, typeof Bell> = {
   announcement: Megaphone,
   // メモ15: 出勤前のリマインド
   shift_reminder: BellRing,
+  // 室長レビュー要望4: シフト提出の受付開始
+  submission_opened: CalendarPlus,
 };
 
 function formatDateTime(d: Date): string {

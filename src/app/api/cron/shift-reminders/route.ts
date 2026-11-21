@@ -1,5 +1,6 @@
 import { timingSafeEqual } from "node:crypto";
 import { sendDueShiftReminders } from "@/lib/shift-reminders";
+import { sendDueRegularOpenNotices } from "@/lib/submission-open-sender";
 
 /**
  * メモ15: 出勤前のリマインドを送る。Supabase の pg_cron が 5 分ごとに
@@ -26,14 +27,25 @@ export async function POST(req: Request) {
   if (!authorized(req.headers.get("authorization"), secret)) {
     return Response.json({ ok: false }, { status: 401 });
   }
-  try {
-    const result = await sendDueShiftReminders();
-    return Response.json(
-      { ok: true, ...result },
-      { headers: { "Cache-Control": "no-store" } },
-    );
-  } catch (e) {
-    console.error("shift reminders run failed:", e);
-    return Response.json({ ok: false }, { status: 500 });
+  const [reminders, regularOpen] = await Promise.allSettled([
+    sendDueShiftReminders(),
+    sendDueRegularOpenNotices(),
+  ]);
+  if (reminders.status === "rejected") {
+    console.error("shift reminders run failed:", reminders.reason);
   }
+  if (regularOpen.status === "rejected") {
+    console.error("regular open notices run failed:", regularOpen.reason);
+  }
+  const ok =
+    reminders.status === "fulfilled" && regularOpen.status === "fulfilled";
+  return Response.json(
+    {
+      ok,
+      ...(reminders.status === "fulfilled" ? reminders.value : {}),
+      regularOpen:
+        regularOpen.status === "fulfilled" ? regularOpen.value : null,
+    },
+    { status: ok ? 200 : 500, headers: { "Cache-Control": "no-store" } },
+  );
 }

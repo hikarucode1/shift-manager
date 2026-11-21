@@ -130,6 +130,9 @@ export const notificationTypeEnum = pgEnum("notification_type", [
   "announcement",
   // メモ15: 講師宛て。出勤の○時間前のリマインド (dedupKey = 日付)
   "shift_reminder",
+  // 室長レビュー要望4: 講師宛て。講習・レギュラーのシフト提出の受付が始まった
+  // (dedupKey = course-open:<id> / regular-open:<id>)
+  "submission_opened",
 ]);
 
 /* ------------------------------------------------------------------ */

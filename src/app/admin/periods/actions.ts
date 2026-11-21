@@ -8,6 +8,7 @@ import { pgErrorCode } from "@/lib/db-errors";
 import { db } from "@/db/client";
 import { periods } from "@/db/schema";
 import { isValidIsoDate } from "@/lib/week";
+import { notifyCourseSubmissionOpened } from "@/lib/submission-open-sender";
 
 /**
  * 未アーカイブの他期間と「日付レンジ重複」または「同名」が無いか検証。
@@ -133,13 +134,24 @@ export async function createPeriod(input: unknown): Promise<ActionResult> {
   });
   if (conflict) return { ok: false, error: conflict };
 
-  await db.insert(periods).values({
-    name: v.name,
-    startDate: v.startDate,
-    endDate: v.endDate,
-    submissionDeadline: deadlineToTimestamp(v.submissionDeadline),
-    createdBy: profile.id,
-  });
+  const [created] = await db
+    .insert(periods)
+    .values({
+      name: v.name,
+      startDate: v.startDate,
+      endDate: v.endDate,
+      submissionDeadline: deadlineToTimestamp(v.submissionDeadline),
+      createdBy: profile.id,
+    })
+    .returning({ id: periods.id });
+
+  // 室長レビュー要望4: 講習は作った時点で受付が始まるので、講師全員に知らせる。
+  // 通知に失敗しても期間の作成は取り消さない (作成は済んでいる)
+  try {
+    await notifyCourseSubmissionOpened(created.id);
+  } catch (e) {
+    console.error("notifyCourseSubmissionOpened failed:", e);
+  }
 
   revalidatePath("/admin/periods");
   return { ok: true };

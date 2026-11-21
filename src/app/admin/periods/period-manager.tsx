@@ -142,7 +142,7 @@ export function PeriodManager({
           endDate: end,
           submissionDeadline: deadline,
         }),
-      "期間を作成しました。",
+      "期間を作成しました。講師全員に提出開始の通知を送りました。",
       () => {
         setName("");
         setStart("");
@@ -199,6 +199,7 @@ export function PeriodManager({
           </CardTitle>
           <CardDescription>
             講習期間と提出締切日を設定します。提出締切日は必須です。
+            作成すると、講師全員に「提出が始まりました」と通知が届きます。
           </CardDescription>
         </CardHeader>
         <CardContent>
