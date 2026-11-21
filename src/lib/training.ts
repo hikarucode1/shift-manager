@@ -50,7 +50,7 @@ export type TrainingEditorData = {
   /** 選択済み "date|slot" の集合 */
   selected: Set<string>;
   note: string;
-  /** #319: テスト期間 / 夏休み (どちらも任意) */
+  /** #319: テスト期間 / 長期休み (どちらも任意) */
   ranges: Record<TrainingRangeKind, DateRange>;
   /** 本番チェック No.12: 提出した時刻 (ISO)。null は一時保存 (未提出) */
   submittedAt: string | null;

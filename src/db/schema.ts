@@ -579,7 +579,7 @@ export const trainingPeriodNotes = pgTable(
     /** #319: テスト期間 (任意)。開始と終了は両方入っているか両方空 */
     testFrom: date("test_from"),
     testTo: date("test_to"),
-    /** #319: 夏休み (任意)。開始と終了は両方入っているか両方空 */
+    /** #319: 長期休み (任意)。開始と終了は両方入っているか両方空 */
     summerFrom: date("summer_from"),
     summerTo: date("summer_to"),
     /**

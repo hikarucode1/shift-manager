@@ -262,7 +262,7 @@ export async function getHeatmapData(
   };
 }
 
-/** #319: 教室長の講習画面に出す、講師ごとの備考とテスト期間・夏休み */
+/** #319: 教室長の講習画面に出す、講師ごとの備考とテスト期間・長期休み */
 export type TrainingTutorNote = {
   tutorId: string;
   name: string;
@@ -275,7 +275,7 @@ export type TrainingTutorNote = {
 
 /**
  * 講習期間の、何か書いてある講師だけを名前順に返す。備考はこれまで講師が
- * 書けるだけで教室長の画面に出ていなかったので、テスト期間・夏休みと並べて出す
+ * 書けるだけで教室長の画面に出ていなかったので、テスト期間・長期休みと並べて出す
  */
 export async function getTrainingTutorNotes(
   periodId: string,

@@ -1,12 +1,12 @@
 /**
- * 講習希望の「テスト期間」「夏休み」(#319)。教室の「提出シフト」エクセルにある欄。
+ * 講習希望の「テスト期間」「長期休み」(#319)。教室の「提出シフト」エクセルにある欄。
  * 講師 × 講習期間で 1 件 (training_period_notes の列)。どちらも任意。
  */
 export type TrainingRangeKind = "test" | "summer";
 
 export const TRAINING_RANGE_LABEL: Record<TrainingRangeKind, string> = {
   test: "テスト期間",
-  summer: "夏休み",
+  summer: "長期休み",
 };
 
 export type DateRange = { from: string | null; to: string | null };
