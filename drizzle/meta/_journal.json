@@ -414,6 +414,13 @@
       "when": 1795236824091,
       "tag": "0058_multi_designation",
       "breakpoints": true
+    },
+    {
+      "idx": 59,
+      "version": "7",
+      "when": 1795244811981,
+      "tag": "0059_submission_opened",
+      "breakpoints": true
     }
   ]
 }

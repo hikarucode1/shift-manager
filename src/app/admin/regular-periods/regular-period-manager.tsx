@@ -215,6 +215,7 @@ export function RegularPeriodManager({
           <CardDescription>
             期の長さは可変です。ラベル (例: 2026年春期 (4-6月))、開始日、終了日、
             提出開始日 / 締切日を指定してください。
+            提出開始日になると、講師全員に「提出が始まりました」と通知が届きます。
           </CardDescription>
         </CardHeader>
         <CardContent>
