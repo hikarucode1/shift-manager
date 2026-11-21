@@ -75,12 +75,12 @@ export default async function AdminTrainingPage({
             tutors={activeTutors.map((t) => ({ id: t.id, name: t.displayName }))}
             grants={grants}
           />
-          {/* #319: 講師ごとの備考・テスト期間・夏休み */}
+          {/* #319: 講師ごとの備考・テスト期間・長期休み */}
           <Card>
             <CardHeader>
               <CardTitle className="text-base">講師ごとの備考・予定</CardTitle>
               <CardDescription>
-                備考かテスト期間・夏休みを入れた講師だけを表示します。
+                備考かテスト期間・長期休みを入れた講師だけを表示します。
               </CardDescription>
             </CardHeader>
             <CardContent>
@@ -102,7 +102,7 @@ export default async function AdminTrainingPage({
                           )}
                           {n.summerFrom && n.summerTo && (
                             <span>
-                              夏休み {formatDateRange(n.summerFrom, n.summerTo)}
+                              長期休み {formatDateRange(n.summerFrom, n.summerTo)}
                             </span>
                           )}
                         </div>

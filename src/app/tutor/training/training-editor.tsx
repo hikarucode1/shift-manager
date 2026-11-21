@@ -252,7 +252,7 @@ export function TrainingEditor({ data }: TrainingEditorProps) {
     noteTimer.current = setTimeout(() => void flushNote(), 800);
   }
 
-  // #319: テスト期間 / 夏休み。開始・終了がそろった (または両方消した) ときに保存する
+  // #319: テスト期間 / 長期休み。開始・終了がそろった (または両方消した) ときに保存する
   const [ranges, setRanges] = useState(data.ranges);
   const savedRanges = useRef(data.ranges);
 
@@ -470,10 +470,10 @@ export function TrainingEditor({ data }: TrainingEditorProps) {
         </ul>
       </details>
 
-      {/* #319: 提出シフトのエクセルにある「テスト期間」「夏休み」 */}
+      {/* #319: 提出シフトのエクセルにある「テスト期間」「長期休み」 */}
       <Card>
         <CardHeader>
-          <CardTitle className="text-base">テスト期間・夏休み（任意）</CardTitle>
+          <CardTitle className="text-base">テスト期間・長期休み（任意）</CardTitle>
         </CardHeader>
         <CardContent className="space-y-4">
           {(["test", "summer"] as const).map((kind) => {
@@ -528,7 +528,7 @@ export function TrainingEditor({ data }: TrainingEditorProps) {
             );
           })}
           <p className="text-xs text-muted-foreground">
-            学校のテストや夏休みの期間があれば入れてください。開始日と終了日の両方を入れると自動保存されます。消すときは「〇〇を消す」を押してください。
+            学校のテストや長期休みの期間があれば入れてください。開始日と終了日の両方を入れると自動保存されます。消すときは「〇〇を消す」を押してください。
           </p>
         </CardContent>
       </Card>
