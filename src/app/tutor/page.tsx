@@ -28,6 +28,7 @@ import { shortDate, weekRangeLabel } from "@/lib/week";
 import { cn } from "@/lib/utils";
 import { deadlineLabel } from "@/lib/deadline";
 import { Badge } from "@/components/ui/badge";
+import { UNDECIDED_HINT, UNDECIDED_LABEL } from "@/lib/undecided-slot";
 
 /** 次の出勤の日付ラベル (今日/明日/曜日) */
 function dayLabel(s: {
@@ -58,6 +59,18 @@ function TrialBadge() {
   return (
     <span className="mr-0.5 rounded bg-rose-100 px-1 text-[10px] font-semibold text-rose-700">
       体験
+    </span>
+  );
+}
+
+/** 室長レビュー要望9: 生徒も研修も体験も入っていないコマ */
+function UndecidedNote() {
+  return (
+    <span className="flex items-center gap-1.5 self-center">
+      <span className="rounded bg-slate-100 px-1.5 py-0.5 text-[11px] font-semibold text-slate-600">
+        {UNDECIDED_LABEL}
+      </span>
+      <span className="text-xs text-muted-foreground">{UNDECIDED_HINT}</span>
     </span>
   );
 }
@@ -335,9 +348,8 @@ export default async function TutorHome({
                           ))}
                         </span>
                       ) : (
-                        <span className="self-center text-xs text-muted-foreground">
-                          生徒の割り当てなし
-                        </span>
+                        // 室長レビュー要望9: 生徒も研修も体験も無いコマ
+                        <UndecidedNote />
                       )}
                     </li>
                   ))}

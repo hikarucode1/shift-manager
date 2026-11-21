@@ -16,6 +16,7 @@ import { alias } from "drizzle-orm/pg-core";
 import { db } from "@/db/client";
 import {
   profiles,
+  shiftAssignments,
   swapApplications,
   swapKindEnum,
   swapRequests,
@@ -220,36 +221,50 @@ export async function isTutorBusyAt(
 }
 
 /**
- * その講師のそのコマが研修か (#335 の `is_training`)。
+ * そのコマが代講 (指名・募集) の対象外なら、その理由の文言。対象なら null。
  *
- * 2026/11/21 本人: 研修のコマは欠勤だけで、代講 (指名・募集) の対象にしない。
+ * - 研修のコマ (#335 の `is_training`): 2026/11/21 本人「研修は欠勤だけ」
+ * - 未定のコマ (生徒も研修も体験も入っていない、室長レビュー要望9):
+ *   2026/11/21 本人「研修と同じで代講聞かなくて OK」
+ *
  * 指名の依頼 (`sendDesignatedRequest`)・代理募集 (`createOpenSwapOnBehalf`)・
- * 承認 / 代理登録と一緒の代講の手配がここで確かめる。
+ * 承認 / 代理登録と一緒の代講の手配がここで確かめる。コマが無ければ null
+ * (担当かどうかは呼び出し側が別に確かめている)。
  */
-export async function isTrainingShift(
+export async function noSubstituteReason(
   tutorId: string,
   date: string,
   slotNumber: number,
   executor: Executor = db,
-): Promise<boolean> {
-  const rows = await executor
-    .select({ id: weeklyShifts.id })
+): Promise<string | null> {
+  const [shift] = await executor
+    .select({ id: weeklyShifts.id, isTraining: weeklyShifts.isTraining })
     .from(weeklyShifts)
     .where(
       and(
         eq(weeklyShifts.tutorId, tutorId),
         eq(weeklyShifts.date, date),
         eq(weeklyShifts.slotNumber, slotNumber),
-        eq(weeklyShifts.isTraining, true),
       ),
     )
     .limit(1);
-  return rows.length > 0;
+  if (!shift) return null;
+  if (shift.isTraining) return TRAINING_NO_SUBSTITUTE;
+  const [student] = await executor
+    .select({ id: shiftAssignments.id })
+    .from(shiftAssignments)
+    .where(eq(shiftAssignments.weeklyShiftId, shift.id))
+    .limit(1);
+  return student ? null : UNDECIDED_NO_SUBSTITUTE;
 }
 
 /** 研修のコマに代講を出そうとしたときの文言 */
 export const TRAINING_NO_SUBSTITUTE =
   "研修のコマは代講の対象にしていません（欠勤だけ登録できます）。";
+
+/** 未定のコマ (生徒も研修も体験も無い) に代講を出そうとしたときの文言 */
+export const UNDECIDED_NO_SUBSTITUTE =
+  "未定のコマ（生徒も研修も体験も入っていないコマ）は代講の対象にしていません（欠勤だけ登録できます）。";
 
 /**
  * その講師がそのコマに出している pending の募集 (無ければ null)。

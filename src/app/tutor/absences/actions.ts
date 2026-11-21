@@ -18,8 +18,7 @@ import { isValidIsoDate, jstToday, noticeDate } from "@/lib/week";
 import { SCHOOL_PHONE } from "@/lib/school";
 import {
   hasSlotEnded,
-  isTrainingShift,
-  TRAINING_NO_SUBSTITUTE,
+  noSubstituteReason,
 } from "@/lib/swaps";
 import { designeeError } from "@/lib/designee-check";
 import { absenceTutorAssigned } from "@/lib/absences";
@@ -390,12 +389,14 @@ export async function decideAbsenceRequest(
         error: "処理できませんでした（既に対応済みの可能性があります）。",
       };
     }
-    // 2026/11/21 本人: 研修のコマは欠勤だけ (代講の指名・募集はしない)
-    if (
-      followUp !== "none" &&
-      (await isTrainingShift(target.tutorId, target.date, target.slotNumber))
-    ) {
-      return { ok: false, error: TRAINING_NO_SUBSTITUTE };
+    // 2026/11/21 本人: 研修・未定のコマは欠勤だけ (代講の指名・募集はしない)
+    if (followUp !== "none") {
+      const noSub = await noSubstituteReason(
+        target.tutorId,
+        target.date,
+        target.slotNumber,
+      );
+      if (noSub) return { ok: false, error: noSub };
     }
     // #331: 指定する相手は、休む本人以外の有効な講師で、そのコマが空いている人
     for (const designeeId of designeeIds) {

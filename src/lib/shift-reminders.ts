@@ -1,5 +1,5 @@
 import "server-only";
-import { and, arrayContains, eq, inArray, isNotNull } from "drizzle-orm";
+import { and, arrayContains, eq, inArray, isNotNull, sql } from "drizzle-orm";
 import { db } from "@/db/client";
 import { profiles, shiftUploads, weeklyShifts } from "@/db/schema";
 import { getApprovedAbsenceKeysAll } from "@/lib/absences";
@@ -27,6 +27,7 @@ export type ShiftReminderRunResult = {
  * - 対象は「通知をオンにしている有効な講師」の、今日と明日 (JST) の確定シフト
  *   (公開済みの座席表の分だけ。代講で引き受けたコマも weekly_shifts 上で
  *   本人のコマになっている)
+ * - 未定のコマ (生徒も研修も体験も無い、室長レビュー要望9) は除く
  * - 承認済みの欠勤のコマは除く。その日の最初の (欠勤でない) コマが基準
  * - 同じ講師・同じ日には 1 回だけ (dedupKey = 日付)。何度呼ばれても二重に届かない
  */
@@ -65,6 +66,13 @@ export async function sendDueShiftReminders(
           inArray(weeklyShifts.tutorId, [...hoursById.keys()]),
           inArray(weeklyShifts.date, [today, tomorrow]),
           isNotNull(shiftUploads.publishedAt),
+          // 室長レビュー要望9 (本人): 未定のコマ (生徒も研修も体験も無い) は
+          // 出勤が決まっていないのでリマインドしない。where 句なので drizzle は
+          // テーブル名つきで出すが、absences.ts と揃えて直書きする
+          sql`("weekly_shifts"."is_training" or exists (
+            select 1 from "shift_assignments" sa
+            where sa."weekly_shift_id" = "weekly_shifts"."id"
+          ))`,
         ),
       ),
   ]);

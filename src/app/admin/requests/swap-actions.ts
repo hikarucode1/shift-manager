@@ -14,9 +14,8 @@ import {
   getEligibleApplicantIds,
   hasSlotEnded,
   hasUnassignableClosedSwap,
-  isTrainingShift,
+  noSubstituteReason,
   isTutorBusyAt,
-  TRAINING_NO_SUBSTITUTE,
 } from "@/lib/swaps";
 import type { NotificationInput } from "@/lib/notifications";
 import {
@@ -775,10 +774,9 @@ export async function createOpenSwapOnBehalf(
   if (shift.length === 0) {
     return { ok: false, error: "その講師はこのコマの担当ではありません。" };
   }
-  // 2026/11/21 本人: 研修のコマは代講の対象にしない
-  if (await isTrainingShift(tutorId, date, slotNumber)) {
-    return { ok: false, error: TRAINING_NO_SUBSTITUTE };
-  }
+  // 2026/11/21 本人: 研修・未定のコマは代講の対象にしない
+  const noSub = await noSubstituteReason(tutorId, date, slotNumber);
+  if (noSub) return { ok: false, error: noSub };
 
   // 室長レビュー要望2: 欠勤で指名した相手への依頼は swap_requests_active_uniq
   // の外なので、返事待ちの指名があるコマに募集を重ねないようここで確かめる

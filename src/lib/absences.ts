@@ -42,6 +42,11 @@ export type UpcomingShift = {
   isTraining: boolean;
   /** 体験授業の生徒がいるコマ (#335)。印を出すだけ */
   isTrial: boolean;
+  /**
+   * 未定のコマ (生徒も研修も体験も無い、室長レビュー要望9)。研修と同じく
+   * 欠勤だけで、代講の対象にしない
+   */
+  isUndecided: boolean;
   weekdayLabel: string;
 };
 
@@ -114,6 +119,8 @@ export type PendingAbsence = AbsenceRequestRow & {
   isTraining: boolean;
   /** 体験授業の生徒がいるコマ (印だけ) */
   isTrial: boolean;
+  /** 未定のコマ (生徒も研修も体験も無い)。研修と同じく代講を出さない */
+  isUndecided: boolean;
 };
 
 /**
@@ -165,6 +172,21 @@ export function absenceHasTrial(): SQL<boolean> {
   )`;
 }
 
+/** 未定のコマか (研修でなく、生徒が 1 人もいない)。室長レビュー要望9 */
+export function absenceIsUndecided(): SQL<boolean> {
+  return sql<boolean>`exists (
+    select 1 from "weekly_shifts" ws
+    where ws."tutor_id" = "absence_requests"."tutor_id"
+      and ws."date" = "absence_requests"."date"
+      and ws."slot_number" = "absence_requests"."slot_number"
+      and not ws."is_training"
+      and not exists (
+        select 1 from "shift_assignments" sa
+        where sa."weekly_shift_id" = ws."id"
+      )
+  )`;
+}
+
 function slotLabelOf(
   meta: Awaited<ReturnType<typeof getSlotMeta>>,
   n: number,
@@ -202,6 +224,10 @@ export async function getTutorUpcomingShifts(
           select 1 from "shift_assignments" sa
           where sa."weekly_shift_id" = "weekly_shifts"."id"
             and sa."is_trial"
+        )`,
+        hasStudent: sql<boolean>`exists (
+          select 1 from "shift_assignments" sa
+          where sa."weekly_shift_id" = "weekly_shifts"."id"
         )`,
       })
       .from(weeklyShifts)
@@ -247,6 +273,7 @@ export async function getTutorUpcomingShifts(
       weekdayLabel: weekdayOf(s.date).label,
       isTraining: s.isTraining,
       isTrial: s.isTrial,
+      isUndecided: !s.isTraining && !s.hasStudent,
     });
   }
   return out;
@@ -373,6 +400,7 @@ export async function getPendingAbsenceRequests(): Promise<PendingAbsence[]> {
       tutorAssigned: absenceTutorAssigned(),
       isTraining: absenceIsTraining(),
       isTrial: absenceHasTrial(),
+      isUndecided: absenceIsUndecided(),
     })
     .from(absenceRequests)
     .innerJoin(profiles, eq(profiles.id, absenceRequests.tutorId))
@@ -401,6 +429,7 @@ export async function getPendingAbsenceRequests(): Promise<PendingAbsence[]> {
     tutorAssigned: r.tutorAssigned,
     isTraining: r.isTraining,
     isTrial: r.isTrial,
+    isUndecided: r.isUndecided,
   }));
 }
 
