@@ -262,10 +262,21 @@ export async function getHeatmapData(
   };
 }
 
-/** #319: 教室長の講習画面に出す、講師ごとの備考とテスト期間・長期休み */
-export type TrainingTutorNote = {
+/**
+ * 室長レビュー要望11: 講習の提出状況をレギュラーと同じ形で出すための、講師 1 人分。
+ * 有効な講師全員 (提出していない人も) を返す
+ */
+export type TrainingTutorStatus = {
   tutorId: string;
   name: string;
+  email: string;
+  track: string | null;
+  subjects: string[];
+  /** submitted = 「提出する」済み / draft = 一時保存だけ / none = 何も保存していない */
+  status: "submitted" | "draft" | "none";
+  submittedAt: string | null;
+  /** 選んだコマ数 */
+  slotCount: number;
   note: string;
   testFrom: string | null;
   testTo: string | null;
@@ -273,36 +284,69 @@ export type TrainingTutorNote = {
   summerTo: string | null;
 };
 
-/**
- * 講習期間の、何か書いてある講師だけを名前順に返す。備考はこれまで講師が
- * 書けるだけで教室長の画面に出ていなかったので、テスト期間・長期休みと並べて出す
- */
-export async function getTrainingTutorNotes(
+/** 講習期間の講師ごとの提出状況 (有効な講師全員、名前順) */
+export async function getTrainingTutorStatuses(
   periodId: string,
-): Promise<TrainingTutorNote[]> {
-  const rows = await db
-    .select({
-      tutorId: trainingPeriodNotes.tutorId,
-      name: profiles.displayName,
-      note: trainingPeriodNotes.note,
-      testFrom: trainingPeriodNotes.testFrom,
-      testTo: trainingPeriodNotes.testTo,
-      summerFrom: trainingPeriodNotes.summerFrom,
-      summerTo: trainingPeriodNotes.summerTo,
-    })
-    .from(trainingPeriodNotes)
-    .innerJoin(profiles, eq(profiles.id, trainingPeriodNotes.tutorId))
-    .where(
-      and(
-        eq(trainingPeriodNotes.periodId, periodId),
-        // 本番チェック No.12: 提出済みの講師だけ
-        isNotNull(trainingPeriodNotes.submittedAt),
-        arrayContains(profiles.roles, ["tutor"]),
-        eq(profiles.isActive, true),
-      ),
-    )
-    .orderBy(asc(profiles.displayName));
-  return rows.filter(
-    (r) => r.note.trim() !== "" || r.testFrom !== null || r.summerFrom !== null,
-  );
+): Promise<TrainingTutorStatus[]> {
+  const [tutorRows, noteRows, prefRows] = await Promise.all([
+    db
+      .select({
+        id: profiles.id,
+        name: profiles.displayName,
+        email: profiles.email,
+        track: profiles.track,
+        subjects: profiles.teachableSubjects,
+      })
+      .from(profiles)
+      .where(
+        and(arrayContains(profiles.roles, ["tutor"]), eq(profiles.isActive, true)),
+      )
+      .orderBy(asc(profiles.displayName)),
+    db
+      .select({
+        tutorId: trainingPeriodNotes.tutorId,
+        note: trainingPeriodNotes.note,
+        testFrom: trainingPeriodNotes.testFrom,
+        testTo: trainingPeriodNotes.testTo,
+        summerFrom: trainingPeriodNotes.summerFrom,
+        summerTo: trainingPeriodNotes.summerTo,
+        submittedAt: trainingPeriodNotes.submittedAt,
+      })
+      .from(trainingPeriodNotes)
+      .where(eq(trainingPeriodNotes.periodId, periodId)),
+    db
+      .select({ tutorId: trainingPreferences.tutorId, c: count() })
+      .from(trainingPreferences)
+      .where(eq(trainingPreferences.periodId, periodId))
+      .groupBy(trainingPreferences.tutorId),
+  ]);
+  const noteBy = new Map(noteRows.map((n) => [n.tutorId, n]));
+  const countBy = new Map(prefRows.map((r) => [r.tutorId, Number(r.c)]));
+  return tutorRows.map((t) => {
+    const n = noteBy.get(t.id);
+    const slotCount = countBy.get(t.id) ?? 0;
+    return {
+      tutorId: t.id,
+      name: t.name,
+      email: t.email,
+      track: t.track,
+      subjects: t.subjects,
+      status: trainingStatusOf(n?.submittedAt ?? null, n !== undefined || slotCount > 0),
+      submittedAt: n?.submittedAt?.toISOString() ?? null,
+      slotCount,
+      note: n?.note ?? "",
+      testFrom: n?.testFrom ?? null,
+      testTo: n?.testTo ?? null,
+      summerFrom: n?.summerFrom ?? null,
+      summerTo: n?.summerTo ?? null,
+    };
+  });
+}
+
+function trainingStatusOf(
+  submittedAt: Date | null,
+  hasSaved: boolean,
+): TrainingTutorStatus["status"] {
+  if (submittedAt) return "submitted";
+  return hasSaved ? "draft" : "none";
 }
