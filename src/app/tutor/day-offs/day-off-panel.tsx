@@ -2,6 +2,7 @@
 
 import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
+import { X } from "lucide-react";
 import { isIndeterminate, toFailedResult } from "@/lib/action-failure";
 import type { TutorDayOff } from "@/lib/day-offs";
 import { dayOffSlotsLabel } from "@/lib/day-off-rule";
@@ -43,7 +44,8 @@ export function DayOffPanel({
 }) {
   const router = useRouter();
   const [isPending, startTransition] = useTransition();
-  const [date, setDate] = useState("");
+  // 室長レビュー要望1: 日付を選ぶたびに足していき、まとめて出せる
+  const [dates, setDates] = useState<string[]>([]);
   const [allDay, setAllDay] = useState(true);
   const [picked, setPicked] = useState<number[]>([]);
   const [reason, setReason] = useState("");
@@ -74,7 +76,7 @@ export function DayOffPanel({
 
   function submit(e: React.FormEvent) {
     e.preventDefault();
-    if (!date) {
+    if (dates.length === 0) {
       setNotice({ type: "error", text: "日付を選んでください。" });
       return;
     }
@@ -89,18 +91,25 @@ export function DayOffPanel({
     run(
       () =>
         createDayOffRequest({
-          date,
+          dates,
           slotNumbers: allDay ? [] : picked,
           reason: reason.trim(),
         }),
-      "休み希望を出しました。教室長の承認を待っています。",
+      dates.length > 1
+        ? `休み希望を ${dates.length} 日分出しました。教室長の承認を待っています。`
+        : "休み希望を出しました。教室長の承認を待っています。",
       () => {
-        setDate("");
+        setDates([]);
         setAllDay(true);
         setPicked([]);
         setReason("");
       },
     );
+  }
+
+  function addDate(d: string) {
+    if (!d || d < firstDate) return;
+    setDates((prev) => (prev.includes(d) ? prev : [...prev, d].sort()));
   }
 
   function toggle(n: number) {
@@ -120,15 +129,42 @@ export function DayOffPanel({
         <CardContent>
           <form className="space-y-4 text-sm" onSubmit={submit}>
             <div className="space-y-1.5">
-              <Label htmlFor="day-off-date">日付</Label>
+              <Label htmlFor="day-off-date">
+                日付
+                <span className="ml-1 text-xs font-normal text-muted-foreground">
+                  （選ぶたびに追加されます。複数の日をまとめて出せます）
+                </span>
+              </Label>
               <input
                 id="day-off-date"
                 type="date"
                 min={firstDate}
-                value={date}
-                onChange={(e) => setDate(e.target.value)}
+                value=""
+                onChange={(e) => addDate(e.target.value)}
                 className="h-10 w-full rounded-md border bg-background px-3 text-sm focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
               />
+              {dates.length > 0 && (
+                <ul className="flex flex-wrap gap-2 pt-1" aria-label="選んだ日">
+                  {dates.map((d) => (
+                    <li
+                      key={d}
+                      className="flex items-center gap-1 rounded-full bg-primary py-1 pl-3 pr-1 text-sm font-medium text-primary-foreground"
+                    >
+                      {noticeDate(d)}
+                      <button
+                        type="button"
+                        onClick={() =>
+                          setDates((prev) => prev.filter((x) => x !== d))
+                        }
+                        className="flex size-6 items-center justify-center rounded-full hover:bg-primary-foreground/20"
+                        aria-label={`${noticeDate(d)}を外す`}
+                      >
+                        <X className="size-3.5" />
+                      </button>
+                    </li>
+                  ))}
+                </ul>
+              )}
             </div>
 
             <div className="space-y-1.5">
@@ -180,7 +216,11 @@ export function DayOffPanel({
             </div>
 
             <Button type="submit" className="w-full" disabled={isPending}>
-              {isPending ? "送信中..." : "休み希望を出す"}
+              {isPending
+                ? "送信中..."
+                : dates.length > 1
+                  ? `${dates.length} 日分の休み希望を出す`
+                  : "休み希望を出す"}
             </Button>
             {notice && (
               <p

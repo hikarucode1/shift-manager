@@ -2,7 +2,7 @@
 
 import { useEffect, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
-import { AlertCircle, CheckCircle2, Info } from "lucide-react";
+import { AlertCircle, Check, CheckCircle2, Info } from "lucide-react";
 import { isIndeterminate, toFailedResult } from "@/lib/action-failure";
 import type { TutorAbsenceRow, UpcomingShift } from "@/lib/absences";
 import { Button } from "@/components/ui/button";
@@ -48,7 +48,8 @@ export function AbsencePanel({
     { type: "ok" | "error"; text: string; at?: "form" } | null
   >(null);
 
-  const [target, setTarget] = useState("");
+  // 室長レビュー要望1: 複数のコマにチェックを付けてまとめて申請できる
+  const [targets, setTargets] = useState<Set<string>>(() => new Set());
   const [category, setCategory] =
     useState<(typeof REASON_CATEGORIES)[number] | "">("");
   const [memo, setMemo] = useState("");
@@ -84,10 +85,10 @@ export function AbsencePanel({
 
   function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
-    const sel = upcoming.find(
-      (u) => `${u.date}|${u.slotNumber}` === target,
+    const sel = upcoming.filter((u) =>
+      targets.has(`${u.date}|${u.slotNumber}`),
     );
-    if (!sel) {
+    if (sel.length === 0) {
       setNotice({ type: "error", text: "対象のコマを選択してください。", at: "form" });
       return;
     }
@@ -109,13 +110,14 @@ export function AbsencePanel({
     run(
       () =>
         createAbsenceRequest({
-          date: sel.date,
-          slotNumber: sel.slotNumber,
+          targets: sel.map((u) => ({ date: u.date, slotNumber: u.slotNumber })),
           reason,
         }),
-      "欠勤申請を送信しました。",
+      sel.length > 1
+        ? `欠勤申請を ${sel.length} コマ分送信しました。`
+        : "欠勤申請を送信しました。",
       () => {
-        setTarget("");
+        setTargets(new Set());
         setCategory("");
         setMemo("");
       },
@@ -145,15 +147,19 @@ export function AbsencePanel({
             </div>
           ) : (
             <form className="space-y-5" onSubmit={handleSubmit}>
-              {/* 1. 対象シフト選択 (排他選択 = native radio + fieldset/legend) */}
+              {/* 1. 対象シフト選択 (複数選択 = native checkbox + fieldset/legend) */}
               <fieldset className="space-y-2">
                 <legend className="mb-2 text-sm font-medium">
                   対象のシフト
+                  <span className="ml-1 text-xs font-normal text-muted-foreground">
+                    （複数選べます
+                    {targets.size > 0 && `・${targets.size} コマ選択中`}）
+                  </span>
                 </legend>
                 <div className="space-y-2">
                   {upcoming.map((u) => {
                     const val = `${u.date}|${u.slotNumber}`;
-                    const on = target === val;
+                    const on = targets.has(val);
                     return (
                       <label
                         key={val}
@@ -165,14 +171,32 @@ export function AbsencePanel({
                         )}
                       >
                         <input
-                          type="radio"
+                          type="checkbox"
                           name="abs-target"
                           value={val}
                           checked={on}
-                          onChange={() => setTarget(val)}
+                          onChange={() =>
+                            setTargets((prev) => {
+                              const next = new Set(prev);
+                              if (next.has(val)) next.delete(val);
+                              else next.add(val);
+                              return next;
+                            })
+                          }
                           className="sr-only"
                         />
-                        <span className="text-sm font-medium">
+                        <span className="flex items-center gap-2 text-sm font-medium">
+                          <span
+                            aria-hidden
+                            className={cn(
+                              "flex size-4 shrink-0 items-center justify-center rounded border",
+                              on
+                                ? "border-primary-foreground bg-primary-foreground text-primary"
+                                : "border-muted-foreground/50",
+                            )}
+                          >
+                            {on && <Check className="size-3" strokeWidth={3} />}
+                          </span>
                           {shortDate(u.date)}（{u.weekdayLabel}） {u.slotLabel}
                         </span>
                         <span
@@ -255,7 +279,11 @@ export function AbsencePanel({
 
               {/* 5. 下部 primary 全幅 */}
               <Button type="submit" disabled={isPending} className="w-full">
-                {isPending ? "送信中..." : "欠勤を申請"}
+                {isPending
+                  ? "送信中..."
+                  : targets.size > 1
+                    ? `${targets.size} コマの欠勤を申請`
+                    : "欠勤を申請"}
               </Button>
             </form>
           )}
