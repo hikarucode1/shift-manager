@@ -10,7 +10,10 @@ import { loadNotificationHealth } from "@/lib/notification-health-loader";
 import { NotificationHealthCard } from "@/components/notification-health-card";
 import { getHeatmapData, getHeatmapPeriods } from "@/lib/training-overview";
 import { weekOf } from "@/lib/week";
-import { getProgressSheetUrl } from "@/lib/progress-sheet-db";
+import {
+  getProgressSheetUrl,
+  getTutorManualUrl,
+} from "@/lib/progress-sheet-db";
 import { cn } from "@/lib/utils";
 import { Card, CardContent } from "@/components/ui/card";
 import { RequestsPanel } from "./requests/requests-panel";
@@ -61,6 +64,7 @@ export default async function AdminHome() {
     notificationHealth,
     activeTutors,
     progressSheetUrl,
+    tutorManualUrl,
   ] = await Promise.all([
     getAdminWeekSchedule(week),
     getPendingAbsenceRequests(),
@@ -72,6 +76,8 @@ export default async function AdminHome() {
     fetchActiveTutors(),
     // #339: 進行表 (スプレッドシート) の URL
     getProgressSheetUrl(),
+    // 室長レビュー要望13: 講師マニュアル (スプレッドシート) の URL
+    getTutorManualUrl(),
   ]);
 
   const pendingTotal = pendingAbsences.length + pendingSwaps.length;
@@ -107,6 +113,8 @@ export default async function AdminHome() {
 
       {/* #339: 進行表を開く・URL を登録する */}
       <ProgressSheetCard url={progressSheetUrl} />
+      {/* 室長レビュー要望13: 講師マニュアルを開く・URL を登録する */}
+      <ProgressSheetCard kind="manual" url={tutorManualUrl} />
 
       {/* 下段: 左=承認待ち / 右=今週の充足状況 */}
       <div className="grid gap-5 lg:grid-cols-[1.4fr_1fr]">
