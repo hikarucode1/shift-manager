@@ -43,6 +43,7 @@ describe("planSwapReapplication", () => {
         setTutorId: "B",
         noteFromId: "A",
         noteToId: "B",
+        clearUndecided: false,
       },
     ]);
     expect(plan.skipped).toEqual([]);
@@ -113,6 +114,7 @@ describe("planSwapReapplication", () => {
         setTutorId: "B",
         noteFromId: "A",
         noteToId: "B",
+        clearUndecided: false,
       },
     ]);
     expect(plan.skipped[0]?.reason).toBe("already-reflected");
@@ -202,5 +204,68 @@ describe("planSwapReapplication", () => {
     const plan = planSwapReapplication([shift("A")], [swap("s1", "A", "B", null)]);
 
     expect(plan.applies).toHaveLength(1);
+  });
+});
+
+describe("planSwapReapplication 未定のコマ (室長レビュー要望9)", () => {
+  const undecided = (tutorId: string): InsertedShift => ({
+    ...shift(tutorId),
+    filled: false,
+  });
+
+  it("代講者が座席表に名前だけ載っていても、付け替えを復元する (未定の行は消す)", () => {
+    const plan = planSwapReapplication(
+      [shift("A"), undecided("B")],
+      [swap("s1", "A", "B", at("2026-09-01T00:00:00Z"))],
+    );
+    expect(plan.skipped).toEqual([]);
+    expect(plan.applies).toEqual([
+      expect.objectContaining({
+        matchTutorId: "A",
+        setTutorId: "B",
+        clearUndecided: true,
+      }),
+    ]);
+  });
+
+  it("座席表が代講後 (代講者に生徒、元の講師は名前だけ) なら、痕跡だけ付け直す", () => {
+    const plan = planSwapReapplication(
+      [undecided("A"), shift("B")],
+      [swap("s1", "A", "B", at("2026-09-01T00:00:00Z"))],
+    );
+    expect(plan.skipped.map((s) => s.reason)).toEqual(["already-reflected"]);
+    expect(plan.applies).toEqual([
+      expect.objectContaining({
+        matchTutorId: "B",
+        setTutorId: "B",
+        clearUndecided: false,
+      }),
+    ]);
+  });
+
+  it("元の講師も代講者も名前だけなら、授業が無くなったとして復元しない", () => {
+    const plan = planSwapReapplication(
+      [undecided("A"), undecided("B")],
+      [swap("s1", "A", "B", at("2026-09-01T00:00:00Z"))],
+    );
+    expect(plan.applies).toEqual([]);
+    expect(plan.skipped.map((s) => s.reason)).toEqual(["requester-absent"]);
+  });
+
+  it("連鎖 (A→B のあと B→C) でも、未定の行を消すのは付け替え先だけ", () => {
+    const plan = planSwapReapplication(
+      [shift("A"), undecided("B"), undecided("C")],
+      [
+        swap("s1", "A", "B", at("2026-09-01T00:00:00Z")),
+        swap("s2", "B", "C", at("2026-09-02T00:00:00Z")),
+      ],
+    );
+    expect(plan.skipped).toEqual([]);
+    expect(
+      plan.applies.map((a) => [a.matchTutorId, a.setTutorId, a.clearUndecided]),
+    ).toEqual([
+      ["A", "B", true],
+      ["B", "C", true],
+    ]);
   });
 });

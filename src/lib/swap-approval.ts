@@ -4,6 +4,7 @@ import {
   ABSENCE_AUTO_EXPIRED_NOTE,
   ABSENCE_EXPIRED_UNASSIGNED_NOTE,
 } from "@/lib/absence-expiry";
+import { removeUndecidedShift } from "@/lib/shift-filled";
 import { isTutorBusyAt, type Executor } from "@/lib/swaps";
 import { substitutionNote } from "@/lib/substitution-note";
 import { jstToday } from "@/lib/week";
@@ -189,6 +190,10 @@ export async function approveSwapInTx(
   if (await isTutorBusyAt(req.date, req.slotNumber, applicantId, tx)) {
     throw new SwapBizError("代講者は既にそのコマに出勤予定です。");
   }
+  // 室長レビュー要望9: 代講者がそのコマで「未定」(座席表に名前だけ) なら、
+  // 未定の行を消してから付け替える (残すと weekly_shifts_unique に当たる)。
+  // 代講者のそのコマは、未定から代講のコマに変わる
+  await removeUndecidedShift(tx, applicantId, req.date, req.slotNumber);
 
   // 代講メモ用に氏名取得
   const names = await tx

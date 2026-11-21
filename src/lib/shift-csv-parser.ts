@@ -5,7 +5,8 @@
  * - ファイルは CP932/Shift_JIS でエンコードされている
  * - 1週間分 (月〜日) の1つの .csv
  * - 1行 = 1講師 × その日そのコマ (生徒最大2名)
- * - 生徒0名 = その講師はそのコマに出勤しない (解析時に除外)
+ * - 生徒0名 (講師の名前だけ) = 「未定」のコマ。あとから授業や体験が入るかも
+ *   しれないので、コマとして残す (室長レビュー要望9。{@link isUndecidedAssignment})
  * - その日のデータが `座席表未作成` のみ = 休日扱い
  */
 
@@ -35,6 +36,14 @@ export type ParsedAssignment = {
   /** #335: 生徒の欄に「研修」と書かれたコマ */
   isTraining: boolean;
 };
+
+/**
+ * 室長レビュー要望9 (2026/11/21 本人): 座席表に講師の名前は入っているが、
+ * 生徒も研修も体験も入っていない行 =「未定」のコマ。
+ */
+export function isUndecidedAssignment(a: ParsedAssignment): boolean {
+  return a.students.length === 0 && !a.isTraining;
+}
 
 export type ParsedSlot = {
   slotNumber: number;
@@ -435,11 +444,9 @@ function collectDay(
         students.push(s);
       }
 
-      // 生徒0名 = その講師はそのコマに出勤しない → スキップ (研修は出勤する)
-      if (students.length === 0 && !isTraining) {
-        cursor++;
-        continue;
-      }
+      // ⚠️ 生徒0名の行 (名前だけ) も捨てない。室長レビュー要望9 の「未定」の
+      // コマで、講師に「授業・体験が入るかも」と見せる。以前はここで捨てて
+      // いたため、未定が 1 つも取り込まれなかった
 
       // 2名に丸める (超過は無視)
       if (students.length > 2) students.length = 2;
@@ -451,12 +458,23 @@ function collectDay(
         students,
         isTraining,
       });
-
-      teacherSet.add(teacherName);
-      for (const s of students) studentSet.add(s.name);
     }
 
     cursor++;
+  }
+
+  for (const slot of slots) {
+    // 全体研修のコマでは、名前だけの行は研修に含める (取り込み時に在籍講師
+    // 全員を研修として入れるので、未定として残すと研修にならない)
+    if (slot.groupTraining) {
+      slot.assignments = slot.assignments.filter(
+        (a) => !isUndecidedAssignment(a),
+      );
+    }
+    for (const a of slot.assignments) {
+      teacherSet.add(a.teacherName);
+      for (const s of a.students) studentSet.add(s.name);
+    }
   }
 
   return { slots, isHoliday, nextCursor: cursor };

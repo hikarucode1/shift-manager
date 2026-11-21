@@ -25,6 +25,7 @@ import {
   type PendingSwapAfterCancel,
 } from "@/lib/swap-cancel-notice";
 import { pendingSwapApproval } from "@/lib/pending-swap-approval";
+import { removeUndecidedShift } from "@/lib/shift-filled";
 import {
   approveSwapInTx,
   expireActiveAbsences,
@@ -405,6 +406,9 @@ export async function cancelApprovedSwap(
           "元の講師は既にそのコマに出勤予定のため、担当を戻せません。",
         );
       }
+      // 室長レビュー要望9: 元の講師がそのコマで「未定」(取り込み直した座席表に
+      // 名前だけ残っている) なら、未定の行を消してから戻す (一意制約に当たる)
+      await removeUndecidedShift(tx, req.requesterId, req.date, req.slotNumber);
 
       // ⚠️ 同じコマに他の承認済み代講がある (玉突き: A→B の後に B→C) 場合、
       // 元に戻すと「1 つ前」ではなく CSV 初期値まで戻ってしまい、生きている

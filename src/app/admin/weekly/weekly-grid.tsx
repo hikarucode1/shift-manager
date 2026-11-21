@@ -5,6 +5,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { ChevronLeft, ChevronRight, FileText, Printer } from "lucide-react";
 import type { AdminDay, AdminWeekSchedule } from "@/lib/admin-schedule";
+import { UNDECIDED_HINT, UNDECIDED_LABEL } from "@/lib/undecided-slot";
 import { nextWeek, prevWeek, shortDate } from "@/lib/week";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -123,7 +124,12 @@ export function WeeklyGrid({ schedule }: { schedule: AdminWeekSchedule }) {
           <span className="ml-auto font-semibold text-foreground">
             {tutorFilter
               ? `表示中 ${shownCount} 件 / 全 ${schedule.totalShiftCount} 件`
-              : `出勤 ${schedule.totalShiftCount} 件`}
+              : `出勤 ${schedule.totalShiftCount - schedule.undecidedShiftCount} 件`}
+            {!tutorFilter && schedule.undecidedShiftCount > 0 && (
+              <span className="ml-2 font-medium text-muted-foreground">
+                {UNDECIDED_LABEL} {schedule.undecidedShiftCount} 件
+              </span>
+            )}
             {schedule.absentShiftCount > 0 && (
               <span className="ml-2 font-medium text-destructive">
                 欠勤 {schedule.absentShiftCount} 件
@@ -245,6 +251,16 @@ export function WeeklyGrid({ schedule }: { schedule: AdminWeekSchedule }) {
                               {c.isTraining && (
                                 <Badge className="border-transparent bg-sky-100 px-1 py-0 text-[10px] font-normal text-sky-700 hover:bg-sky-100">
                                   研修
+                                </Badge>
+                              )}
+                              {/* 室長レビュー要望9: 名前だけのコマ (生徒も研修も無い) */}
+                              {!c.isTraining && c.students.length === 0 && (
+                                <Badge
+                                  variant="secondary"
+                                  className="px-1 py-0 text-[10px] font-normal"
+                                  title={UNDECIDED_HINT}
+                                >
+                                  {UNDECIDED_LABEL}
                                 </Badge>
                               )}
                               {c.seatNumber && (

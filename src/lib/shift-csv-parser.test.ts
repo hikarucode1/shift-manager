@@ -1,5 +1,9 @@
 import { describe, it, expect } from "vitest";
-import { parseShiftCsvText, ShiftCsvParseError } from "./shift-csv-parser";
+import {
+  isUndecidedAssignment,
+  parseShiftCsvText,
+  ShiftCsvParseError,
+} from "./shift-csv-parser";
 
 /** ヘッダー + 日ブロックを組み立てる小さなビルダー */
 function csv(range: string, dayRows: string[]): string {
@@ -108,8 +112,50 @@ describe("parseShiftCsvText 体験・研修 (#335)", () => {
       "2,鈴木一郎,",
     ]);
     const assignments = parseShiftCsvText(text).days[0].slots[0].assignments;
-    expect(assignments).toHaveLength(1);
     expect(assignments[0]).toMatchObject({ isTraining: true, students: [] });
+    expect(isUndecidedAssignment(assignments[0])).toBe(false);
+  });
+});
+
+describe("parseShiftCsvText 未定のコマ (室長レビュー要望9)", () => {
+  it("講師の名前だけの行 (生徒も研修も無い) は未定のコマとして残す", () => {
+    const text = csv("2026/11/16〜2026/11/22", [
+      "日付,11月18日,水",
+      "8限,19:30〜20:55",
+      "座番,講師,生徒,生徒",
+      "1,山田太郎,佐藤花子(英)",
+      "2,鈴木一郎,",
+      "3,高橋美咲",
+    ]);
+    const parsed = parseShiftCsvText(text);
+    const assignments = parsed.days[0].slots[0].assignments;
+    expect(assignments.map((a) => a.teacherName)).toEqual([
+      "山田太郎",
+      "鈴木一郎",
+      "高橋美咲",
+    ]);
+    expect(assignments.map(isUndecidedAssignment)).toEqual([false, true, true]);
+    // 対応付け (講師アカウントとの紐付け) の対象にも入る
+    expect(parsed.uniqueTeacherNames).toEqual(
+      ["山田太郎", "鈴木一郎", "高橋美咲"].sort(),
+    );
+  });
+
+  it("全体研修のコマでは、名前だけの行は未定にしない (研修に含める)", () => {
+    const text = csv("2026/11/16〜2026/11/22", [
+      "日付,11月18日,水",
+      "7限,17:50〜19:15",
+      "座番,講師,生徒,生徒",
+      "1,山田太郎,佐藤花子(英)",
+      "2,鈴木一郎,",
+      ",全体研修",
+    ]);
+    const parsed = parseShiftCsvText(text);
+    expect(parsed.days[0].slots[0]).toMatchObject({ groupTraining: true });
+    expect(
+      parsed.days[0].slots[0].assignments.map((a) => a.teacherName),
+    ).toEqual(["山田太郎"]);
+    expect(parsed.uniqueTeacherNames).toEqual(["山田太郎"]);
   });
 });
 

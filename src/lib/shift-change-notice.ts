@@ -31,6 +31,11 @@ export type CellChange = {
   kind: CellChangeKind;
   date: string;
   slotNumber: number;
+  /**
+   * `added` のとき、増えたコマが未定 (座席表に名前だけ) か。通知に
+   * 「追加（未定）」と書き、授業が入ったと読ませない
+   */
+  undecided?: boolean;
 };
 
 /** 講師ごとの変わったコマ (日付・何限の順)。変わっていない講師は入らない */
@@ -44,7 +49,12 @@ export function shiftChangesByTutor(
   const out = new Map<string, CellChange[]>();
   const push = (c: ShiftCell, kind: CellChangeKind) => {
     const list = out.get(c.tutorId) ?? [];
-    list.push({ kind, date: c.date, slotNumber: c.slotNumber });
+    list.push({
+      kind,
+      date: c.date,
+      slotNumber: c.slotNumber,
+      ...(kind === "added" && !c.filled ? { undecided: true } : {}),
+    });
     out.set(c.tutorId, list);
   };
   for (const [k, c] of a) {
@@ -86,7 +96,7 @@ export function shiftChangeBody(
     .slice(0, MAX_LISTED)
     .map(
       (c) =>
-        `${KIND_LABEL[c.kind]} ${noticeDate(c.date)}${slotLabel(c.slotNumber)}`,
+        `${KIND_LABEL[c.kind]}${c.undecided ? "（未定）" : ""} ${noticeDate(c.date)}${slotLabel(c.slotNumber)}`,
     );
   const rest = changes.length - MAX_LISTED;
   return listed.join("、") + (rest > 0 ? `、ほか ${rest} コマ` : "");

@@ -81,8 +81,10 @@ export default async function AdminHome() {
   ]);
 
   const pendingTotal = pendingAbsences.length + pendingSwaps.length;
-  const total = schedule.totalShiftCount;
-  const absent = schedule.absentShiftCount;
+  // 未定のコマ (座席表に名前だけ) は出勤が決まっていないので数えない
+  // (講師ホームの「今週のコマ」と同じ決まり。室長レビュー要望9)
+  const total = schedule.totalShiftCount - schedule.undecidedShiftCount;
+  const absent = schedule.absentShiftCount - schedule.undecidedAbsentCount;
   const working = total - absent;
   const fulfillPct = total > 0 ? Math.round((working / total) * 100) : 0;
 

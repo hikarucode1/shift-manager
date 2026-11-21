@@ -34,6 +34,7 @@ import {
   type DayOffConflictNotice,
   type DayOffNotice,
 } from "./actions";
+import { UNDECIDED_HINT, UNDECIDED_LABEL } from "@/lib/undecided-slot";
 import { noticeDate } from "@/lib/week";
 
 type Tutor = { id: string; displayName: string; email: string };
@@ -483,14 +484,17 @@ function PreviewStage({
     let trials = 0;
     let trainings = 0;
     let groupTrainings = 0;
+    // 室長レビュー要望9: 講師の名前だけの行 (生徒も研修も無い) =「未定」
+    let undecided = 0;
     for (const day of parsed.days) {
       for (const slot of day.slots) {
         if (slot.groupTraining) groupTrainings++;
-        teacherRows += slot.assignments.length;
         for (const a of slot.assignments) {
           studentAssignments += a.students.length;
           if (a.isTraining) trainings++;
           trials += a.students.filter((st) => st.isTrial).length;
+          if (a.students.length === 0 && !a.isTraining) undecided++;
+          else teacherRows++;
         }
       }
     }
@@ -500,6 +504,7 @@ function PreviewStage({
       trials,
       trainings,
       groupTrainings,
+      undecided,
       holidays: parsed.days.filter((d) => d.isHoliday).length,
     };
   }, [parsed]);
@@ -588,6 +593,12 @@ function PreviewStage({
               体験授業 {stats.trials} 件・研修 {stats.trainings} 件を読み取りました。
               {stats.groupTrainings > 0 &&
                 ` 全体研修が ${stats.groupTrainings} コマあり、在籍している講師全員を研修として入れます。`}
+            </p>
+          )}
+          {stats.undecided > 0 && (
+            <p className="mt-3 text-xs text-muted-foreground">
+              講師の名前だけのコマが {stats.undecided} 件あります。「{UNDECIDED_LABEL}（
+              {UNDECIDED_HINT}）」として講師に見せます（出勤の数には入れていません）。
             </p>
           )}
           {parsed.activeTrainings.length > 0 && (
@@ -800,7 +811,17 @@ function PreviewStage({
           <div className="space-y-2">
             {parsed.days.map((d) => {
               const wLabel = WEEKDAYS.find((w) => w.key === d.weekday)?.label ?? "";
-              const total = d.slots.reduce((a, s) => a + s.assignments.length, 0);
+              // 名前だけのコマ (未定) は出勤に数えず、別に出す
+              const undecided = d.slots.reduce(
+                (n, s) =>
+                  n +
+                  s.assignments.filter(
+                    (a) => a.students.length === 0 && !a.isTraining,
+                  ).length,
+                0,
+              );
+              const total =
+                d.slots.reduce((a, s) => a + s.assignments.length, 0) - undecided;
               return (
                 <div
                   key={d.date}
@@ -812,7 +833,10 @@ function PreviewStage({
                   {d.isHoliday ? (
                     <Badge variant="outline">休日</Badge>
                   ) : (
-                    <span className="text-muted-foreground">{total} 出勤</span>
+                    <span className="text-muted-foreground">
+                      {total} 出勤
+                      {undecided > 0 && `・${UNDECIDED_LABEL} ${undecided}`}
+                    </span>
                   )}
                 </div>
               );

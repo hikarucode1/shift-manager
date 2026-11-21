@@ -78,6 +78,14 @@ export type AdminWeekSchedule = {
   totalShiftCount: number;
   /** うち承認済み欠勤のコマ数 */
   absentShiftCount: number;
+  /**
+   * うち「未定」のコマ数 (座席表に講師の名前だけで、生徒も研修も体験も無い。
+   * 室長レビュー要望9)。出勤が決まっていないので、ダッシュボードの確定コマ・
+   * 充足状況には数えない
+   */
+  undecidedShiftCount: number;
+  /** 未定のうち、承認済み欠勤のコマ数 */
+  undecidedAbsentCount: number;
 };
 
 type UploadRow = {
@@ -293,8 +301,15 @@ export async function getAdminWeekSchedule(
     .sort((a, b) => a.name.localeCompare(b.name, "ja"));
 
   let absentShiftCount = 0;
+  let undecidedShiftCount = 0;
+  let undecidedAbsentCount = 0;
   for (const e of cellByShift.values()) {
-    if (e.cell.isAbsent) absentShiftCount++;
+    const undecided = !e.cell.isTraining && e.cell.students.length === 0;
+    if (undecided) undecidedShiftCount++;
+    if (e.cell.isAbsent) {
+      absentShiftCount++;
+      if (undecided) undecidedAbsentCount++;
+    }
   }
 
   return {
@@ -306,5 +321,7 @@ export async function getAdminWeekSchedule(
     upload,
     totalShiftCount: cellByShift.size,
     absentShiftCount,
+    undecidedShiftCount,
+    undecidedAbsentCount,
   };
 }
