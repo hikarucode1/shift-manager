@@ -6,6 +6,10 @@ import { getAdminAnnouncements } from "@/lib/announcements-db";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { AnnouncementForm } from "./announcement-form";
 import { AnnouncementList } from "./announcement-list";
+import { MonthlyScheduleCard } from "./monthly-schedule-card";
+import { listMonthlySchedules } from "@/lib/monthly-schedule-db";
+import { nextMonthOf } from "@/lib/monthly-schedule";
+import { jstMonthStart } from "@/lib/week";
 
 /**
  * 教室長: 講師全員へのお知らせ。今まで LINE でシフトと一緒に送っていた連絡を
@@ -13,7 +17,7 @@ import { AnnouncementList } from "./announcement-list";
  */
 export default async function AdminAnnouncementsPage() {
   const { profile } = await requireRole("admin");
-  const [items, [tutors]] = await Promise.all([
+  const [items, [tutors], schedules] = await Promise.all([
     getAdminAnnouncements(),
     // 送る前の確認に出す人数 (createAnnouncement の宛先と同じ条件)
     db
@@ -27,6 +31,8 @@ export default async function AdminAnnouncementsPage() {
           ne(profiles.id, profile.id),
         ),
       ),
+    // 室長レビュー要望12: 月のスケジュール PDF (新しい月から)
+    listMonthlySchedules(),
   ]);
 
   return (
@@ -44,6 +50,22 @@ export default async function AdminAnnouncementsPage() {
         </CardHeader>
         <CardContent>
           <AnnouncementForm tutorCount={tutors?.value ?? 0} />
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <CardTitle className="text-base">月のスケジュール（PDF）</CardTitle>
+        </CardHeader>
+        <CardContent>
+          <MonthlyScheduleCard
+            rows={schedules.map((r) => ({
+              month: r.month,
+              fileName: r.fileName,
+              updatedAt: r.updatedAt.toISOString(),
+            }))}
+            defaultMonth={nextMonthOf(jstMonthStart())}
+          />
         </CardContent>
       </Card>
 

@@ -5,6 +5,7 @@ import {
   ChevronLeft,
   ChevronRight,
   ExternalLink,
+  FileText,
   MapPin,
   Megaphone,
   UserRound,
@@ -29,6 +30,7 @@ import { cn } from "@/lib/utils";
 import { deadlineLabel } from "@/lib/deadline";
 import { Badge } from "@/components/ui/badge";
 import { UNDECIDED_HINT, UNDECIDED_LABEL } from "@/lib/undecided-slot";
+import { TUTOR_SCHEDULES_PATH } from "@/lib/monthly-schedule";
 
 /** 次の出勤の日付ラベル (今日/明日/曜日) */
 function dayLabel(s: {
@@ -401,6 +403,16 @@ export default async function TutorHome({
       >
         <Megaphone className="size-5 shrink-0 text-primary" />
         <span className="flex-1 text-sm font-medium">教室長からのお知らせ</span>
+        <ChevronRight className="size-4 text-muted-foreground" />
+      </Link>
+
+      {/* 室長レビュー要望12: 月のスケジュール (PDF) */}
+      <Link
+        href={TUTOR_SCHEDULES_PATH}
+        className="flex items-center gap-3 rounded-xl border p-3 transition-colors hover:bg-muted/50"
+      >
+        <FileText className="size-5 shrink-0 text-primary" />
+        <span className="flex-1 text-sm font-medium">月のスケジュール</span>
         <ChevronRight className="size-4 text-muted-foreground" />
       </Link>
     </div>

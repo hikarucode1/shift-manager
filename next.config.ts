@@ -20,6 +20,11 @@ const securityHeaders = [
 ];
 
 const nextConfig: NextConfig = {
+  experimental: {
+    // 室長レビュー要望12: 月のスケジュール PDF (4MB まで) をサーバーアクションで
+    // 受け取るため。既定の 1MB では足りない
+    serverActions: { bodySizeLimit: "5mb" },
+  },
   async headers() {
     return [{ source: "/:path*", headers: securityHeaders }];
   },

@@ -8,6 +8,7 @@ import {
   CalendarX,
   ClipboardCheck,
   ClipboardPen,
+  FileText,
   Inbox,
   Megaphone,
   Repeat,
@@ -38,6 +39,8 @@ const TYPE_ICON: Record<NotificationType, typeof Bell> = {
   shift_reminder: BellRing,
   // 室長レビュー要望4: シフト提出の受付開始
   submission_opened: CalendarPlus,
+  // 室長レビュー要望12: 月のスケジュール (PDF)
+  monthly_schedule: FileText,
 };
 
 function formatDateTime(d: Date): string {
