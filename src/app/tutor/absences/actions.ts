@@ -390,7 +390,6 @@ export async function decideAbsenceRequest(
         error: "処理できませんでした（既に対応済みの可能性があります）。",
       };
     }
-    // #331: 指定する相手は、休む本人以外の有効な講師で、そのコマが空いている人
     // 2026/11/21 本人: 研修のコマは欠勤だけ (代講の指名・募集はしない)
     if (
       followUp !== "none" &&
@@ -398,6 +397,7 @@ export async function decideAbsenceRequest(
     ) {
       return { ok: false, error: TRAINING_NO_SUBSTITUTE };
     }
+    // #331: 指定する相手は、休む本人以外の有効な講師で、そのコマが空いている人
     for (const designeeId of designeeIds) {
       const error = await designeeError({
         absentTutorId: target.tutorId,
