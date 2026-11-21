@@ -254,5 +254,6 @@ function serializeData(d: TrainingEditorData) {
     note: d.note,
     ranges: d.ranges,
     submittedAt: d.submittedAt,
+    regularSlots: d.regularSlots,
   };
 }

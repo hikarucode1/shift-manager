@@ -1,13 +1,16 @@
 import "server-only";
-import { and, desc, eq, inArray } from "drizzle-orm";
+import { and, desc, eq, inArray, lte } from "drizzle-orm";
 import { db } from "@/db/client";
 import {
   periods,
+  regularAssignments,
   trainingPeriodNotes,
   trainingPreferences,
 } from "@/db/schema";
 import { getSlotMeta, slotNumbers } from "@/lib/slot-meta";
 import { jstToday, weekdayOf } from "@/lib/week";
+import type { Weekday } from "@/lib/shift-constants";
+import { pickUsualRegularSlots } from "@/lib/usual-regular";
 import type { DateRange, TrainingRangeKind } from "@/lib/training-ranges";
 import { getActiveTrainingGrant } from "@/lib/shift-change";
 
@@ -39,6 +42,8 @@ export type TrainingSlotDef = {
 
 export type TrainingDay = {
   date: string;
+  /** "mon" など。レギュラーの曜日と突き合わせる */
+  weekday: Weekday;
   weekdayLabel: string;
   isWeekend: boolean;
 };
@@ -54,6 +59,11 @@ export type TrainingEditorData = {
   ranges: Record<TrainingRangeKind, DateRange>;
   /** 本番チェック No.12: 提出した時刻 (ISO)。null は一時保存 (未提出) */
   submittedAt: string | null;
+  /**
+   * 室長レビュー要望7: 普段レギュラーで入っている "weekday|slot" (例 "mon|3")。
+   * 講習の希望を選ぶときに強調して見せる
+   */
+  regularSlots: string[];
 };
 
 /** 講師ごとの講習希望の状態。none = まだ何も保存していない */
@@ -201,12 +211,13 @@ export async function getTrainingEditorData(
     const { key, label } = weekdayOf(date);
     return {
       date,
+      weekday: key,
       weekdayLabel: label,
       isWeekend: key === "sat" || key === "sun",
     };
   });
 
-  const [prefRows, noteRow] = await Promise.all([
+  const [prefRows, noteRow, regularSlots] = await Promise.all([
     db
       .select({
         date: trainingPreferences.date,
@@ -236,6 +247,7 @@ export async function getTrainingEditorData(
         ),
       )
       .limit(1),
+    getUsualRegularSlots(tutorId, p.endDate),
   ]);
 
   const selected = new Set(
@@ -266,8 +278,37 @@ export async function getTrainingEditorData(
       },
     },
     submittedAt: noteRow[0]?.submittedAt?.toISOString() ?? null,
+    regularSlots,
   };
 }
+
+/**
+ * 室長レビュー要望7: 講師が「普段」レギュラーで入っている曜日×コマ。
+ * 講習期間の終わりまでに始まっている確定レギュラーのうち、いちばん新しい日
+ * (= 最後の期の終わり。講習期間の終わりを超えるならそこまで) に効いている行を使う。
+ * 講習の時期はレギュラーの期の外にあることが多いので、直前の期を「普段」とみなす
+ */
+export async function getUsualRegularSlots(
+  tutorId: string,
+  untilDate: string,
+): Promise<string[]> {
+  const rows = await db
+    .select({
+      weekday: regularAssignments.weekday,
+      slotNumber: regularAssignments.slotNumber,
+      effectiveFrom: regularAssignments.effectiveFrom,
+      effectiveTo: regularAssignments.effectiveTo,
+    })
+    .from(regularAssignments)
+    .where(
+      and(
+        eq(regularAssignments.tutorId, tutorId),
+        lte(regularAssignments.effectiveFrom, untilDate),
+      ),
+    );
+  return pickUsualRegularSlots(rows, untilDate);
+}
+
 
 /** 講師の各講習期間の提出状態 (一覧のバッジ・ホームの締切表示用) */
 export async function getTrainingSubmissionStatuses(
