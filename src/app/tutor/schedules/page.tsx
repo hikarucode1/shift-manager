@@ -1,8 +1,8 @@
 import Link from "next/link";
-import { ChevronLeft, FileText, ExternalLink } from "lucide-react";
+import { ChevronLeft, ChevronRight, FileText } from "lucide-react";
 import { requireRole } from "@/lib/auth";
 import { listMonthlySchedules } from "@/lib/monthly-schedule-db";
-import { monthLabel, schedulePdfPath } from "@/lib/monthly-schedule";
+import { monthLabel, tutorScheduleViewPath } from "@/lib/monthly-schedule";
 import { jstMonthStart } from "@/lib/week";
 
 /**
@@ -35,10 +35,10 @@ export default async function TutorSchedulesPage() {
         <ul className="space-y-2">
           {rows.map((r) => (
             <li key={r.month}>
-              <a
-                href={schedulePdfPath(r.month)}
-                target="_blank"
-                rel="noopener"
+              {/* ⚠️ PDF を別のタブで開かない。ホーム画面に追加したアプリでは
+                  戻れなくなる (2026/11/21 本人)。アプリの画面の中で見せる */}
+              <Link
+                href={tutorScheduleViewPath(r.month)}
                 className="flex items-center gap-3 rounded-xl border p-3 transition-colors hover:bg-muted/50"
               >
                 <FileText className="size-5 shrink-0 text-primary" />
@@ -50,8 +50,8 @@ export default async function TutorSchedulesPage() {
                     </span>
                   )}
                 </span>
-                <ExternalLink className="size-4 text-muted-foreground" />
-              </a>
+                <ChevronRight className="size-4 text-muted-foreground" />
+              </Link>
             </li>
           ))}
         </ul>

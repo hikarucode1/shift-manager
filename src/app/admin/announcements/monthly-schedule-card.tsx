@@ -2,12 +2,13 @@
 
 import { useRef, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
-import { AlertCircle, CheckCircle2, ExternalLink, Upload } from "lucide-react";
+import Link from "next/link";
+import { AlertCircle, CheckCircle2, FileText, Upload } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { toFailedResult } from "@/lib/action-failure";
-import { monthLabel, schedulePdfPath } from "@/lib/monthly-schedule";
+import { adminScheduleViewPath, monthLabel } from "@/lib/monthly-schedule";
 import { cn } from "@/lib/utils";
 import {
   removeMonthlySchedule,
@@ -137,15 +138,15 @@ export function MonthlyScheduleCard({
               className="flex flex-wrap items-center gap-x-3 gap-y-1 px-3 py-2 text-sm"
             >
               <span className="w-24 font-medium">{monthLabel(r.month)}</span>
-              <a
-                href={schedulePdfPath(r.month)}
-                target="_blank"
-                rel="noopener"
+              {/* ⚠️ PDF を別のタブで開かない (ホーム画面のアプリでは戻れなく
+                  なる)。アプリの画面の中で見せる。印刷用の別タブはその先 */}
+              <Link
+                href={adminScheduleViewPath(r.month)}
                 className="flex min-w-0 flex-1 items-center gap-1 text-primary hover:underline"
               >
+                <FileText className="size-3.5 shrink-0" />
                 <span className="truncate">{r.fileName}</span>
-                <ExternalLink className="size-3.5 shrink-0" />
-              </a>
+              </Link>
               {removing === r.month ? (
                 <span className="flex items-center gap-2">
                   <span className="text-xs text-muted-foreground">

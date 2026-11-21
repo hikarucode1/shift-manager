@@ -1,6 +1,10 @@
 @import "tailwindcss";
 
 @custom-variant dark (&:is(.dark *));
+/* ホーム画面に追加したアプリ (PWA) で開いているとき。タブも「戻る」も無い */
+@custom-variant standalone (@media (display-mode: standalone));
+/* 指で操作する端末 (スマホ・タブレット) */
+@custom-variant touch (@media (pointer: coarse));
 
 :root {
   --background: 0 0% 100%;

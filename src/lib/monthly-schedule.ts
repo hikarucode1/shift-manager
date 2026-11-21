@@ -26,12 +26,31 @@ export function looksLikePdf(head: Uint8Array): boolean {
   return sig.every((b, i) => head[i] === b);
 }
 
-/** 講師に開いてもらう PDF の URL */
+/**
+ * PDF そのものの URL。
+ *
+ * ⚠️ 画面のリンクにそのまま使わないこと (`target="_blank"` でも)。ホーム画面に
+ * 追加したアプリには戻るボタンが無く、PDF を開いたまま戻れなくなる
+ * (2026/11/21 本人)。リンクは下の `*ScheduleViewPath` (アプリの画面の中に描く
+ * ページ) に張る
+ */
 export function schedulePdfPath(monthStart: string): string {
   return `/schedules/${monthStart.slice(0, 7)}`;
 }
 
 export const TUTOR_SCHEDULES_PATH = "/tutor/schedules";
+/** 教室長が月のスケジュールを上げる画面 */
+export const ADMIN_SCHEDULES_PATH = "/admin/announcements";
+
+/** 講師が PDF をアプリの画面の中で見るページ */
+export function tutorScheduleViewPath(monthStart: string): string {
+  return `${TUTOR_SCHEDULES_PATH}/${monthStart.slice(0, 7)}`;
+}
+
+/** 教室長が PDF をアプリの画面の中で見るページ */
+export function adminScheduleViewPath(monthStart: string): string {
+  return `${ADMIN_SCHEDULES_PATH}/schedules/${monthStart.slice(0, 7)}`;
+}
 
 /** アップロードしたときの通知 */
 export function scheduleNotice(monthStart: string, replaced: boolean) {

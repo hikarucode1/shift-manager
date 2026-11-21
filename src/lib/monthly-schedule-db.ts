@@ -36,6 +36,18 @@ export async function listMonthlySchedules(
     .orderBy(desc(monthlySchedules.month));
 }
 
+/** その月のスケジュールがあるか (PDF の中身は読まない) */
+export async function getMonthlyScheduleInfo(
+  month: string,
+): Promise<MonthlyScheduleRow | null> {
+  const [row] = await db
+    .select(listColumns)
+    .from(monthlySchedules)
+    .where(eq(monthlySchedules.month, month))
+    .limit(1);
+  return row ?? null;
+}
+
 export async function getMonthlySchedulePdf(
   month: string,
 ): Promise<{ fileName: string; content: Buffer } | null> {
