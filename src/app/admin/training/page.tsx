@@ -15,6 +15,7 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import { TrainingHeatmap } from "./training-heatmap";
+import { TutorWishTable } from "./tutor-wish-table";
 import { NotifyPublicationButton } from "./notify-publication-button";
 import { AdminShiftWishNav } from "@/components/admin-section-nav";
 import { GrantChangeForm } from "./grant-change-form";
@@ -69,6 +70,8 @@ export default async function AdminTrainingPage({
               <NotifyPublicationButton periodId={period} />
             </div>
           </div>
+          {/* 室長レビュー要望11: 講師ごとに座席表システムと同じ並びで見る */}
+          <TutorWishTable data={data} />
           <TrainingHeatmap data={data} />
           <GrantChangeForm
             periodId={period}
