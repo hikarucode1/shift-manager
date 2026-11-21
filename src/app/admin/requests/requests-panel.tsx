@@ -2,7 +2,7 @@
 
 import { useEffect, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
-import { AlertCircle, CheckCircle2 } from "lucide-react";
+import { AlertCircle, Check, CheckCircle2 } from "lucide-react";
 import { isIndeterminate, toFailedResult } from "@/lib/action-failure";
 import type { PendingAbsence } from "@/lib/absences";
 import { Button } from "@/components/ui/button";
@@ -32,7 +32,8 @@ export function RequestsPanel({
   const [rejectId, setRejectId] = useState<string | null>(null);
   const [rejectNote, setRejectNote] = useState("");
   // #331: カードごとの「代講を頼む相手」(承認時に送る。空 = 指定しない)
-  const [designated, setDesignated] = useState<Record<string, string>>({});
+  // 室長レビュー要望2: 指名する講師は複数選べる (早い者勝ち)
+  const [designated, setDesignated] = useState<Record<string, string[]>>({});
   // 本番チェック メモ21・23: 承認と一緒にする次の一手 (既定は「何もしない」)
   const [followUp, setFollowUp] = useState<
     Record<string, "designate" | "recruit" | "none">
@@ -249,38 +250,54 @@ export function RequestsPanel({
                           ))}
                         </div>
                         {followUp[p.id] === "designate" && (
-                          <div className="flex flex-wrap items-center gap-2">
-                            <label
-                              htmlFor={`designate-${p.id}`}
-                              className="text-xs text-muted-foreground"
-                            >
-                              指名する講師
-                            </label>
-                            <select
-                              id={`designate-${p.id}`}
-                              value={designated[p.id] ?? ""}
-                              onChange={(e) =>
-                                setDesignated((prev) => ({
-                                  ...prev,
-                                  [p.id]: e.target.value,
-                                }))
-                              }
-                              className="h-8 min-w-[10rem] rounded-md border bg-background px-2 text-sm focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
-                            >
-                              <option value="">選んでください</option>
+                          <fieldset className="space-y-1.5">
+                            <legend className="text-xs text-muted-foreground">
+                              指名する講師（複数選べます）
+                            </legend>
+                            <div className="flex flex-wrap gap-1.5">
                               {tutors
                                 .filter((t) => t.id !== p.tutorId)
-                                .map((t) => (
-                                  <option key={t.id} value={t.id}>
-                                    {t.name}
-                                  </option>
-                                ))}
-                            </select>
-                          </div>
+                                .map((t) => {
+                                  const on = (designated[p.id] ?? []).includes(
+                                    t.id,
+                                  );
+                                  return (
+                                    <label
+                                      key={t.id}
+                                      className={cn(
+                                        "flex cursor-pointer items-center gap-1 rounded-full border px-2.5 py-1 text-sm transition-colors focus-within:ring-1 focus-within:ring-ring",
+                                        on
+                                          ? "border-primary bg-primary text-primary-foreground"
+                                          : "bg-background hover:bg-muted",
+                                      )}
+                                    >
+                                      <input
+                                        type="checkbox"
+                                        className="sr-only"
+                                        checked={on}
+                                        onChange={() =>
+                                          setDesignated((prev) => {
+                                            const cur = prev[p.id] ?? [];
+                                            return {
+                                              ...prev,
+                                              [p.id]: on
+                                                ? cur.filter((x) => x !== t.id)
+                                                : [...cur, t.id],
+                                            };
+                                          })
+                                        }
+                                      />
+                                      {on && <Check className="size-3.5" />}
+                                      {t.name}
+                                    </label>
+                                  );
+                                })}
+                            </div>
+                          </fieldset>
                         )}
                         <p className="text-xs text-muted-foreground">
                           {followUp[p.id] === "designate"
-                            ? "承認すると、選んだ講師に代講の依頼が届きます。引き受けてもらえた時点で代講が決まります。"
+                            ? "承認すると、選んだ講師に代講の依頼が届きます。最初に引き受けた人で代講が決まります（早い者勝ち）。"
                             : followUp[p.id] === "recruit"
                               ? "承認すると代講の募集に出し、出られる講師全員に知らせます。"
                               : "承認だけします。代講はあとから決められます。"}
@@ -295,7 +312,7 @@ export function RequestsPanel({
                             isPending ||
                             (!p.isEnded &&
                               followUp[p.id] === "designate" &&
-                              !designated[p.id])
+                              (designated[p.id] ?? []).length === 0)
                           }
                           onClick={() =>
                             run(
@@ -306,8 +323,8 @@ export function RequestsPanel({
                                   followUp: p.isEnded
                                     ? "none"
                                     : (followUp[p.id] ?? "none"),
-                                  designatedSubstituteId:
-                                    designated[p.id] || null,
+                                  designatedSubstituteIds:
+                                    designated[p.id] ?? [],
                                 }),
                               (followUp[p.id] ?? "none") === "designate" &&
                                 !p.isEnded

@@ -861,10 +861,22 @@ export const swapRequests = pgTable(
   (t) => ({
     statusIdx: index("swap_requests_status_idx").on(t.status),
     dateIdx: index("swap_requests_date_idx").on(t.date, t.slotNumber),
-    // 同一講師が同一コマに有効な交代申請を重複させない
+    // 同一講師が同一コマに有効な交代申請を重複させない。
+    // 室長レビュー要望2: 欠勤で教室長が指名した相手への依頼 (absence_request_id
+    // あり) は、同じコマに複数の相手へ同時に出せる (早い者勝ち) ので外し、
+    // 下の designationUniq で「同じ相手へ二重に出さない」だけを守る。
+    // 指名の依頼と、それ以外 (募集・講師の交代申請) が同じコマに並ばないことは
+    // アプリ側 (sendDesignatedRequest / createOpenSwapOnBehalf) で確かめる
     activeUniq: uniqueIndex("swap_requests_active_uniq")
       .on(t.requesterId, t.date, t.slotNumber)
-      .where(sql`${t.status} = 'pending'`),
+      .where(
+        sql`${t.status} = 'pending' AND ${t.absenceRequestId} IS NULL`,
+      ),
+    designationUniq: uniqueIndex("swap_requests_designation_uniq")
+      .on(t.absenceRequestId, t.nominatedTutorId)
+      .where(
+        sql`${t.status} = 'pending' AND ${t.absenceRequestId} IS NOT NULL`,
+      ),
     // #309: absence_requests と同じ (取り消し済みなら閉じ方が必ず入っている)
     cancelledHasCloseKind: check(
       "swap_requests_cancelled_close_kind_chk",

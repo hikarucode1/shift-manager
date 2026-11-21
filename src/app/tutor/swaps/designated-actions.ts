@@ -2,7 +2,7 @@
 
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
-import { and, eq, isNotNull } from "drizzle-orm";
+import { and, eq, isNotNull, isNull } from "drizzle-orm";
 import { requireRole } from "@/lib/auth";
 import { notify, notifyAdmins } from "@/lib/notifications";
 import { db } from "@/db/client";
@@ -103,6 +103,25 @@ export async function requestDesignatedSubstitute(
     };
   }
 
+  // 募集などほかの申請と同じコマに並べない (要望2で指名の依頼は
+  // swap_requests_active_uniq の外に出したので、ここで確かめる)
+  const [other] = await db
+    .select({ id: swapRequests.id })
+    .from(swapRequests)
+    .where(
+      and(
+        eq(swapRequests.requesterId, profile.id),
+        eq(swapRequests.date, absence.date),
+        eq(swapRequests.slotNumber, absence.slotNumber),
+        eq(swapRequests.status, "pending"),
+        isNull(swapRequests.absenceRequestId),
+      ),
+    )
+    .limit(1);
+  if (other) {
+    return { ok: false, error: "このコマには既に依頼中・募集中の申請があります。" };
+  }
+
   try {
     await db.insert(swapRequests).values({
       requesterId: profile.id,
@@ -116,8 +135,8 @@ export async function requestDesignatedSubstitute(
     });
   } catch (e) {
     // 同じコマに出したままの交代申請がある (依頼済みを含む)
-    if (isUniqueViolation(e, "swap_requests_active_uniq")) {
-      return { ok: false, error: "このコマには既に依頼中の申請があります。" };
+    if (isUniqueViolation(e, "swap_requests_designation_uniq")) {
+      return { ok: false, error: "この講師には既に依頼中です。" };
     }
     console.error("requestDesignatedSubstitute failed", e);
     return {
@@ -153,7 +172,10 @@ export async function acceptDesignatedSubstitution(
   // だが、誰にするかを決めたのは教室長なので)。帰属のためだけの読み取りで、
   // 判定は下のトランザクションの中でやり直す
   const [head] = await db
-    .select({ designatedBy: absenceRequests.decidedBy })
+    .select({
+      designatedBy: absenceRequests.decidedBy,
+      absenceId: absenceRequests.id,
+    })
     .from(swapRequests)
     .innerJoin(
       absenceRequests,
@@ -214,7 +236,28 @@ export async function acceptDesignatedSubstitution(
       }),
     );
   } catch (e) {
-    if (e instanceof SwapBizError) return { ok: false, error: e.message };
+    if (e instanceof SwapBizError) {
+      // 要望2: 同じ欠勤でほかの相手が先に引き受けると、休む講師のコマはもう
+      // 付け替わっているので、ここは「付け替え対象が無い」で落ちる。
+      // 本人には何が起きたか分かる言い方で返す
+      const [taken] = await db
+        .select({ id: swapRequests.id })
+        .from(swapRequests)
+        .where(
+          and(
+            eq(swapRequests.absenceRequestId, head.absenceId),
+            eq(swapRequests.status, "approved"),
+          ),
+        )
+        .limit(1);
+      if (taken) {
+        return {
+          ok: false,
+          error: "ほかの講師が先に引き受けたため、この代講は決まりました。ありがとうございました。",
+        };
+      }
+      return { ok: false, error: e.message };
+    }
     console.error("acceptDesignatedSubstitution failed", e);
     return {
       ok: false,
@@ -222,8 +265,42 @@ export async function acceptDesignatedSubstitution(
     };
   }
 
+  // 要望2: 同じ欠勤でほかの相手に出していた依頼を閉じる (早い者勝ちで
+  // 決まったので)。⚠️ 承認の tx の外でやる。tx の中で触ると、ほかの相手の
+  // 同時の引き受け (自分の依頼の行 → weekly_shifts の順にロック) と逆順に
+  // なりデッドロックしうる。閉じ損ねても、その依頼を引き受けようとすると
+  // 上の「ほかの講師が先に引き受けた」で止まる
+  const others = await db
+    .update(swapRequests)
+    .set({
+      status: "cancelled",
+      closeKind: "unassignable",
+      decidedBy: null,
+      decidedAt: new Date(),
+      decisionNote: null,
+      updatedAt: new Date(),
+    })
+    .where(
+      and(
+        eq(swapRequests.absenceRequestId, head.absenceId),
+        eq(swapRequests.status, "pending"),
+      ),
+    )
+    .returning({ nomineeId: swapRequests.nominatedTutorId });
+  const otherNominees = others
+    .map((o) => o.nomineeId)
+    .filter((v): v is string => v !== null);
+
   const slotLabel = await slotLabelSafe(info.slotNumber);
   await Promise.all([
+    otherNominees.length > 0
+      ? notify(otherNominees, {
+          type: "swap_result",
+          title: "代講はほかの講師に決まりました",
+          body: `対象: ${noticeDate(info.date)} ${slotLabel} (${info.requesterName}さんの代講) ／ ${info.applicantName}さんが先に引き受けたので、依頼は締め切りました`,
+          href: "/tutor/open-swaps",
+        })
+      : Promise.resolve(),
     notify([info.requesterId], {
       type: "swap_result",
       title: "代講が決まりました",
@@ -278,6 +355,7 @@ export async function declineDesignatedSubstitution(
       requesterId: swapRequests.requesterId,
       date: swapRequests.date,
       slotNumber: swapRequests.slotNumber,
+      absenceId: swapRequests.absenceRequestId,
     });
   if (updated.length === 0) {
     return {
@@ -287,19 +365,36 @@ export async function declineDesignatedSubstitution(
   }
 
   const u = updated[0];
+  // 要望2: ほかの相手にも出していて、まだ返事待ちの人がいるか
+  const [stillWaiting] = u.absenceId
+    ? await db
+        .select({ id: swapRequests.id })
+        .from(swapRequests)
+        .where(
+          and(
+            eq(swapRequests.absenceRequestId, u.absenceId),
+            eq(swapRequests.status, "pending"),
+          ),
+        )
+        .limit(1)
+    : [];
   const slotLabel = await slotLabelSafe(u.slotNumber);
   await Promise.all([
     notify([u.requesterId], {
       type: "swap_result",
       title: "代講の依頼が断られました",
-      body: `対象: ${noticeDate(u.date)} ${slotLabel} ／ ${profile.displayName}さんが都合がつきませんでした。教室長からの連絡を待ってください`,
+      body: stillWaiting
+        ? `対象: ${noticeDate(u.date)} ${slotLabel} ／ ${profile.displayName}さんは都合がつきませんでした。ほかに頼んでいる講師の返事を待っています`
+        : `対象: ${noticeDate(u.date)} ${slotLabel} ／ ${profile.displayName}さんが都合がつきませんでした。教室長からの連絡を待ってください`,
       href: "/tutor/absences",
     }),
     // #344: 教室長は指定し直すか募集に出す (#345) ので、申請承認へ案内する
     notifyAdmins({
       type: "substitute_response",
       title: "指定した代講が断られました",
-      body: `対象: ${noticeDate(u.date)} ${slotLabel} ／ ${profile.displayName}さんが都合がつきません。指定し直すか、代講の募集に出してください`,
+      body: stillWaiting
+        ? `対象: ${noticeDate(u.date)} ${slotLabel} ／ ${profile.displayName}さんが都合がつきません。ほかに指名した講師の返事を待っています`
+        : `対象: ${noticeDate(u.date)} ${slotLabel} ／ ${profile.displayName}さんが都合がつきません。ほかの講師を指名するか、代講の募集に出してください`,
       href: "/admin/requests",
     }),
   ]);

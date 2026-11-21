@@ -19,7 +19,10 @@ import { hasSlotEnded } from "@/lib/swaps";
 import { designeeError } from "@/lib/designee-check";
 import { absenceTutorAssigned } from "@/lib/absences";
 import { pendingAbsenceActions } from "@/lib/pending-absence-actions";
-import { sendDesignatedRequest } from "@/lib/designation-request";
+import {
+  designeeNoteNames,
+  sendDesignatedRequests,
+} from "@/lib/designation-request";
 import { createOpenSwapOnBehalf } from "@/app/admin/requests/swap-actions";
 
 type ActionResult = { ok: true } | { ok: false; error: string };
@@ -249,6 +252,15 @@ const DecideInput = z.object({
    */
   designatedSubstituteId: z.string().uuid().nullable().optional(),
   /**
+   * 室長レビュー要望2: 指名する相手を複数選ぶとき (早い者勝ち)。
+   * designatedSubstituteId と両方あれば合わせる
+   */
+  designatedSubstituteIds: z
+    .array(z.string().uuid())
+    .max(10, "一度に指名できるのは 10 人までです。")
+    .optional()
+    .default([]),
+  /**
    * 本番チェック メモ21・23: 承認と一緒にする次の一手。
    * - designate: designatedSubstituteId の講師に、教室長から直接依頼を送る
    * - recruit: 代講の募集に出す (出られる講師全員に知らせる)
@@ -308,15 +320,21 @@ export async function decideAbsenceRequest(
     };
   }
   const { id, decision, decisionNote } = parsed.data;
+  const requestedIds = [
+    ...new Set([
+      ...(parsed.data.designatedSubstituteId
+        ? [parsed.data.designatedSubstituteId]
+        : []),
+      ...parsed.data.designatedSubstituteIds,
+    ]),
+  ];
   const followUp =
     decision !== "approved"
       ? "none"
       : (parsed.data.followUp ??
-        (parsed.data.designatedSubstituteId ? "designate" : "none"));
-  const designatedSubstituteId =
-    followUp === "designate"
-      ? (parsed.data.designatedSubstituteId ?? null)
-      : null;
+        (requestedIds.length > 0 ? "designate" : "none"));
+  const designeeIds = followUp === "designate" ? requestedIds : [];
+  const designatedSubstituteId = designeeIds[0] ?? null;
   if (followUp === "designate" && designatedSubstituteId === null) {
     return { ok: false, error: "代講に指名する講師を選んでください。" };
   }
@@ -360,10 +378,10 @@ export async function decideAbsenceRequest(
       };
     }
     // #331: 指定する相手は、休む本人以外の有効な講師で、そのコマが空いている人
-    if (designatedSubstituteId !== null) {
+    for (const designeeId of designeeIds) {
       const error = await designeeError({
         absentTutorId: target.tutorId,
-        designeeId: designatedSubstituteId,
+        designeeId,
         date: target.date,
         slotNumber: target.slotNumber,
       });
@@ -420,15 +438,15 @@ export async function decideAbsenceRequest(
   let followUpNote = "";
   let followUpError: string | null = null;
   if (followUp === "designate") {
-    const sent = await sendDesignatedRequest({
+    const sent = await sendDesignatedRequests({
       absenceId: updated[0].id,
       actorId: profile.id,
+      designeeIds,
     });
-    if (sent.ok) {
-      followUpNote = ` ／ 代講は${sent.designeeName}さんに依頼しました（返事待ち）`;
-    } else {
-      followUpError = sent.error;
+    if (sent.sentNames.length > 0) {
+      followUpNote = ` ／ 代講は${designeeNoteNames(sent.sentNames)}に依頼しました（返事待ち）`;
     }
+    if (sent.errors.length > 0) followUpError = sent.errors.join(" ／ ");
   } else if (followUp === "recruit") {
     const [target] = await db
       .select({

@@ -77,4 +77,52 @@ describe("designationState (#331)", () => {
       "none",
     );
   });
+
+  describe("複数の相手に同時に依頼 (室長レビュー要望2)", () => {
+    it("1 人が断っても、ほかに返事待ちがいれば依頼中", () => {
+      expect(
+        designationState({
+          ...base,
+          designatedId: "C",
+          linkedSwaps: [
+            swap({ status: "cancelled", closeKind: "nominee_declined" }),
+            swap({ nominatedTutorId: "C" }),
+          ],
+        }).kind,
+      ).toBe("requested");
+    });
+    it("全員に断られたら、断られた", () => {
+      expect(
+        designationState({
+          ...base,
+          designatedId: "C",
+          linkedSwaps: [
+            swap({ status: "cancelled", closeKind: "nominee_declined" }),
+            swap({
+              nominatedTutorId: "C",
+              status: "cancelled",
+              closeKind: "nominee_declined",
+            }),
+          ],
+        }).kind,
+      ).toBe("declined");
+    });
+    it("最後に指定した相手でなくても、誰かが引き受けたら成立", () => {
+      expect(
+        designationState({
+          ...base,
+          absenceStatus: "cancelled",
+          designatedId: "C",
+          linkedSwaps: [
+            swap({ status: "approved" }),
+            swap({
+              nominatedTutorId: "C",
+              status: "cancelled",
+              closeKind: "unassignable",
+            }),
+          ],
+        }).kind,
+      ).toBe("accepted");
+    });
+  });
 });

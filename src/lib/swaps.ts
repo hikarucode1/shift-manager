@@ -227,7 +227,8 @@ export async function isTutorBusyAt(
  * ⚠️ 募集を閉じる `closeUnassignableSwap` (#293) は、同じ条件を UPDATE の
  * WHERE に自前で持つ (1 文にするため)。条件を変えるときは両方変えること。
  * `swap_requests_active_uniq` (0006) が (requester_id, date, slot_number) の
- * pending を 1 件に制限している
+ * pending を 1 件に制限している (要望2 の 0058 から、欠勤の指名の依頼は対象外で
+ * 複数ありうる。ここは「何か出したままか」が分かればよいので 1 件目を返す)
  */
 export async function findPendingSwap(
   requesterId: string,
@@ -275,7 +276,9 @@ export async function closeUnassignableSwap(
   slotNumber: number,
 ): Promise<string | null> {
   // 探して閉じるのを 1 文にする (tx の中の往復を減らす)。
-  // `swap_requests_active_uniq` (0006) で pending は多くても 1 件
+  // `swap_requests_active_uniq` (0006) で募集・交代申請の pending は多くても
+  // 1 件。要望2 (0058) で欠勤の指名の依頼は複数ありうるが、それらもまとめて閉じる
+  // (返すのは 1 件目の id。応募者がいるのは募集だけなので通知の用は足りる)
   const closed = await executor
     .update(swapRequests)
     .set({

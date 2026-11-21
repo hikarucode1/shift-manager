@@ -1,5 +1,5 @@
 import "server-only";
-import { and, eq } from "drizzle-orm";
+import { and, eq, isNull } from "drizzle-orm";
 import { db } from "@/db/client";
 import {
   absenceRequests,
@@ -26,7 +26,10 @@ import { noticeDate } from "@/lib/week";
  * (`acceptDesignatedSubstitution` / `declineDesignatedSubstitution`) は
  * そのまま使える。
  *
- * 欠勤は承認済みで、`designated_substitute_id` が入っていること。
+ * 室長レビュー要望2: 1 つの欠勤で複数の相手に同時に依頼できる (早い者勝ち)。
+ * 相手は `designeeId` で渡す (省略時は `designated_substitute_id`)。
+ *
+ * 欠勤は承認済みであること。
  * 送れなかったときは理由を返す (欠勤の承認や指定は戻さない。A の画面には
  * 今まで通り依頼ボタンが出るので、そこから送り直せる)。
  */
@@ -34,6 +37,8 @@ export async function sendDesignatedRequest(i: {
   absenceId: string;
   /** 依頼を作った人 (教室長) */
   actorId: string;
+  /** 依頼する相手。省略時は欠勤の `designated_substitute_id` */
+  designeeId?: string;
 }): Promise<{ ok: true; designeeName: string } | { ok: false; error: string }> {
   const [absence] = await db
     .select({
@@ -57,7 +62,7 @@ export async function sendDesignatedRequest(i: {
   if (!absence) {
     return { ok: false, error: "承認済みの欠勤が見つかりません。" };
   }
-  const designatedId = absence.designatedId;
+  const designatedId = i.designeeId ?? absence.designatedId;
   if (!designatedId) {
     return { ok: false, error: "代講の相手が指定されていません。" };
   }
@@ -89,6 +94,29 @@ export async function sendDesignatedRequest(i: {
     };
   }
 
+  // 指名の依頼と、募集・講師の交代申請は同じコマに並べない (DB の部分 unique
+  // は別々なので、ここで確かめる。要望2で swap_requests_active_uniq から
+  // 指名の依頼を外した)
+  const [other] = await db
+    .select({ id: swapRequests.id })
+    .from(swapRequests)
+    .where(
+      and(
+        eq(swapRequests.requesterId, absence.tutorId),
+        eq(swapRequests.date, absence.date),
+        eq(swapRequests.slotNumber, absence.slotNumber),
+        eq(swapRequests.status, "pending"),
+        isNull(swapRequests.absenceRequestId),
+      ),
+    )
+    .limit(1);
+  if (other) {
+    return {
+      ok: false,
+      error: "このコマには既に募集中・依頼中の申請があります。",
+    };
+  }
+
   try {
     await db.insert(swapRequests).values({
       requesterId: absence.tutorId,
@@ -101,11 +129,8 @@ export async function sendDesignatedRequest(i: {
       absenceRequestId: absence.id,
     });
   } catch (e) {
-    if (isUniqueViolation(e, "swap_requests_active_uniq")) {
-      return {
-        ok: false,
-        error: "このコマには既に依頼中・募集中の申請があります。",
-      };
+    if (isUniqueViolation(e, "swap_requests_designation_uniq")) {
+      return { ok: false, error: "この講師には既に依頼中です。" };
     }
     console.error("sendDesignatedRequest failed", e);
     return { ok: false, error: "依頼の送信に失敗しました。" };
@@ -125,4 +150,42 @@ export async function sendDesignatedRequest(i: {
     href: "/tutor/open-swaps",
   });
   return { ok: true, designeeName };
+}
+
+/**
+ * 室長レビュー要望2: 複数の相手にまとめて依頼する (早い者勝ち)。
+ * 1 人ずつ `sendDesignatedRequest` を呼び、送れた相手の名前と、送れなかった
+ * 理由 (「〇〇さん: …」) を返す。1 人でも送れれば、その欠勤は返事待ちになる
+ */
+export async function sendDesignatedRequests(i: {
+  absenceId: string;
+  actorId: string;
+  designeeIds: readonly string[];
+}): Promise<{ sentNames: string[]; errors: string[] }> {
+  const sentNames: string[] = [];
+  const errors: string[] = [];
+  for (const designeeId of i.designeeIds) {
+    const sent = await sendDesignatedRequest({
+      absenceId: i.absenceId,
+      actorId: i.actorId,
+      designeeId,
+    });
+    if (sent.ok) {
+      sentNames.push(sent.designeeName);
+    } else {
+      const [p] = await db
+        .select({ name: profiles.displayName })
+        .from(profiles)
+        .where(eq(profiles.id, designeeId))
+        .limit(1);
+      errors.push(`${p?.name ?? "指名した講師"}さん: ${sent.error}`);
+    }
+  }
+  return { sentNames, errors };
+}
+
+/** 「Aさん」/「Aさん・Bさん（早い者勝ち）」 */
+export function designeeNoteNames(names: readonly string[]): string {
+  const joined = names.map((n) => `${n}さん`).join("・");
+  return names.length > 1 ? `${joined}（早い者勝ち）` : joined;
 }
