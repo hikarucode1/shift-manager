@@ -48,7 +48,7 @@ export async function listAssignmentsForDate(
   const parsed = z
     .object({
       date: z.string().refine(isValidIsoDate, "日付が不正です。"),
-      purpose: z.enum(["absence", "swap", "record"]),
+      purpose: z.enum(["absence", "swap"]),
     })
     .safeParse(input);
   if (!parsed.success) {

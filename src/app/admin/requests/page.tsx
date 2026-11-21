@@ -16,7 +16,6 @@ import { Badge } from "@/components/ui/badge";
 import { cn } from "@/lib/utils";
 import { AbsenceOnBehalfForm } from "./absence-on-behalf-form";
 import { OpenSwapOnBehalfForm } from "./swap-on-behalf-form";
-import { RecordSubstitutionForm } from "./record-substitution-form";
 import { RequestsPanel } from "./requests-panel";
 import { UnfilledAbsencesPanel } from "./unfilled-absences-panel";
 import { SwapRequestsPanel } from "./swap-requests-panel";
@@ -115,7 +114,6 @@ export default async function AdminRequestsPage({
       <div className="flex flex-wrap gap-2">
         <AbsenceOnBehalfForm today={today} />
         <OpenSwapOnBehalfForm today={today} />
-        <RecordSubstitutionForm today={today} />
       </div>
 
       {/* ⚠️ role="tablist"/"tab" は付けない。実体は <a href> のページ遷移で、
