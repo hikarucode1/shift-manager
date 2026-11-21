@@ -261,7 +261,7 @@
   },
   "tutor/absence-pending": {
     "w": 756,
-    "h": 398,
+    "h": 462,
     "dpr": 2
   },
   "tutor/absence-phone": {
@@ -331,32 +331,32 @@
   },
   "tutor/home-after-sub": {
     "w": 756,
-    "h": 636,
+    "h": 676,
     "dpr": 2
   },
   "tutor/home-confirmed": {
     "w": 780,
-    "h": 550,
+    "h": 556,
     "dpr": 2
   },
   "tutor/home-links": {
     "w": 756,
-    "h": 530,
+    "h": 528,
     "dpr": 2
   },
   "tutor/home-next-week": {
     "w": 756,
-    "h": 728,
+    "h": 734,
     "dpr": 2
   },
   "tutor/home-overview": {
     "w": 780,
-    "h": 2258,
+    "h": 2264,
     "dpr": 2
   },
   "tutor/home-week": {
     "w": 780,
-    "h": 600,
+    "h": 606,
     "dpr": 2
   },
   "tutor/me-profile": {
@@ -386,7 +386,7 @@
   },
   "tutor/regular-grid": {
     "w": 720,
-    "h": 760,
+    "h": 802,
     "dpr": 2
   },
   "tutor/regular-list": {
@@ -396,12 +396,12 @@
   },
   "tutor/regular-submit": {
     "w": 756,
-    "h": 282,
+    "h": 280,
     "dpr": 2
   },
   "tutor/regular-submitted": {
     "w": 756,
-    "h": 322,
+    "h": 320,
     "dpr": 2
   },
   "tutor/schedules": {
@@ -411,7 +411,7 @@
   },
   "tutor/sub-applied": {
     "w": 756,
-    "h": 352,
+    "h": 400,
     "dpr": 2
   },
   "tutor/sub-asked": {

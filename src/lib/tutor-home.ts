@@ -80,7 +80,10 @@ export type HomeShiftRow = {
   date: string;
   weekdayLabel: string;
   /** #336: コマごとに、担当する生徒 (座席表 CSV の割り当て) も出す */
-  slots: Pick<ScheduleSlot, "slotNumber" | "label" | "isTraining" | "students">[];
+  slots: Pick<
+    ScheduleSlot,
+    "slotNumber" | "label" | "startTime" | "endTime" | "isTraining" | "students"
+  >[];
   status: "confirmed" | "absent";
 };
 
@@ -135,6 +138,8 @@ function buildWeekRows(week: WeekSchedule): {
       slots: (confirmed ? liveSlots : d.slots).map((s) => ({
         slotNumber: s.slotNumber,
         label: s.label,
+        startTime: s.startTime,
+        endTime: s.endTime,
         isTraining: s.isTraining,
         students: s.students,
       })),

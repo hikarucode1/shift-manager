@@ -453,7 +453,7 @@ export function TrainingEditor({ data }: TrainingEditorProps) {
                       title={`${s.startTime}〜${s.endTime}`}
                       aria-pressed={on}
                       className={cn(
-                        "flex min-h-11 flex-col items-center justify-center rounded-md border px-1 text-sm font-medium leading-tight transition-colors",
+                        "flex min-h-11 flex-col items-center justify-center rounded-md border px-1 py-1 text-sm font-medium leading-tight transition-colors",
                         on
                           ? "border-accent bg-accent text-accent-foreground"
                           : regular
@@ -464,6 +464,11 @@ export function TrainingEditor({ data }: TrainingEditorProps) {
                       )}
                     >
                       {s.label}
+                      {s.startTime && s.endTime && (
+                        <span className="text-[10px] font-normal tabular-nums opacity-80">
+                          {s.startTime}–{s.endTime}
+                        </span>
+                      )}
                       {regular && (
                         <span className="text-[10px] font-normal">
                           レギュラー

@@ -33,6 +33,8 @@ import { shortDate, weekRangeLabel } from "@/lib/week";
 import { cn } from "@/lib/utils";
 import { deadlineLabel } from "@/lib/deadline";
 import { Badge } from "@/components/ui/badge";
+import { SlotTime } from "@/components/slot-time";
+import { slotTimeRange } from "@/lib/slot-time";
 import { UNDECIDED_HINT, UNDECIDED_LABEL } from "@/lib/undecided-slot";
 import { TUTOR_SCHEDULES_PATH } from "@/lib/monthly-schedule";
 
@@ -340,8 +342,16 @@ export default async function TutorHome({
                 {/* #336: コマごとに担当する生徒を全部出す */}
                 <ul className="min-w-0 flex-1 space-y-1">
                   {row.slots.map((slot) => (
-                    <li key={slot.slotNumber} className="flex gap-2 text-sm">
+                    // 授業時間を足したので、生徒が並びきらないときは次の行に送る
+                    <li
+                      key={slot.slotNumber}
+                      className="flex flex-wrap items-baseline gap-x-2 text-sm"
+                    >
                       <span className="shrink-0 font-medium">{slot.label}</span>
+                      <SlotTime
+                        time={slotTimeRange(slot.startTime, slot.endTime)}
+                        className="shrink-0"
+                      />
                       {slot.isTraining && slot.students.length === 0 ? (
                         <span className="self-center">
                           <TrainingBadge />

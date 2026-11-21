@@ -30,7 +30,12 @@ const STATUS_LABEL: Record<
   cancelled: { text: "取り下げ", variant: "outline" },
 };
 
-type Slot = { slotNumber: number; label: string };
+type Slot = {
+  slotNumber: number;
+  label: string;
+  /** 授業時間 ("19:50–21:20")。分からなければ "" */
+  time: string;
+};
 
 export function DayOffPanel({
   firstDate,
@@ -189,13 +194,18 @@ export function DayOffPanel({
                       aria-pressed={picked.includes(s.slotNumber)}
                       onClick={() => toggle(s.slotNumber)}
                       className={cn(
-                        "min-h-11 rounded-md border text-sm font-medium transition-colors",
+                        "flex min-h-11 flex-col items-center justify-center rounded-md border px-1 py-1 text-sm font-medium leading-tight transition-colors",
                         picked.includes(s.slotNumber)
                           ? "border-primary bg-primary text-primary-foreground"
                           : "border-input bg-background hover:bg-muted",
                       )}
                     >
                       {s.label}
+                      {s.time && (
+                        <span className="text-[10px] font-normal tabular-nums opacity-80">
+                          {s.time}
+                        </span>
+                      )}
                     </button>
                   ))}
                 </div>

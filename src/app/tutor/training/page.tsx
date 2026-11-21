@@ -19,6 +19,7 @@ import {
 } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { jstToday } from "@/lib/week";
+import { getSlotTimes } from "@/lib/slot-meta";
 import { deadlineLabel } from "@/lib/deadline";
 import { cn } from "@/lib/utils";
 import { TrainingEditor } from "./training-editor";
@@ -109,8 +110,9 @@ export default async function TutorTrainingPage({
   }
 
   const today = jstToday();
-  const [activePeriods, confirmedRows] = await Promise.all([
+  const [activePeriods, slotTimes, confirmedRows] = await Promise.all([
     getActiveTrainingPeriods(),
+    getSlotTimes(),
     // Issue #75 (ε): 自分の確定済み講習シフト (今日以降の日付のみ)。
     // period_name も併せて取得して期ごとにグループ化表示。
     db
@@ -182,7 +184,12 @@ export default async function TutorTrainingPage({
                   <ul className="ml-4 text-muted-foreground">
                     {Array.from(daySlots.entries()).map(([date, slots]) => (
                       <li key={date}>
-                        {date}: {slots.map((s) => `${s}限`).join(", ")}
+                        {date}:{" "}
+                        {slots
+                          .map((s) =>
+                            slotTimes[s] ? `${s}限 ${slotTimes[s]}` : `${s}限`,
+                          )
+                          .join(", ")}
                       </li>
                     ))}
                   </ul>

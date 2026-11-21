@@ -1,6 +1,7 @@
 import { requireRole } from "@/lib/auth";
 import { firstDayOffDate, getTutorDayOffs } from "@/lib/day-offs";
 import { getSlotMeta, slotNumbers } from "@/lib/slot-meta";
+import { slotTimeRange } from "@/lib/slot-time";
 import { jstToday } from "@/lib/week";
 import { TutorRequestsNav } from "@/components/tutor-requests-nav";
 import { DayOffPanel } from "./day-off-panel";
@@ -31,6 +32,7 @@ export default async function TutorDayOffsPage() {
         slots={slotNumbers(meta).map((n) => ({
           slotNumber: n,
           label: meta.get(n)?.label ?? `${n}限`,
+          time: slotTimeRange(meta.get(n)?.start ?? "", meta.get(n)?.end ?? ""),
         }))}
         history={history}
       />

@@ -17,6 +17,8 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import { shortDate } from "@/lib/week";
+import { SlotTime } from "@/components/slot-time";
+import type { SlotTimes } from "@/lib/slot-time";
 import { cn } from "@/lib/utils";
 import { cancelAbsenceRequest, createAbsenceRequest } from "./actions";
 import { requestDesignatedSubstitute } from "@/app/tutor/swaps/designated-actions";
@@ -37,9 +39,12 @@ const REASON_CATEGORIES = ["体調不良", "私用", "学業", "その他"] as c
 export function AbsencePanel({
   upcoming,
   history,
+  slotTimes,
 }: {
   upcoming: UpcomingShift[];
   history: TutorAbsenceRow[];
+  /** コマ番号 → 授業時間。申請履歴のコマに添える */
+  slotTimes: SlotTimes;
 }) {
   const router = useRouter();
   const [isPending, startTransition] = useTransition();
@@ -370,6 +375,10 @@ export function AbsencePanel({
                     <div className="flex flex-wrap items-center gap-2">
                       <span className="font-medium">
                         {shortDate(h.date)}（{h.weekdayLabel}） {h.slotLabel}
+                        <SlotTime
+                          time={slotTimes[h.slotNumber]}
+                         
+                        />
                       </span>
                       <Badge variant={st.variant}>{st.text}</Badge>
                       {/* #217: 自分で出していない行が「承認済み」とだけ出ると、

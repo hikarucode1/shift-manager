@@ -37,3 +37,14 @@ export function jstTimeOfDay(now: Date = new Date()): string {
     hourCycle: "h23",
   }).format(now);
 }
+
+/** コマ番号 → 授業時間の表記 ("19:50–21:20")。時間が取れないコマは "" */
+export type SlotTimes = Record<number, string>;
+
+/**
+ * 授業時間の表記 ("19:50–21:20")。講師の画面でコマの名前に添える。
+ * どちらかが欠けていたら半端な表記にせず "" (呼び出し側は何も出さない)
+ */
+export function slotTimeRange(start: string, end: string): string {
+  return start && end ? `${start}–${end}` : "";
+}
