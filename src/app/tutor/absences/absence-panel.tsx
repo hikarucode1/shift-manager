@@ -2,7 +2,8 @@
 
 import { useEffect, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
-import { AlertCircle, Check, CheckCircle2, Info } from "lucide-react";
+import { AlertCircle, Check, CheckCircle2, Info, Phone } from "lucide-react";
+import { SCHOOL_PHONE, SCHOOL_PHONE_HREF } from "@/lib/school";
 import { isIndeterminate, toFailedResult } from "@/lib/action-failure";
 import type { TutorAbsenceRow, UpcomingShift } from "@/lib/absences";
 import { Button } from "@/components/ui/button";
@@ -133,8 +134,23 @@ export function AbsencePanel({
         <CardHeader>
           <CardTitle className="text-base">新しい欠勤申請</CardTitle>
           <CardDescription>
-            申請できるのは今日以降の自分の確定シフトです。
+            申請できるのは明日以降の自分の確定シフトです。
           </CardDescription>
+          {/* 2026/11/21 本人: 当日の欠勤はアプリでは受け付けず、電話で */}
+          <a
+            href={SCHOOL_PHONE_HREF}
+            className="mt-2 flex items-center gap-2 rounded-lg border border-destructive/30 bg-destructive/5 p-3 text-sm"
+          >
+            <Phone className="size-4 shrink-0 text-destructive" />
+            <span>
+              <span className="font-medium">当日の欠勤は電話で</span>
+              教室に連絡してください（
+              <span className="font-medium tabular-nums underline">
+                {SCHOOL_PHONE}
+              </span>
+              ）
+            </span>
+          </a>
         </CardHeader>
         <CardContent>
           {upcoming.length === 0 ? (

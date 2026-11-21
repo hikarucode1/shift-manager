@@ -1,5 +1,6 @@
 import Link from "next/link";
-import { CircleHelp, LogOut, UserRound } from "lucide-react";
+import { CircleHelp, LogOut, Phone, UserRound } from "lucide-react";
+import { SCHOOL_PHONE, SCHOOL_PHONE_HREF } from "@/lib/school";
 import { Button } from "@/components/ui/button";
 import { NotificationBell } from "@/components/notification-bell";
 import { ContactLink } from "@/components/contact/contact-link";
@@ -26,10 +27,20 @@ export function TutorShell({
         <div className="flex items-center justify-between px-4 py-3">
           <Link href="/tutor" className="flex shrink-0 items-baseline gap-2 whitespace-nowrap">
             <span className="text-lg font-semibold">Shift Manager</span>
-            {/* 360px 幅では入りきらないので「講師」を省く (#348 でマイページのボタンが増えた) */}
-            <span className="text-xs text-primary-foreground/70 max-[380px]:hidden">講師</span>
+            {/* 狭い幅では入りきらないので「講師」を省く (#348 でマイページのボタン、
+                2026/11/21 に電話のボタンが増えた。390px でも詰まるので 420px 以下で省く) */}
+            <span className="text-xs text-primary-foreground/70 max-[420px]:hidden">講師</span>
           </Link>
           <div className="flex min-w-0 items-center gap-1.5">
+            {/* 2026/11/21 本人: 当日の欠勤は電話で。押すとそのまま教室に電話する */}
+            <a
+              href={SCHOOL_PHONE_HREF}
+              aria-label={`教室に電話する (${SCHOOL_PHONE})`}
+              title={`教室に電話する (${SCHOOL_PHONE})`}
+              className="flex size-8 items-center justify-center rounded-md hover:bg-primary-foreground/10"
+            >
+              <Phone className="size-5" />
+            </a>
             <NotificationBell audience="tutor" />
             {/* #320: お問い合わせ */}
             <ContactLink
