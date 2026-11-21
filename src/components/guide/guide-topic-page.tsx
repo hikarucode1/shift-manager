@@ -164,7 +164,13 @@ function Section({ section }: { section: GuideSection }) {
 }
 
 /**
- * 画面の画像。押すと元の大きさで開く (小さくて読めないとき用)。
+ * 画面の画像。PC のブラウザでは、押すと元の大きさで開く (小さくて読めない
+ * とき用)。
+ *
+ * ⚠️ ホーム画面に追加したアプリでは開かない (`standalone:pointer-events-none`)。
+ * タブも「戻る」も無いので、画像を開いたまま戻れなくなる (2026/11/21、月の
+ * スケジュールの PDF で本人が踏んだのと同じ)。念のためスマホ・タブレットでも
+ * 開かない (`touch:`)。指で拡大してもらう。
  *
  * あらかじめ WebP に縮めた静的ファイルなので、next/image は通さない
  * (変換の回数に上限があるうえ、ここでは得るものが無い)
@@ -175,7 +181,7 @@ function Shot({ image }: { image: GuideImage }) {
       href={image.src}
       target="_blank"
       rel="noopener noreferrer"
-      className="block w-fit max-w-full overflow-hidden rounded-lg border bg-muted/40 shadow-sm"
+      className="block w-fit max-w-full overflow-hidden rounded-lg border bg-muted/40 shadow-sm standalone:pointer-events-none touch:pointer-events-none"
       style={{ maxWidth: image.displayWidth }}
     >
       {/* eslint-disable-next-line @next/next/no-img-element */}
