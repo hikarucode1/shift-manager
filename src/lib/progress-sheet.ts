@@ -9,6 +9,29 @@
 /** app_settings のキー */
 export const PROGRESS_SHEET_KEY = "progress_sheet_url";
 
+/** 室長レビュー要望13: 講師マニュアル (スプレッドシート) の URL のキー */
+export const TUTOR_MANUAL_KEY = "tutor_manual_url";
+
+/**
+ * 教室長が URL を登録して講師のホームから開くスプレッドシート。
+ * 進行表 (#339) と講師マニュアル (要望13) は同じ仕組みで、キーと表示だけが違う。
+ */
+export const SHEET_LINKS = {
+  progress: {
+    key: PROGRESS_SHEET_KEY,
+    title: "進行表",
+    openLabel: "進行表を開く",
+  },
+  manual: {
+    key: TUTOR_MANUAL_KEY,
+    title: "講師マニュアル",
+    openLabel: "講師マニュアルを開く",
+  },
+} as const;
+
+export type SheetLinkKind = keyof typeof SHEET_LINKS;
+export const SHEET_LINK_KINDS = Object.keys(SHEET_LINKS) as SheetLinkKind[];
+
 /** 登録できる URL の長さの上限 (スプレッドシートの URL は 100 字程度) */
 const MAX_LENGTH = 2000;
 

@@ -1,6 +1,7 @@
 import Link from "next/link";
 import {
   AlertCircle,
+  BookOpen,
   CalendarClock,
   ChevronLeft,
   ChevronRight,
@@ -19,7 +20,10 @@ import {
   getTutorWeekView,
   MAX_WEEK_OFFSET,
 } from "@/lib/tutor-home";
-import { getProgressSheetUrl } from "@/lib/progress-sheet-db";
+import {
+  getProgressSheetUrl,
+  getTutorManualUrl,
+} from "@/lib/progress-sheet-db";
 import {
   countUnconfirmedAnnouncements,
   TUTOR_ANNOUNCEMENTS_PATH,
@@ -113,6 +117,7 @@ export default async function TutorHome({
     [teaching],
     unconfirmedAnnouncements,
     otherWeek,
+    tutorManualUrl,
   ] = await Promise.all([
     getTutorHomeData(profile.id),
     // #339: 教室長が登録した進行表 (スプレッドシート)
@@ -130,6 +135,8 @@ export default async function TutorHome({
     countUnconfirmedAnnouncements(profile.id),
     // 要望8: 来週以降を開いたときだけ、その週を読む
     weekOffset > 0 ? getTutorWeekView(profile.id, weekOffset) : null,
+    // 室長レビュー要望13: 教室長が登録した講師マニュアル (スプレッドシート)
+    getTutorManualUrl(),
   ]);
   const shownWeek = otherWeek ?? {
     offset: 0,
@@ -393,6 +400,20 @@ export default async function TutorHome({
           <ExternalLink className="size-5 shrink-0 text-primary" />
           <span className="flex-1 text-sm font-medium">進行表を開く</span>
           <ChevronRight className="size-4 text-muted-foreground" />
+        </a>
+      )}
+
+      {/* 室長レビュー要望13: 講師マニュアル (教室長が登録したときだけ出す) */}
+      {tutorManualUrl && (
+        <a
+          href={tutorManualUrl}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="flex items-center gap-3 rounded-xl border p-3 transition-colors hover:bg-muted/50"
+        >
+          <BookOpen className="size-5 shrink-0 text-primary" />
+          <span className="flex-1 text-sm font-medium">講師マニュアル</span>
+          <ExternalLink className="size-4 text-muted-foreground" />
         </a>
       )}
 

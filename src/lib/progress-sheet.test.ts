@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { normalizeProgressSheetUrl } from "./progress-sheet";
+import { normalizeProgressSheetUrl, SHEET_LINKS } from "./progress-sheet";
 
 describe("normalizeProgressSheetUrl (#339)", () => {
   it("スプレッドシートの URL はそのまま受け付ける (前後の空白は落とす)", () => {
@@ -24,5 +24,12 @@ describe("normalizeProgressSheetUrl (#339)", () => {
     ["javascript", "javascript:alert(1)"],
   ])("%s は受け付けない", (_, input) => {
     expect(normalizeProgressSheetUrl(input).ok).toBe(false);
+  });
+});
+
+describe("SHEET_LINKS (室長レビュー要望13)", () => {
+  it("進行表と講師マニュアルは別のキーに保存する", () => {
+    expect(SHEET_LINKS.progress.key).toBe("progress_sheet_url");
+    expect(SHEET_LINKS.manual.key).toBe("tutor_manual_url");
   });
 });
