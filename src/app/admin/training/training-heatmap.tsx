@@ -10,7 +10,11 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { shortDate } from "@/lib/week";
 import { cn } from "@/lib/utils";
-import { SubjectFilterBar, TrackDot } from "@/components/subject-filter-bar";
+import {
+  SubjectFilterBar,
+  TrackDot,
+  TutorFilterSelect,
+} from "@/components/subject-filter-bar";
 import {
   NO_SUBJECT_FILTER,
   isSubjectFilterOn,
@@ -65,19 +69,33 @@ export function TrainingHeatmap({ data }: { data: HeatmapData }) {
   // マスを開いた一覧では合う人を先頭に、合わない人は薄く残す (11/18 本人)
   const [subjectFilter, setSubjectFilter] =
     useState<SubjectFilter>(NO_SUBJECT_FILTER);
-  const filterOn = isSubjectFilterOn(subjectFilter);
+  // 室長レビュー要望6: 講師 1 人に絞る (文理・科目と AND)
+  const [tutorFilter, setTutorFilter] = useState<string | null>(null);
+  const tutorOptions = useMemo(() => {
+    const byId = new Map<string, string>();
+    for (const list of Object.values(tutorsByCell)) {
+      for (const t of list) byId.set(t.id, t.name);
+    }
+    return [...byId]
+      .map(([id, name]) => ({ id, name }))
+      .sort((a, b) => a.name.localeCompare(b.name, "ja"));
+  }, [tutorsByCell]);
+  const filterOn = isSubjectFilterOn(subjectFilter) || tutorFilter !== null;
   const isMatch = (t: HeatmapTutor) =>
-    !filterOn || matchesSubjectFilter(t, subjectFilter);
+    (tutorFilter === null || t.id === tutorFilter) &&
+    matchesSubjectFilter(t, subjectFilter);
   const shownCounts = useMemo<Record<string, number>>(() => {
     if (!filterOn) return counts;
     const out: Record<string, number> = {};
     for (const [key, list] of Object.entries(tutorsByCell)) {
-      out[key] = list.filter((t) =>
-        matchesSubjectFilter(t, subjectFilter),
+      out[key] = list.filter(
+        (t) =>
+          (tutorFilter === null || t.id === tutorFilter) &&
+          matchesSubjectFilter(t, subjectFilter),
       ).length;
     }
     return out;
-  }, [filterOn, counts, tutorsByCell, subjectFilter]);
+  }, [filterOn, counts, tutorsByCell, subjectFilter, tutorFilter]);
   const shownMax = filterOn
     ? Math.max(0, ...Object.values(shownCounts))
     : maxCount;
@@ -203,8 +221,14 @@ export function TrainingHeatmap({ data }: { data: HeatmapData }) {
       )}
 
       <div className="space-y-1.5 rounded-lg border bg-muted/30 p-3">
-        <p className="text-sm font-medium">文理・科目で絞り込む</p>
-        <SubjectFilterBar value={subjectFilter} onChange={setSubjectFilter} />
+        <p className="text-sm font-medium">文理・科目・講師で絞り込む</p>
+        <SubjectFilterBar value={subjectFilter} onChange={setSubjectFilter}>
+          <TutorFilterSelect
+            tutors={tutorOptions}
+            value={tutorFilter}
+            onChange={setTutorFilter}
+          />
+        </SubjectFilterBar>
         {filterOn && (
           <p className="text-xs text-muted-foreground">
             表の数字は、絞り込みに合う希望者の数です。マスを押すと合う人が先頭に出ます。
