@@ -2,6 +2,7 @@ import Link from "next/link";
 import {
   AlertCircle,
   CalendarClock,
+  ChevronLeft,
   ChevronRight,
   ExternalLink,
   MapPin,
@@ -12,7 +13,11 @@ import { eq } from "drizzle-orm";
 import { db } from "@/db/client";
 import { profiles } from "@/db/schema";
 import { requireRole } from "@/lib/auth";
-import { getTutorHomeData } from "@/lib/tutor-home";
+import {
+  getTutorHomeData,
+  getTutorWeekView,
+  MAX_WEEK_OFFSET,
+} from "@/lib/tutor-home";
 import { getProgressSheetUrl } from "@/lib/progress-sheet-db";
 import {
   countUnconfirmedAnnouncements,
@@ -65,25 +70,59 @@ function TrainingBadge() {
   );
 }
 
-export default async function TutorHome() {
+/** 室長レビュー要望8: ?week=1 で来週、2 で再来週…。範囲外や数字でないときは今週 */
+function parseWeekOffset(v: string | undefined): number {
+  const n = Number(v);
+  if (!Number.isInteger(n) || n < 0) return 0;
+  return Math.min(n, MAX_WEEK_OFFSET);
+}
+
+function weekHeading(offset: number, range: { start: string; end: string }) {
+  const label = weekRangeLabel(range);
+  if (offset === 0) return `今週のシフト（${label}）`;
+  if (offset === 1) return `来週（${label}）`;
+  if (offset === 2) return `再来週（${label}）`;
+  return `${label} の週`;
+}
+
+export default async function TutorHome({
+  searchParams,
+}: {
+  searchParams: Promise<{ week?: string }>;
+}) {
   const { profile } = await requireRole("tutor");
-  const [data, progressSheetUrl, [teaching], unconfirmedAnnouncements] =
-    await Promise.all([
-      getTutorHomeData(profile.id),
-      // #339: 教室長が登録した進行表 (スプレッドシート)
-      getProgressSheetUrl(),
-      // #348: 文理・担当できる科目を登録済みか
-      db
-        .select({
-          track: profiles.track,
-          teachableSubjects: profiles.teachableSubjects,
-        })
-        .from(profiles)
-        .where(eq(profiles.id, profile.id))
-        .limit(1),
-      // 教室長からのお知らせで、まだ「確認しました」を押していない数
-      countUnconfirmedAnnouncements(profile.id),
-    ]);
+  const weekOffset = parseWeekOffset((await searchParams).week);
+  const [
+    data,
+    progressSheetUrl,
+    [teaching],
+    unconfirmedAnnouncements,
+    otherWeek,
+  ] = await Promise.all([
+    getTutorHomeData(profile.id),
+    // #339: 教室長が登録した進行表 (スプレッドシート)
+    getProgressSheetUrl(),
+    // #348: 文理・担当できる科目を登録済みか
+    db
+      .select({
+        track: profiles.track,
+        teachableSubjects: profiles.teachableSubjects,
+      })
+      .from(profiles)
+      .where(eq(profiles.id, profile.id))
+      .limit(1),
+    // 教室長からのお知らせで、まだ「確認しました」を押していない数
+    countUnconfirmedAnnouncements(profile.id),
+    // 要望8: 来週以降を開いたときだけ、その週を読む
+    weekOffset > 0 ? getTutorWeekView(profile.id, weekOffset) : null,
+  ]);
+  const shownWeek = otherWeek ?? {
+    offset: 0,
+    range: data.weekRange,
+    published: data.weekPublished,
+    rows: data.weekRows,
+    slotCount: data.weekSlotCount,
+  };
   const needsTeachingProfile =
     !teaching?.track || (teaching.teachableSubjects ?? []).length === 0;
 
@@ -229,14 +268,42 @@ export default async function TutorHome() {
         )}
       </section>
 
-      {/* 今週のシフト */}
-      <section className="space-y-2">
-        <h2 className="text-sm font-semibold text-muted-foreground">
-          今週のシフト（{weekRangeLabel(data.weekRange)}）
-        </h2>
-        {data.weekRows.length > 0 ? (
+      {/* 今週のシフト (要望8: 前後の週へ動ける) */}
+      <section id="week" className="scroll-mt-4 space-y-2">
+        <div className="flex items-center justify-between gap-2">
+          <h2 className="text-sm font-semibold text-muted-foreground">
+            {weekHeading(shownWeek.offset, shownWeek.range)}
+          </h2>
+          <div className="flex shrink-0 gap-1">
+            {shownWeek.offset > 0 && (
+              <Link
+                href={
+                  shownWeek.offset === 1
+                    ? "/tutor#week"
+                    : `/tutor?week=${shownWeek.offset - 1}#week`
+                }
+                aria-label="前の週"
+                className="inline-flex h-9 items-center rounded-md border px-2 text-xs hover:bg-muted"
+              >
+                <ChevronLeft className="size-4" />
+                前の週
+              </Link>
+            )}
+            {shownWeek.offset < MAX_WEEK_OFFSET && (
+              <Link
+                href={`/tutor?week=${shownWeek.offset + 1}#week`}
+                aria-label="次の週"
+                className="inline-flex h-9 items-center rounded-md border px-2 text-xs hover:bg-muted"
+              >
+                次の週
+                <ChevronRight className="size-4" />
+              </Link>
+            )}
+          </div>
+        </div>
+        {shownWeek.rows.length > 0 ? (
           <ul className="divide-y rounded-xl border">
-            {data.weekRows.map((row) => (
+            {shownWeek.rows.map((row) => (
               <li
                 key={row.date}
                 className="flex items-center gap-3 px-3 py-2.5"
@@ -287,13 +354,13 @@ export default async function TutorHome() {
           </ul>
         ) : (
           <div className="rounded-xl border border-dashed p-6 text-center text-sm text-muted-foreground">
-            {data.weekPublished
-              ? "今週の確定シフトはありません。"
+            {shownWeek.published
+              ? `${shownWeek.offset === 0 ? "今週" : "この週"}の確定シフトはありません。`
               : "確定シフトはまだ公開されていません。"}
           </div>
         )}
         {/* #317: LINE のスタンプの代わり。シフトがある週だけ出す */}
-        {data.weekRows.length > 0 && (
+        {shownWeek.offset === 0 && shownWeek.rows.length > 0 && (
           <ConfirmWeekButton
             weekStart={data.weekRange.start}
             confirmedAt={data.weekConfirmedAt}
