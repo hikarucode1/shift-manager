@@ -21,7 +21,11 @@ import {
   getActiveTrainingPeriods,
   getTrainingSubmissionStatuses,
 } from "@/lib/training";
-import { getTutorWeekSchedule, type ScheduleSlot } from "@/lib/tutor-schedule";
+import {
+  getTutorWeekSchedule,
+  type ScheduleSlot,
+  type WeekSchedule,
+} from "@/lib/tutor-schedule";
 import { homeWeekOf, jstToday, nextWeek } from "@/lib/week";
 
 const DAY_MS = 86_400_000;
@@ -106,6 +110,64 @@ export type TutorHomeData = {
 };
 
 /**
+ * 1 週間分の予定から、ホームの「シフト」一覧の行と確定コマ数を作る。
+ * 欠勤だけの日は「欠勤」の行、確定コマがある日は欠勤コマを除いた番号だけ出す
+ */
+function buildWeekRows(week: WeekSchedule): {
+  rows: HomeShiftRow[];
+  slotCount: number;
+} {
+  const rows: HomeShiftRow[] = [];
+  let slotCount = 0;
+  for (const d of week.days) {
+    if (d.slots.length === 0) continue;
+    const liveSlots = d.slots.filter((s) => !s.isAbsent);
+    slotCount += liveSlots.length;
+    const confirmed = liveSlots.length > 0;
+    rows.push({
+      date: d.date,
+      weekdayLabel: d.weekdayLabel,
+      // 確定行は欠勤コマを除いた番号のみ (混在日でも欠勤を確定として見せない)
+      slots: (confirmed ? liveSlots : d.slots).map((s) => ({
+        slotNumber: s.slotNumber,
+        label: s.label,
+        isTraining: s.isTraining,
+        students: s.students,
+      })),
+      status: confirmed ? "confirmed" : "absent",
+    });
+  }
+  return { rows, slotCount };
+}
+
+/** 室長レビュー要望8: ホームで「来週以降」を何週先まで見られるか */
+export const MAX_WEEK_OFFSET = 8;
+
+export type TutorWeekView = {
+  /** 0 = 今週、1 = 来週 … */
+  offset: number;
+  range: { start: string; end: string };
+  published: boolean;
+  rows: HomeShiftRow[];
+  slotCount: number;
+};
+
+/**
+ * 室長レビュー要望8: 講師が来週以降のシフトも見られるように、
+ * 「今週」から offset 週先の 1 週間分を返す
+ */
+export async function getTutorWeekView(
+  tutorId: string,
+  offset: number,
+): Promise<TutorWeekView> {
+  let range = homeWeekOf(jstToday());
+  for (let i = 0; i < offset; i++) range = nextWeek(range);
+  const week = await getTutorWeekSchedule(tutorId, range);
+  const { rows, slotCount } = buildWeekRows(week);
+  return { offset, range, published: week.published, rows, slotCount };
+}
+
+/**
  * 講師ホーム (#130) の集約データ。確定シフト (今週/翌週) と、提出締切 (講習 +
  * レギュラー) を 1 回でまとめて取得する。表示専用 (Server Component)。
  */
@@ -156,26 +218,7 @@ export async function getTutorHomeData(tutorId: string): Promise<TutorHomeData> 
   ]);
 
   // --- 今週のシフト行 + コマ数 ---
-  const weekRows: HomeShiftRow[] = [];
-  let weekSlotCount = 0;
-  for (const d of thisWeek.days) {
-    if (d.slots.length === 0) continue;
-    const liveSlots = d.slots.filter((s) => !s.isAbsent);
-    weekSlotCount += liveSlots.length;
-    const confirmed = liveSlots.length > 0;
-    weekRows.push({
-      date: d.date,
-      weekdayLabel: d.weekdayLabel,
-      // 確定行は欠勤コマを除いた番号のみ (混在日でも欠勤を確定として見せない)
-      slots: (confirmed ? liveSlots : d.slots).map((s) => ({
-        slotNumber: s.slotNumber,
-        label: s.label,
-        isTraining: s.isTraining,
-        students: s.students,
-      })),
-      status: confirmed ? "confirmed" : "absent",
-    });
-  }
+  const { rows: weekRows, slotCount: weekSlotCount } = buildWeekRows(thisWeek);
 
   // --- 次の出勤 (今日以降、今週→翌週で最初の非欠勤コマ) ---
   // 当日分は終了時刻を過ぎたコマを除外 (夜に当日朝のコマを「次」に出さない)。
