@@ -66,6 +66,9 @@ export function AbsenceOnBehalfForm({ today }: { today: string }) {
     (a) => `${a.tutorId}|${a.slotNumber}` === picked,
   );
   const pickedEnded = pickedOption?.isEnded ?? false;
+  // 研修のコマは欠勤だけ。代講の指名・募集はしない (2026/11/21 本人の判断)
+  const pickedTraining = pickedOption?.isTraining ?? false;
+  const noFollowUp = pickedEnded || pickedTraining;
 
   // 指名できる講師 (そのコマに入っていない有効な講師) を読み込む
   const subsKey = `${date}|${picked}`;
@@ -102,7 +105,7 @@ export function AbsenceOnBehalfForm({ today }: { today: string }) {
     }
     setNotice(null);
     startSaving(async () => {
-      const fu = pickedEnded ? "none" : followUp;
+      const fu = noFollowUp ? "none" : followUp;
       const res = await createAbsenceOnBehalf({
         tutorId,
         date,
@@ -125,10 +128,6 @@ export function AbsenceOnBehalfForm({ today }: { today: string }) {
         parts.push(`${res.designeeName ?? "指名した講師"}に代講の依頼を送りました。`);
       } else if (fu === "recruit") {
         parts.push("代講の募集に出しました。");
-      } else if (pickedEnded) {
-        parts.push(
-          "実際に代講が入っていた場合は、「あとから代講を記録する」から記録してください。",
-        );
       }
       if (res.pendingSwap) {
         parts.push(
@@ -240,7 +239,12 @@ export function AbsenceOnBehalfForm({ today }: { today: string }) {
         </div>
 
         {/* 本番チェック メモ25: 承認時と同じ 3 択。終わったコマでは出さない */}
-        {picked && !pickedEnded && (
+        {picked && pickedTraining && (
+          <p className="rounded-md bg-muted px-2.5 py-2 text-xs text-muted-foreground">
+            研修のコマなので、代講の指名・募集はしません（欠勤の登録だけします）。
+          </p>
+        )}
+        {picked && !noFollowUp && (
           <fieldset className="space-y-2 rounded-md border p-2.5">
             <legend className="px-1 text-xs text-muted-foreground">
               代講をどうしますか
@@ -325,7 +329,7 @@ export function AbsenceOnBehalfForm({ today }: { today: string }) {
               loading ||
               !picked ||
               !reason.trim() ||
-              (!pickedEnded && followUp === "designate" && subIds.length === 0)
+              (!noFollowUp && followUp === "designate" && subIds.length === 0)
             }
             onClick={submit}
           >

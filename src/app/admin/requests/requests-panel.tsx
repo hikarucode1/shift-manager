@@ -138,6 +138,9 @@ export function RequestsPanel({
                           実施済み
                         </Badge>
                       )}
+                      {/* 2026/11/21 本人: 研修・体験の印 */}
+                      {p.isTraining && <Badge variant="secondary">研修</Badge>}
+                      {p.isTrial && <Badge variant="secondary">体験</Badge>}
                     </div>
                     <p className="text-sm text-muted-foreground">
                       {shortDate(p.date)}（{p.weekdayLabel}） {p.slotLabel}
@@ -219,7 +222,13 @@ export function RequestsPanel({
                     {/* 本番チェック メモ21・23: 承認と一緒に、代講を
                       「指名する／募集に出す／何もしない」から選ぶ。指名は
                       その講師に教室長から直接依頼が届く (休む講師は挟まない) */}
-                    {actions.canApprove && !p.isEnded && (
+                    {/* 2026/11/21 本人: 研修のコマは欠勤だけ (代講は出さない) */}
+                    {actions.canApprove && !p.isEnded && p.isTraining && (
+                      <p className="text-xs text-muted-foreground">
+                        研修のコマなので、代講の指名・募集はしません。
+                      </p>
+                    )}
+                    {actions.canApprove && !p.isEnded && !p.isTraining && (
                       <fieldset className="space-y-2 rounded-md border p-2.5">
                         <legend className="px-1 text-xs text-muted-foreground">
                           代講をどうしますか
@@ -311,6 +320,7 @@ export function RequestsPanel({
                           disabled={
                             isPending ||
                             (!p.isEnded &&
+                              !p.isTraining &&
                               followUp[p.id] === "designate" &&
                               (designated[p.id] ?? []).length === 0)
                           }
@@ -320,17 +330,20 @@ export function RequestsPanel({
                                 decideAbsenceRequest({
                                   id: p.id,
                                   decision: "approved",
-                                  followUp: p.isEnded
-                                    ? "none"
-                                    : (followUp[p.id] ?? "none"),
+                                  followUp:
+                                    p.isEnded || p.isTraining
+                                      ? "none"
+                                      : (followUp[p.id] ?? "none"),
                                   designatedSubstituteIds:
                                     designated[p.id] ?? [],
                                 }),
                               (followUp[p.id] ?? "none") === "designate" &&
-                                !p.isEnded
+                                !p.isEnded &&
+                                !p.isTraining
                                 ? "承認しました。指名した講師に代講の依頼を送りました。"
                                 : (followUp[p.id] ?? "none") === "recruit" &&
-                                    !p.isEnded
+                                    !p.isEnded &&
+                                    !p.isTraining
                                   ? "承認し、代講の募集に出しました。"
                                   : "承認しました。",
                               { refreshOnError: true },

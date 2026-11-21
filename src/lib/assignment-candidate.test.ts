@@ -8,6 +8,7 @@ const st = (o: Partial<CandidateState> = {}): CandidateState => ({
   absence: "none",
   hasPendingSwap: false,
   isEnded: false,
+  isTraining: false,
   ...o,
 });
 
@@ -81,5 +82,27 @@ describe("candidateMark: 欠勤の代理登録 (#217)", () => {
     expect(candidateMark("absence", st({ hasPendingSwap: true })).blocked).toBe(
       false,
     );
+  });
+});
+
+describe("candidateMark: 研修のコマ (2026/11/21)", () => {
+  it("代講の代理募集では選べない", () => {
+    expect(candidateMark("swap", st({ isTraining: true }))).toEqual({
+      blocked: true,
+      note: "研修は代講なし",
+    });
+  });
+
+  it("欠勤の代理登録では選べて「研修」と添える", () => {
+    expect(candidateMark("absence", st({ isTraining: true }))).toEqual({
+      blocked: false,
+      note: "研修",
+    });
+  });
+
+  it("欠勤が既にあれば研修でも欠勤の重複を先に止める", () => {
+    expect(
+      candidateMark("absence", st({ isTraining: true, absence: "pending" })),
+    ).toEqual({ blocked: true, note: "既に欠勤の申請あり" });
   });
 });

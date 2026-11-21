@@ -220,6 +220,38 @@ export async function isTutorBusyAt(
 }
 
 /**
+ * その講師のそのコマが研修か (#335 の `is_training`)。
+ *
+ * 2026/11/21 本人: 研修のコマは欠勤だけで、代講 (指名・募集) の対象にしない。
+ * 指名の依頼 (`sendDesignatedRequest`)・代理募集 (`createOpenSwapOnBehalf`)・
+ * 承認 / 代理登録と一緒の代講の手配がここで確かめる。
+ */
+export async function isTrainingShift(
+  tutorId: string,
+  date: string,
+  slotNumber: number,
+  executor: Executor = db,
+): Promise<boolean> {
+  const rows = await executor
+    .select({ id: weeklyShifts.id })
+    .from(weeklyShifts)
+    .where(
+      and(
+        eq(weeklyShifts.tutorId, tutorId),
+        eq(weeklyShifts.date, date),
+        eq(weeklyShifts.slotNumber, slotNumber),
+        eq(weeklyShifts.isTraining, true),
+      ),
+    )
+    .limit(1);
+  return rows.length > 0;
+}
+
+/** 研修のコマに代講を出そうとしたときの文言 */
+export const TRAINING_NO_SUBSTITUTE =
+  "研修のコマは代講の対象にしていません（欠勤だけ登録できます）。";
+
+/**
  * その講師がそのコマに出している pending の募集 (無ければ null)。
  *
  * 記録の取り消しで残っていた元講師の募集の案内 (`cancelApprovedSwap`、#293 より

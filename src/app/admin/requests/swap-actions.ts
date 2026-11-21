@@ -14,7 +14,9 @@ import {
   getEligibleApplicantIds,
   hasSlotEnded,
   hasUnassignableClosedSwap,
+  isTrainingShift,
   isTutorBusyAt,
+  TRAINING_NO_SUBSTITUTE,
 } from "@/lib/swaps";
 import type { NotificationInput } from "@/lib/notifications";
 import {
@@ -753,7 +755,7 @@ export async function createOpenSwapOnBehalf(
     return {
       ok: false,
       error:
-        "終了したコマは募集できません（今から代わってもらう相手が居ないため）。実際に入った代講は「あとから代講を記録する」から記録してください。",
+        "終了したコマは募集できません（今から代わってもらう相手が居ないため）。",
     };
   }
 
@@ -772,6 +774,10 @@ export async function createOpenSwapOnBehalf(
     .limit(1);
   if (shift.length === 0) {
     return { ok: false, error: "その講師はこのコマの担当ではありません。" };
+  }
+  // 2026/11/21 本人: 研修のコマは代講の対象にしない
+  if (await isTrainingShift(tutorId, date, slotNumber)) {
+    return { ok: false, error: TRAINING_NO_SUBSTITUTE };
   }
 
   // 室長レビュー要望2: 欠勤で指名した相手への依頼は swap_requests_active_uniq

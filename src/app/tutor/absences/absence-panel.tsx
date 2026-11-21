@@ -214,6 +214,30 @@ export function AbsencePanel({
                             {on && <Check className="size-3" strokeWidth={3} />}
                           </span>
                           {shortDate(u.date)}（{u.weekdayLabel}） {u.slotLabel}
+                          {u.isTraining && (
+                            <span
+                              className={cn(
+                                "rounded px-1.5 py-0.5 text-[11px] font-medium",
+                                on
+                                  ? "bg-primary-foreground/20 text-primary-foreground"
+                                  : "bg-amber-100 text-amber-800",
+                              )}
+                            >
+                              研修
+                            </span>
+                          )}
+                          {u.isTrial && (
+                            <span
+                              className={cn(
+                                "rounded px-1.5 py-0.5 text-[11px] font-medium",
+                                on
+                                  ? "bg-primary-foreground/20 text-primary-foreground"
+                                  : "bg-sky-100 text-sky-800",
+                              )}
+                            >
+                              体験
+                            </span>
+                          )}
                         </span>
                         <span
                           className={cn(
