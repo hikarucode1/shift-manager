@@ -9,6 +9,8 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent } from "@/components/ui/card";
 import { shortDate } from "@/lib/week";
+import { SlotTime } from "@/components/slot-time";
+import type { SlotTimes } from "@/lib/slot-time";
 import { cn } from "@/lib/utils";
 import { applyToSwap, withdrawApplication } from "@/app/tutor/swaps/actions";
 import {
@@ -16,7 +18,14 @@ import {
   declineDesignatedSubstitution,
 } from "@/app/tutor/swaps/designated-actions";
 
-export function OpenSwapList({ swaps }: { swaps: OpenSwap[] }) {
+export function OpenSwapList({
+  swaps,
+  slotTimes,
+}: {
+  swaps: OpenSwap[];
+  /** コマ番号 → 授業時間 */
+  slotTimes: SlotTimes;
+}) {
   const router = useRouter();
   const [isPending, startTransition] = useTransition();
   const [notice, setNotice] = useState<
@@ -81,6 +90,10 @@ export function OpenSwapList({ swaps }: { swaps: OpenSwap[] }) {
                   <div className="min-w-0">
                     <p className="font-semibold">
                       {shortDate(s.date)}（{s.weekdayLabel}） {s.slotLabel}
+                      <SlotTime
+                        time={slotTimes[s.slotNumber]}
+                       
+                      />
                     </p>
                     <p className="mt-0.5 text-xs text-muted-foreground">
                       {s.requesterName} さんの代講

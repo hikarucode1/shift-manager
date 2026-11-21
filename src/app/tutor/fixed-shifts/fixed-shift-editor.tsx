@@ -334,7 +334,8 @@ export function FixedShiftEditor({
       </div>
 
       <div>
-        <div className="grid grid-cols-[40px_repeat(6,minmax(0,1fr))] gap-1">
+        {/* 左の列は授業時間を入れるので広め (2026/11/21 本人) */}
+        <div className="grid grid-cols-[52px_repeat(6,minmax(0,1fr))] gap-1">
           {/* ヘッダー行: 曜日 */}
           <div />
           {INPUT_WEEKDAYS.map((w) => (
@@ -353,8 +354,18 @@ export function FixedShiftEditor({
                 className="flex flex-col items-center justify-center leading-none text-muted-foreground"
                 title={`${slot.label} ${slot.startTime}–${slot.endTime}`}
               >
-                <span className="text-sm font-semibold">{slot.slotNumber}</span>
-                <span className="mt-0.5 text-[9px]">限</span>
+                <span className="text-sm font-semibold">
+                  {slot.slotNumber}
+                  <span className="text-[9px] font-normal">限</span>
+                </span>
+                {/* 幅が狭いので 2 行に分ける (16:30– / 18:00) */}
+                {slot.startTime && slot.endTime && (
+                  <span className="mt-1 text-center text-[10px] leading-tight tabular-nums">
+                    {slot.startTime}–
+                    <br />
+                    {slot.endTime}
+                  </span>
+                )}
               </div>
               {INPUT_WEEKDAYS.map((w) => {
                 const state = cellStates.get(cellKey(w.key, slot.slotNumber));

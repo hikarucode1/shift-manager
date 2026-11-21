@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { isSlotPast, jstTimeOfDay } from "@/lib/slot-time";
+import { isSlotPast, jstTimeOfDay, slotTimeRange } from "@/lib/slot-time";
 
 /** JST の指定時刻に相当する Date (JST = UTC+9、DST 無し) */
 const jst = (iso: string) => new Date(`${iso}+09:00`);
@@ -59,5 +59,16 @@ describe("jstTimeOfDay", () => {
 
   it("UTC の日付をまたいでも JST の時刻になる", () => {
     expect(jstTimeOfDay(new Date("2026-08-20T15:30:00Z"))).toBe("00:30");
+  });
+});
+
+describe("slotTimeRange", () => {
+  it("開始と終了をつないで返す", () => {
+    expect(slotTimeRange("19:50", "21:20")).toBe("19:50–21:20");
+  });
+
+  it("どちらかが欠けていたら空文字 (半端な表記を出さない)", () => {
+    expect(slotTimeRange("", "21:20")).toBe("");
+    expect(slotTimeRange("19:50", "")).toBe("");
   });
 });

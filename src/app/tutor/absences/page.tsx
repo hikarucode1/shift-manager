@@ -3,15 +3,17 @@ import {
   getTutorAbsenceRequests,
   getTutorUpcomingShifts,
 } from "@/lib/absences";
+import { getSlotTimes } from "@/lib/slot-meta";
 import { TutorRequestsNav } from "@/components/tutor-requests-nav";
 import { AbsencePanel } from "./absence-panel";
 
 export default async function TutorAbsencesPage() {
   const { profile } = await requireRole("tutor");
 
-  const [upcoming, history] = await Promise.all([
+  const [upcoming, history, slotTimes] = await Promise.all([
     getTutorUpcomingShifts(profile.id),
     getTutorAbsenceRequests(profile.id),
+    getSlotTimes(),
   ]);
 
   return (
@@ -26,7 +28,11 @@ export default async function TutorAbsencesPage() {
         </p>
       </section>
 
-      <AbsencePanel upcoming={upcoming} history={history} />
+      <AbsencePanel
+        upcoming={upcoming}
+        history={history}
+        slotTimes={slotTimes}
+      />
     </div>
   );
 }

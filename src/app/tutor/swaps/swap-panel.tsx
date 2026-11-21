@@ -9,6 +9,8 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { shortDate } from "@/lib/week";
+import { SlotTime } from "@/components/slot-time";
+import type { SlotTimes } from "@/lib/slot-time";
 import { cn } from "@/lib/utils";
 import { cancelSwapRequest } from "./actions";
 
@@ -22,7 +24,14 @@ const STATUS: Record<
   cancelled: { text: "取消", variant: "outline" },
 };
 
-export function SwapPanel({ requests }: { requests: MySwapRequest[] }) {
+export function SwapPanel({
+  requests,
+  slotTimes,
+}: {
+  requests: MySwapRequest[];
+  /** コマ番号 → 授業時間 */
+  slotTimes: SlotTimes;
+}) {
   const router = useRouter();
   const [isPending, startTransition] = useTransition();
   const [notice, setNotice] = useState<{
@@ -99,6 +108,10 @@ export function SwapPanel({ requests }: { requests: MySwapRequest[] }) {
                     <div className="flex flex-wrap items-center gap-2">
                       <span className="font-medium">
                         {shortDate(r.date)}（{r.weekdayLabel}） {r.slotLabel}
+                        <SlotTime
+                          time={slotTimes[r.slotNumber]}
+                         
+                        />
                       </span>
                       <Badge variant="outline">
                         {/* #215: recorded を足したので二値では嘘になる

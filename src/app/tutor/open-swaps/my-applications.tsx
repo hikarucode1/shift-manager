@@ -4,6 +4,8 @@ import { Badge } from "@/components/ui/badge";
 import { Card, CardContent } from "@/components/ui/card";
 import { fmtDateTimeJst } from "@/lib/datetime";
 import { shortDate } from "@/lib/week";
+import { SlotTime } from "@/components/slot-time";
+import type { SlotTimes } from "@/lib/slot-time";
 
 /**
  * 自分が関わった代講の結果 (#245 / #247)。応募したものと、教室長が代講者
@@ -17,7 +19,14 @@ import { shortDate } from "@/lib/week";
  * 集約してテストで固定してある。ここで `status === "approved" ? …` と書くと、
  * 「承認されたが自分は選ばれていない」を「決まりました」と出す事故になる。
  */
-export function MyApplications({ applications }: { applications: MyApplication[] }) {
+export function MyApplications({
+  applications,
+  slotTimes,
+}: {
+  applications: MyApplication[];
+  /** コマ番号 → 授業時間 */
+  slotTimes: SlotTimes;
+}) {
   if (applications.length === 0) return null;
 
   return (
@@ -46,6 +55,7 @@ export function MyApplications({ applications }: { applications: MyApplication[]
               </div>
               <p className="font-medium">
                 {shortDate(a.date)}（{a.weekdayLabel}）{a.slotLabel}
+                <SlotTime time={slotTimes[a.slotNumber]} />
                 <span className="ml-2 font-normal text-muted-foreground">
                   {a.requesterName} さんのコマ
                 </span>

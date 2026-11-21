@@ -1,13 +1,15 @@
 import { requireRole } from "@/lib/auth";
 import { getOpenSwapsForTutor, getTutorApplications } from "@/lib/swaps";
+import { getSlotTimes } from "@/lib/slot-meta";
 import { TutorRequestsNav } from "@/components/tutor-requests-nav";
 import { OpenSwapList } from "./open-swap-list";
 import { MyApplications } from "./my-applications";
 
 export default async function TutorOpenSwapsPage() {
   const { profile } = await requireRole("tutor");
-  const [swaps, applications] = await Promise.all([
+  const [swaps, slotTimes, applications] = await Promise.all([
     getOpenSwapsForTutor(profile.id),
+    getSlotTimes(),
     // #245: 応募者向け通知の着地先。これが無いと決定済みの募集は
     // どこにも出ず、応募がどうなったか分からない
     getTutorApplications(profile.id),
@@ -35,9 +37,9 @@ export default async function TutorOpenSwapsPage() {
       {/* ⚠️ 募集一覧より**上**に置く。応募者向け通知の着地先がこのページで、
           下に置くと「現在、応募できる募集はありません。」を読まされてから
           スクロールしないと結果に届かない。結果が無い講師には何も出ない */}
-      <MyApplications applications={applications} />
+      <MyApplications applications={applications} slotTimes={slotTimes} />
 
-      <OpenSwapList swaps={swaps} />
+      <OpenSwapList swaps={swaps} slotTimes={slotTimes} />
     </div>
   );
 }

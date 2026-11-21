@@ -1,12 +1,16 @@
 import Link from "next/link";
 import { requireRole } from "@/lib/auth";
 import { getTutorSwapRequests } from "@/lib/swaps";
+import { getSlotTimes } from "@/lib/slot-meta";
 import { TutorRequestsNav } from "@/components/tutor-requests-nav";
 import { SwapPanel } from "./swap-panel";
 
 export default async function TutorSwapsPage() {
   const { profile } = await requireRole("tutor");
-  const requests = await getTutorSwapRequests(profile.id);
+  const [requests, slotTimes] = await Promise.all([
+    getTutorSwapRequests(profile.id),
+    getSlotTimes(),
+  ]);
 
   return (
     <div className="space-y-5">
@@ -26,7 +30,7 @@ export default async function TutorSwapsPage() {
         </p>
       </section>
 
-      <SwapPanel requests={requests} />
+      <SwapPanel requests={requests} slotTimes={slotTimes} />
     </div>
   );
 }

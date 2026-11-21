@@ -4,6 +4,7 @@ import { asc, eq } from "drizzle-orm";
 import { db } from "@/db/client";
 import { slotDefinitions } from "@/db/schema";
 import { DEFAULT_SLOTS } from "@/lib/shift-constants";
+import { slotTimeRange, type SlotTimes } from "@/lib/slot-time";
 
 export type SlotMeta = { label: string; start: string; end: string };
 
@@ -55,6 +56,15 @@ export const getSlotMeta = cache(async (): Promise<Map<number, SlotMeta>> => {
   }
   return map;
 });
+
+/** コマ番号 → 授業時間 ("19:50–21:20")。講師の画面でコマの名前に添える */
+export async function getSlotTimes(): Promise<SlotTimes> {
+  const out: SlotTimes = {};
+  for (const [n, m] of await getSlotMeta()) {
+    out[n] = slotTimeRange(m.start, m.end);
+  }
+  return out;
+}
 
 /** UI で全コマ行を出すための番号一覧 (slotMeta のキーを昇順で) */
 export function slotNumbers(meta: Map<number, SlotMeta>): number[] {
