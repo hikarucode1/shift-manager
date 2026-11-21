@@ -15,6 +15,7 @@ import {
 } from "@/db/schema";
 import { isUniqueViolation } from "@/lib/db-errors";
 import { isValidIsoDate, jstToday, noticeDate } from "@/lib/week";
+import { SCHOOL_PHONE } from "@/lib/school";
 import { hasSlotEnded } from "@/lib/swaps";
 import { designeeError } from "@/lib/designee-check";
 import { absenceTutorAssigned } from "@/lib/absences";
@@ -48,7 +49,13 @@ async function absenceTargetError(
   slotNumber: number,
 ): Promise<string | null> {
   // 過去日は不可
-  if (date < jstToday()) return "過去の日付は申請できません。";
+  const today = jstToday();
+  if (date < today) return "過去の日付は申請できません。";
+  // 2026/11/21 本人: 当日の欠勤はアプリでは受け付けず、教室に電話してもらう
+  // (`getTutorUpcomingShifts` も今日のコマを出さない)
+  if (date === today) {
+    return `当日の欠勤はアプリでは申請できません。教室（${SCHOOL_PHONE}）に電話してください。`;
+  }
 
   // 実在する自分の確定シフトか (クライアントを信用しない)
   const shift = await db
@@ -298,9 +305,11 @@ const DecideInput = z.object({
  * ⚠️ **作成側 (`createAbsenceRequest`) も日付粒度のままにしてあること**が、
  * この「後から登録する」を成立させている。交代側は #178 でピッカーから
  * 終了済みコマを落とし (`getTutorSwappableShifts`)、サーバー側も `hasSlotEnded` で
- * 塞いだが、**欠勤側はどちらもやっていない** (`getTutorUpcomingShifts` は
- * `gte(date, today)` のみ)。#178 を読んで「揃っていない」と見えても、
- * ここに `hasSlotEnded` を足さないこと。足すと当日の欠勤すら出せなくなる。
+ * 塞いだが、**欠勤側はコマ単位では塞いでいない**。
+ * ⚠️ 2026/11/21 本人の判断で、講師の欠勤申請は**明日以降のコマだけ**に
+ * なった (当日は教室に電話。`getTutorUpcomingShifts` は `gt(date, today)`)。
+ * 当日の欠勤は教室長が電話を受けて代理登録する。承認側はこれまでどおり緩い
+ * まま (前日までに出た申請を当日に承認できる)。
  *
  * ⚠️ 元は「翌日以降は誰も登録できない」穴があった (#217) が、**解消済み** —
  * `createAbsenceOnBehalf` (教室長の代理登録、日付ガード無し) が入った。

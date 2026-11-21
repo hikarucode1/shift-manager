@@ -5,6 +5,7 @@ import {
   between,
   desc,
   eq,
+  gt,
   gte,
   inArray,
   isNotNull,
@@ -140,8 +141,12 @@ function slotLabelOf(
 }
 
 /**
- * 講師が欠勤申請できる「今日以降の自分の確定シフト」一覧。
+ * 講師が欠勤申請できる「明日以降の自分の確定シフト」一覧。
  * 既に未確定でない (pending/approved) 申請があるコマは除外。
+ *
+ * 2026/11/21 本人: 当日 (日付が今日) の欠勤はアプリでは受け付けず、教室に
+ * 電話してもらう (`createAbsenceRequest` も同じ規則で弾く)。電話で受けた
+ * 欠勤は教室長が代理登録 (`createAbsenceOnBehalf`) で記録する
  */
 export async function getTutorUpcomingShifts(
   tutorId: string,
@@ -159,7 +164,7 @@ export async function getTutorUpcomingShifts(
       .where(
         and(
           eq(weeklyShifts.tutorId, tutorId),
-          gte(weeklyShifts.date, today),
+          gt(weeklyShifts.date, today),
         ),
       )
       .orderBy(asc(weeklyShifts.date), asc(weeklyShifts.slotNumber)),
