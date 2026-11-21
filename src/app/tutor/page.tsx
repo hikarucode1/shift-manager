@@ -64,27 +64,13 @@ function TrialBadge() {
 }
 
 /** 室長レビュー要望9: 生徒も研修も体験も入っていないコマ */
-function UndecidedNote({ onDark = false }: { onDark?: boolean }) {
+function UndecidedNote() {
   return (
     <span className="flex items-center gap-1.5 self-center">
-      <span
-        className={
-          onDark
-            ? "rounded bg-primary-foreground/20 px-1.5 py-0.5 text-[11px] font-semibold text-primary-foreground"
-            : "rounded bg-slate-100 px-1.5 py-0.5 text-[11px] font-semibold text-slate-600"
-        }
-      >
+      <span className="rounded bg-slate-100 px-1.5 py-0.5 text-[11px] font-semibold text-slate-600">
         {UNDECIDED_LABEL}
       </span>
-      <span
-        className={
-          onDark
-            ? "text-xs text-primary-foreground/80"
-            : "text-xs text-muted-foreground"
-        }
-      >
-        {UNDECIDED_HINT}
-      </span>
+      <span className="text-xs text-muted-foreground">{UNDECIDED_HINT}</span>
     </span>
   );
 }
@@ -281,16 +267,10 @@ export default async function TutorHome({
                 </span>
               )}
             </p>
-            {data.nextShift.slot.students.length > 0 ? (
+            {data.nextShift.slot.students.length > 0 && (
               <p className="mt-1 text-sm text-primary-foreground/80">
                 {formatStudents(data.nextShift.slot.students)}
               </p>
-            ) : (
-              !data.nextShift.slot.isTraining && (
-                <p className="mt-1.5 flex">
-                  <UndecidedNote onDark />
-                </p>
-              )
             )}
           </div>
         ) : (

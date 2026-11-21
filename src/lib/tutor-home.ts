@@ -226,9 +226,12 @@ export async function getTutorHomeData(tutorId: string): Promise<TutorHomeData> 
   for (const wk of [thisWeek, nextWk]) {
     for (const d of wk.days) {
       if (d.date < today) continue;
+      // 室長レビュー要望9 (本人): 未定のコマ (生徒も研修も体験も無い) は
+      // 出勤が決まっていないので「次の出勤」に出さない
       const slot = d.slots.find(
         (s) =>
           !s.isAbsent &&
+          (s.isTraining || s.students.length > 0) &&
           (d.date !== today || s.endTime === "" || s.endTime > nowHm),
       );
       if (slot) {
