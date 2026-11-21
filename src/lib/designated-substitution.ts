@@ -29,34 +29,40 @@ export type DesignationState =
 export function designationState(i: {
   /** 欠勤の状態 */
   absenceStatus: "pending" | "approved" | "rejected" | "cancelled";
-  /** 教室長が指定した相手 (無ければ null) */
+  /** 教室長が最後に指定した相手 (無ければ null) */
   designatedId: string | null;
   /** この欠勤に紐づく依頼 (新しい順でなくてよい) */
   linkedSwaps: readonly LinkedSwap[];
   /** コマが終わったか */
   isEnded: boolean;
 }): DesignationState {
-  if (i.designatedId === null) return { kind: "none" };
-  // 今の指定相手への依頼だけを見る (教室長が指定し直したら、前の相手への
-  // 依頼の結果は関係ない)
-  const forCurrent = i.linkedSwaps.filter(
-    (s) => s.nominatedTutorId === i.designatedId,
-  );
-  // 成立すると欠勤は自動失効するので、欠勤の状態より先に見る
-  if (forCurrent.some((s) => s.status === "approved")) {
+  if (i.designatedId === null && i.linkedSwaps.length === 0) {
+    return { kind: "none" };
+  }
+  // 室長レビュー要望2: 相手は複数いる (早い者勝ち)。誰か 1 人でも引き受けたら
+  // 成立。成立すると欠勤は自動失効するので、欠勤の状態より先に見る
+  if (i.linkedSwaps.some((s) => s.status === "approved")) {
     return { kind: "accepted" };
   }
   if (i.absenceStatus !== "approved") return { kind: "none" };
-  if (forCurrent.some((s) => s.status === "pending")) {
+  // 誰か 1 人でも返事待ちなら、まだ待つ
+  if (i.linkedSwaps.some((s) => s.status === "pending")) {
     return { kind: "requested" };
   }
+  // 最後に指定した相手への依頼がまだ無い (指定し直したが依頼を送れなかった)
+  const forCurrent = i.linkedSwaps.filter(
+    (s) => s.nominatedTutorId === i.designatedId,
+  );
+  if (i.designatedId !== null && forCurrent.length === 0) {
+    return i.isEnded ? { kind: "none" } : { kind: "can-request" };
+  }
   if (
-    forCurrent.some(
+    i.linkedSwaps.some(
       (s) => s.status === "cancelled" && s.closeKind === "nominee_declined",
     )
   ) {
     return { kind: "declined" };
   }
-  if (i.isEnded) return { kind: "none" };
+  if (i.isEnded || i.designatedId === null) return { kind: "none" };
   return { kind: "can-request" };
 }

@@ -402,19 +402,19 @@ export function AbsencePanel({
                     )}
                     {h.designation.kind === "requested" && (
                       <p className="mt-1 text-sm text-muted-foreground">
-                        代講は教室長から{h.designatedName}
-                        さんに依頼しています。返事を待っています。
+                        代講は教室長から{h.designationNames}
+                        に依頼しています。返事を待っています。
                       </p>
                     )}
                     {h.designation.kind === "accepted" && (
                       <p className="mt-1 text-sm text-primary">
-                        {h.designatedName}さんが代講を引き受けました。
+                        {h.designationNames}が代講を引き受けました。
                       </p>
                     )}
                     {h.designation.kind === "declined" && (
                       <p className="mt-1 text-sm text-muted-foreground">
-                        {h.designatedName}
-                        さんは都合がつきませんでした。教室長からの連絡を待ってください。
+                        {h.designationNames}
+                        は都合がつきませんでした。教室長からの連絡を待ってください。
                       </p>
                     )}
                   </div>

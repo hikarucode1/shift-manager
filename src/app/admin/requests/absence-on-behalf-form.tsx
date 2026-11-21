@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
-import { AlertCircle, Info } from "lucide-react";
+import { AlertCircle, Check, Info } from "lucide-react";
 import { toFailedResult, isIndeterminate } from "@/lib/action-failure";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
@@ -37,7 +37,8 @@ export function AbsenceOnBehalfForm({ today }: { today: string }) {
     key: string;
     tutors: { id: string; name: string }[];
   } | null>(null);
-  const [subId, setSubId] = useState("");
+  // 室長レビュー要望2: 指名する講師は複数選べる (早い者勝ち)
+  const [subIds, setSubIds] = useState<string[]>([]);
   const [loading, startLoading] = useTransition();
   const [saving, startSaving] = useTransition();
   const [notice, setNotice] = useState<
@@ -108,7 +109,7 @@ export function AbsenceOnBehalfForm({ today }: { today: string }) {
         slotNumber: Number(slot),
         reason: trimmed,
         followUp: fu,
-        designatedSubstituteId: fu === "designate" ? subId || null : null,
+        designatedSubstituteIds: fu === "designate" ? subIds : [],
       }).catch(toFailedResult);
       if (!res.ok) {
         setNotice({ type: "error", text: res.error });
@@ -121,7 +122,7 @@ export function AbsenceOnBehalfForm({ today }: { today: string }) {
           `ただし代講の${fu === "designate" ? "依頼" : "募集"}はできませんでした: ${res.followUpError}`,
         );
       } else if (fu === "designate") {
-        parts.push(`${res.designeeName ?? "指名した講師"}さんに代講の依頼を送りました。`);
+        parts.push(`${res.designeeName ?? "指名した講師"}に代講の依頼を送りました。`);
       } else if (fu === "recruit") {
         parts.push("代講の募集に出しました。");
       } else if (pickedEnded) {
@@ -183,7 +184,7 @@ export function AbsenceOnBehalfForm({ today }: { today: string }) {
             value={date}
             onChange={(e) => {
               setDate(e.target.value);
-              setSubId("");
+              setSubIds([]);
             }}
             className="rounded-md border bg-background px-2 py-1 text-sm"
           />
@@ -198,7 +199,7 @@ export function AbsenceOnBehalfForm({ today }: { today: string }) {
             value={picked}
             onChange={(e) => {
               setPicked(e.target.value);
-              setSubId("");
+              setSubIds([]);
             }}
             disabled={loading || !assignments || assignments.length === 0}
             className="w-full rounded-md border bg-background px-2 py-1 text-sm"
@@ -265,31 +266,50 @@ export function AbsenceOnBehalfForm({ today }: { today: string }) {
               ))}
             </div>
             {followUp === "designate" && (
-              <div className="flex flex-wrap items-center gap-2">
-                <label className="text-xs text-muted-foreground" htmlFor="on-behalf-sub">
-                  指名する講師
-                </label>
-                <select
-                  id="on-behalf-sub"
-                  value={subId}
-                  onChange={(e) => setSubId(e.target.value)}
-                  disabled={!subs}
-                  className="h-8 min-w-[10rem] rounded-md border bg-background px-2 text-sm"
-                >
-                  <option value="">
-                    {!subs ? "読み込み中…" : subs.length === 0 ? "指名できる講師がいません" : "選んでください"}
-                  </option>
-                  {(subs ?? []).map((t) => (
-                    <option key={t.id} value={t.id}>
-                      {t.name}
-                    </option>
-                  ))}
-                </select>
-              </div>
+              <fieldset className="space-y-1.5">
+                <legend className="text-xs text-muted-foreground">
+                  指名する講師（複数選べます）
+                </legend>
+                {!subs ? (
+                  <p className="text-sm text-muted-foreground">読み込み中…</p>
+                ) : subs.length === 0 ? (
+                  <p className="text-sm text-muted-foreground">指名できる講師がいません</p>
+                ) : (
+                  <div className="flex flex-wrap gap-1.5">
+                    {subs.map((t) => {
+                      const on = subIds.includes(t.id);
+                      return (
+                        <label
+                          key={t.id}
+                          className={cn(
+                            "flex cursor-pointer items-center gap-1 rounded-full border px-2.5 py-1 text-sm transition-colors focus-within:ring-1 focus-within:ring-ring",
+                            on
+                              ? "border-primary bg-primary text-primary-foreground"
+                              : "bg-background hover:bg-muted",
+                          )}
+                        >
+                          <input
+                            type="checkbox"
+                            className="sr-only"
+                            checked={on}
+                            onChange={() =>
+                              setSubIds((prev) =>
+                                on ? prev.filter((x) => x !== t.id) : [...prev, t.id],
+                              )
+                            }
+                          />
+                          {on && <Check className="size-3.5" />}
+                          {t.name}
+                        </label>
+                      );
+                    })}
+                  </div>
+                )}
+              </fieldset>
             )}
             <p className="text-xs text-muted-foreground">
               {followUp === "designate"
-                ? "登録すると、選んだ講師に代講の依頼が届きます。引き受けてもらえた時点で代講が決まります。"
+                ? "登録すると、選んだ講師に代講の依頼が届きます。最初に引き受けた人で代講が決まります（早い者勝ち）。"
                 : followUp === "recruit"
                   ? "登録すると代講の募集に出し、出られる講師全員に知らせます。"
                   : "欠勤の登録だけします。代講はあとから決められます。"}
@@ -305,7 +325,7 @@ export function AbsenceOnBehalfForm({ today }: { today: string }) {
               loading ||
               !picked ||
               !reason.trim() ||
-              (!pickedEnded && followUp === "designate" && !subId)
+              (!pickedEnded && followUp === "designate" && subIds.length === 0)
             }
             onClick={submit}
           >

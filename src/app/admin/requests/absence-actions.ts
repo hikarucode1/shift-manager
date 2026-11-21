@@ -23,7 +23,11 @@ import {
   ABSENCE_EXPIRED_UNASSIGNED_NOTE,
 } from "@/lib/absence-expiry";
 import { absenceTutorAssigned } from "@/lib/absences";
-import { sendDesignatedRequest } from "@/lib/designation-request";
+import {
+  designeeNoteNames,
+  sendDesignatedRequest,
+  sendDesignatedRequests,
+} from "@/lib/designation-request";
 import { createOpenSwapOnBehalf } from "./swap-actions";
 
 type ActionResult = { ok: true } | { ok: false; error: string };
@@ -201,7 +205,12 @@ const OnBehalfInput = z.object({
     .max(500, "理由は 500 文字以内で入力してください。"),
   /** 本番チェック メモ25: 登録と一緒にする代講の次の一手 (省略時は none) */
   followUp: z.enum(["designate", "recruit", "none"]).optional().default("none"),
-  designatedSubstituteId: z.string().uuid().nullable().optional(),
+  /** 室長レビュー要望2: 指名する相手は複数選べる (早い者勝ち) */
+  designatedSubstituteIds: z
+    .array(z.string().uuid())
+    .max(10, "一度に指名できるのは 10 人までです。")
+    .optional()
+    .default([]),
 });
 
 /**
@@ -232,7 +241,7 @@ export async function createAbsenceOnBehalf(
       pendingSwap: boolean;
       /** 代講の指名・募集ができなかった理由 (欠勤の登録はできている) */
       followUpError: string | null;
-      /** 指名した講師の名前 (指名できたとき) */
+      /** 指名した講師 (指名できたとき。「Aさん・Bさん」の形、さん付き) */
       designeeName: string | null;
     }
   | { ok: false; error: string }
@@ -244,8 +253,8 @@ export async function createAbsenceOnBehalf(
     return { ok: false, error: parsed.error.issues[0]?.message ?? "入力が不正です。" };
   }
   const { tutorId, date, slotNumber, reason, followUp } = parsed.data;
-  const designatedSubstituteId =
-    followUp === "designate" ? (parsed.data.designatedSubstituteId ?? null) : null;
+  const designeeIds =
+    followUp === "designate" ? [...new Set(parsed.data.designatedSubstituteIds)] : [];
   if (followUp !== "none" && (await hasSlotEnded(date, slotNumber))) {
     return {
       ok: false,
@@ -253,16 +262,18 @@ export async function createAbsenceOnBehalf(
     };
   }
   if (followUp === "designate") {
-    if (!designatedSubstituteId) {
+    if (designeeIds.length === 0) {
       return { ok: false, error: "代講に指名する講師を選んでください。" };
     }
-    const error = await designeeError({
-      absentTutorId: tutorId,
-      designeeId: designatedSubstituteId,
-      date,
-      slotNumber,
-    });
-    if (error) return { ok: false, error };
+    for (const designeeId of designeeIds) {
+      const error = await designeeError({
+        absentTutorId: tutorId,
+        designeeId,
+        date,
+        slotNumber,
+      });
+      if (error) return { ok: false, error };
+    }
   }
 
   // 実在する確定シフトか (クライアントを信用しない)。交代が承認済みなら
@@ -301,7 +312,7 @@ export async function createAbsenceOnBehalf(
         status: "approved",
         decidedBy: profile.id,
         decidedAt: new Date(),
-        designatedSubstituteId,
+        designatedSubstituteId: designeeIds[0] ?? null,
       })
       .returning({ id: absenceRequests.id });
     absenceId = row.id;
@@ -322,13 +333,16 @@ export async function createAbsenceOnBehalf(
   let followUpNote = "";
   let designeeName: string | null = null;
   if (followUp === "designate") {
-    const sent = await sendDesignatedRequest({ absenceId, actorId: profile.id });
-    if (sent.ok) {
-      designeeName = sent.designeeName;
-      followUpNote = ` ／ 代講は${sent.designeeName}さんに依頼しました（返事待ち）`;
-    } else {
-      followUpError = sent.error;
+    const sent = await sendDesignatedRequests({
+      absenceId,
+      actorId: profile.id,
+      designeeIds,
+    });
+    if (sent.sentNames.length > 0) {
+      designeeName = sent.sentNames.map((n) => `${n}さん`).join("・");
+      followUpNote = ` ／ 代講は${designeeNoteNames(sent.sentNames)}に依頼しました（返事待ち）`;
     }
+    if (sent.errors.length > 0) followUpError = sent.errors.join(" ／ ");
   } else if (followUp === "recruit") {
     const res = await createOpenSwapOnBehalf({
       tutorId,
@@ -456,24 +470,29 @@ export async function closeUnassignedAbsence(
 }
 
 /* ------------------------------------------------------------------ */
-/*  #331 断られたあとに、代講を頼む相手を指定し直す                     */
+/*  #331 / 要望2 代講を頼む相手を足す (断られたあと・返事待ちのあいだ)   */
 /* ------------------------------------------------------------------ */
 
-const RedesignateInput = z.object({
+const AddDesigneeInput = z.object({
   absenceId: z.string().uuid(),
   designatedSubstituteId: z.string().uuid("講師を選んでください。"),
 });
 
 /**
- * 教室長: 指定した相手に断られた欠勤で、代講を頼む相手を指定し直す (#331)。
- * 本番チェック メモ21: 新しい相手には、教室長からそのまま依頼が届く
- * (休む講師が依頼し直す手順は無くした)。
+ * 教室長: 代講が決まっていない欠勤で、代講を頼む相手を足す。
+ *
+ * - #331: 指定した相手に断られたあと、別の講師を指定し直す
+ * - 室長レビュー要望2: 返事が遅いときに、待ったまま別の講師にも指名する。
+ *   今の相手への依頼は残し、最初に引き受けた人で決まる (早い者勝ち。
+ *   ほかの依頼は `acceptDesignatedSubstitution` が閉じる)
+ *
+ * 本番チェック メモ21: 新しい相手には、教室長からそのまま依頼が届く。
  */
-export async function redesignateSubstitute(
+export async function addDesignatedSubstitute(
   input: unknown,
 ): Promise<ActionResult> {
   const { profile } = await requireRole("admin");
-  const parsed = RedesignateInput.safeParse(input);
+  const parsed = AddDesigneeInput.safeParse(input);
   if (!parsed.success) {
     return {
       ok: false,
@@ -497,7 +516,7 @@ export async function redesignateSubstitute(
     )
     .limit(1);
   if (!absence) {
-    return { ok: false, error: "対象の欠勤が見つかりません（取り消された可能性があります）。" };
+    return { ok: false, error: "対象の欠勤が見つかりません（取り消されたか、代講が決まった可能性があります）。" };
   }
   if (await hasSlotEnded(absence.date, absence.slotNumber)) {
     return { ok: false, error: "終了したコマです。実際に入った代講は「あとから代講を記録する」から記録してください。" };
@@ -509,22 +528,7 @@ export async function redesignateSubstitute(
     slotNumber: absence.slotNumber,
   });
   if (error) return { ok: false, error };
-  // 返事待ちの依頼があるあいだは指定を変えない (相手が引き受けられなくなる)
-  const [pendingLinked] = await db
-    .select({ id: swapRequests.id })
-    .from(swapRequests)
-    .where(
-      and(
-        eq(swapRequests.absenceRequestId, absenceId),
-        eq(swapRequests.status, "pending"),
-      ),
-    )
-    .limit(1);
-  if (pendingLinked) {
-    return { ok: false, error: "今の相手の返事を待っている依頼があります。" };
-  }
-  // 一度断った講師は選べない。`designationState` はその講師への依頼の結果を
-  // 見るので、選ぶと「断られた」のまま依頼ボタンが出なくなる
+  // 一度断った講師は選べない (同じ人に何度も頼まない)
   const [declinedBefore] = await db
     .select({ id: swapRequests.id })
     .from(swapRequests)
@@ -543,6 +547,8 @@ export async function redesignateSubstitute(
     };
   }
 
+  // 「最後に指定した相手」として残す (`designationState` が、依頼を送れな
+  // かったときに休む講師の画面へ依頼ボタンを出すのに使う)
   await db
     .update(absenceRequests)
     .set({ designatedSubstituteId, updatedAt: new Date() })
@@ -553,22 +559,25 @@ export async function redesignateSubstitute(
       ),
     );
 
-  // 本番チェック メモ21: 休む講師を挟まず、新しい相手に直接依頼を送る
-  const sent = await sendDesignatedRequest({ absenceId, actorId: profile.id });
+  const sent = await sendDesignatedRequest({
+    absenceId,
+    actorId: profile.id,
+    designeeId: designatedSubstituteId,
+  });
   revalidatePath("/tutor/open-swaps");
   if (!sent.ok) {
     revalidatePath("/admin/requests");
     revalidatePath("/tutor/absences");
     return {
       ok: false,
-      error: `指定し直しましたが、依頼を送れませんでした: ${sent.error}`,
+      error: `依頼を送れませんでした: ${sent.error}`,
     };
   }
   const slotLabel = await slotLabelSafe(absence.slotNumber);
   await notify([absence.tutorId], {
     type: "absence_result",
-    title: "代講を頼む相手が変わりました",
-    body: `対象: ${noticeDate(absence.date)} ${slotLabel} ／ 代講は${sent.designeeName}さんに依頼しました（返事待ち）`,
+    title: "代講を頼む相手が増えました",
+    body: `対象: ${noticeDate(absence.date)} ${slotLabel} ／ ${sent.designeeName}さんにも代講を依頼しました（返事待ち）`,
     href: "/tutor/absences",
   });
 

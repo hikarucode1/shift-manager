@@ -9,13 +9,15 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { shortDate } from "@/lib/week";
 import { cn } from "@/lib/utils";
-import { redesignateSubstitute } from "./absence-actions";
+import { addDesignatedSubstitute } from "./absence-actions";
 import { createOpenSwapOnBehalf } from "./swap-actions";
 
 /**
- * #331: 指定した相手に断られ、代講が決まっていない欠勤。教室長が
- * 「別の講師を指定し直す」(その講師に直接依頼が届く) か「代講を募集に出す」
- * (今ある代理募集) を選ぶ。
+ * #331: 代講の相手を指名したが、まだ決まっていない欠勤。
+ * - 断られた: 「別の講師を指名する」(その講師に直接依頼が届く) か
+ *   「代講を募集に出す」(今ある代理募集) を選ぶ
+ * - 返事待ち (室長レビュー要望2): 待ったまま「ほかの講師にも指名する」。
+ *   最初に引き受けた人で決まる (早い者勝ち)
  */
 export function UnfilledAbsencesPanel({
   absences,
@@ -81,15 +83,27 @@ export function UnfilledAbsencesPanel({
           <div className="space-y-0.5">
             <div className="flex flex-wrap items-center gap-2">
               <span className="font-medium">{a.tutorName}</span>
-              <Badge variant="accent">代講未定</Badge>
+              <Badge variant={a.state === "declined" ? "accent" : "secondary"}>
+                {a.state === "declined" ? "代講未定" : "返事待ち"}
+              </Badge>
             </div>
             <p className="text-sm text-muted-foreground">
               {shortDate(a.date)}（{a.weekdayLabel}） {a.slotLabel} ／ 理由:{" "}
               {a.reason}
             </p>
-            <p className="text-sm">
-              指定した {a.declinedName}さんに断られました。次の手を選んでください。
-            </p>
+            {a.state === "declined" ? (
+              <p className="text-sm">
+                指名した {names(a.declinedNames)}
+                に断られました。次の手を選んでください。
+              </p>
+            ) : (
+              <p className="text-sm">
+                {names(a.waitingNames)}の返事待ちです。
+                {a.declinedNames.length > 0 &&
+                  `（${names(a.declinedNames)}は断りました）`}
+                返事が遅いときは、ほかの講師にも指名できます。先に引き受けた人で決まります。
+              </p>
+            )}
           </div>
 
           <div className="flex flex-wrap items-center gap-2">
@@ -97,7 +111,9 @@ export function UnfilledAbsencesPanel({
               htmlFor={`redesignate-${a.id}`}
               className="text-xs text-muted-foreground"
             >
-              別の講師を指定し直す
+              {a.state === "declined"
+                ? "別の講師を指名する"
+                : "ほかの講師にも指名する"}
             </label>
             <select
               id={`redesignate-${a.id}`}
@@ -109,9 +125,12 @@ export function UnfilledAbsencesPanel({
             >
               <option value="">選んでください</option>
               {tutors
-                // 休む本人と、この欠勤の代講を一度断った講師は選べない
+                // 休む本人と、返事待ちの講師と、一度断った講師は選べない
                 .filter(
-                  (t) => t.id !== a.tutorId && !a.declinedIds.includes(t.id),
+                  (t) =>
+                    t.id !== a.tutorId &&
+                    !a.waitingIds.includes(t.id) &&
+                    !a.declinedIds.includes(t.id),
                 )
                 .map((t) => (
                   <option key={t.id} value={t.id}>
@@ -125,44 +144,52 @@ export function UnfilledAbsencesPanel({
               onClick={() =>
                 run(
                   () =>
-                    redesignateSubstitute({
+                    addDesignatedSubstitute({
                       absenceId: a.id,
                       designatedSubstituteId: picked[a.id],
                     }),
-                  "指定し直し、その講師に代講の依頼を送りました。",
+                  "その講師に代講の依頼を送りました。",
                 )
               }
             >
-              指定し直す
+              指名する
             </Button>
           </div>
 
-          <div className="flex flex-wrap items-center gap-2">
-            <Button
-              variant="outline"
-              size="sm"
-              disabled={isPending}
-              onClick={() =>
-                run(
-                  () =>
-                    createOpenSwapOnBehalf({
-                      tutorId: a.tutorId,
-                      date: a.date,
-                      slotNumber: a.slotNumber,
-                      reason: `欠勤（${a.reason}）`.slice(0, 500),
-                    }),
-                  "代講の募集に出しました。応募があれば「交代・代講」に出ます。",
-                )
-              }
-            >
-              代講を募集に出す
-            </Button>
-            <span className="text-xs text-muted-foreground">
-              出られる講師全員に知らせ、応募者の中から選びます
-            </span>
-          </div>
+          {/* 返事待ちの依頼があるあいだは募集に出せない (同じコマに並べない) */}
+          {a.state === "declined" && (
+            <div className="flex flex-wrap items-center gap-2">
+              <Button
+                variant="outline"
+                size="sm"
+                disabled={isPending}
+                onClick={() =>
+                  run(
+                    () =>
+                      createOpenSwapOnBehalf({
+                        tutorId: a.tutorId,
+                        date: a.date,
+                        slotNumber: a.slotNumber,
+                        reason: `欠勤（${a.reason}）`.slice(0, 500),
+                      }),
+                    "代講の募集に出しました。応募があれば「交代・代講」に出ます。",
+                  )
+                }
+              >
+                代講を募集に出す
+              </Button>
+              <span className="text-xs text-muted-foreground">
+                出られる講師全員に知らせ、応募者の中から選びます
+              </span>
+            </div>
+          )}
         </div>
       ))}
     </div>
   );
+}
+
+/** ["A", "B"] → "Aさん・Bさん" */
+function names(list: string[]): string {
+  return list.map((n) => `${n}さん`).join("・");
 }

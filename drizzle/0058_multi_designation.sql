@@ -1,0 +1,3 @@
+DROP INDEX "swap_requests_active_uniq";--> statement-breakpoint
+CREATE UNIQUE INDEX "swap_requests_designation_uniq" ON "swap_requests" USING btree ("absence_request_id","nominated_tutor_id") WHERE "swap_requests"."status" = 'pending' AND "swap_requests"."absence_request_id" IS NOT NULL;--> statement-breakpoint
+CREATE UNIQUE INDEX "swap_requests_active_uniq" ON "swap_requests" USING btree ("requester_id","date","slot_number") WHERE "swap_requests"."status" = 'pending' AND "swap_requests"."absence_request_id" IS NULL;

@@ -8,6 +8,7 @@ import {
   gte,
   inArray,
   isNotNull,
+  isNull,
   sql,
   type SQL,
 } from "drizzle-orm";
@@ -83,6 +84,11 @@ export type TutorAbsenceRow = AbsenceRequestRow & {
   designation: DesignationState;
   /** 指定された相手の名前 (指定が無ければ null) */
   designatedName: string | null;
+  /**
+   * 要望2: 状態に合う相手 (さん付き、複数なら「・」でつなぐ)。返事待ちなら
+   * 返事待ちの人、引き受けたら引き受けた人、断られたら断った人
+   */
+  designationNames: string;
 };
 
 export type PendingAbsence = AbsenceRequestRow & {
@@ -206,18 +212,7 @@ export async function getTutorAbsenceRequests(
     .orderBy(desc(absenceRequests.createdAt));
 
   // #331: 指定された相手の名前と、欠勤に紐づく依頼
-  const designatedIds = [
-    ...new Set(
-      rows.map((r) => r.designatedSubstituteId).filter((v): v is string => !!v),
-    ),
-  ];
-  const [nameRows, linked] = await Promise.all([
-    designatedIds.length > 0
-      ? db
-          .select({ id: profiles.id, name: profiles.displayName })
-          .from(profiles)
-          .where(inArray(profiles.id, designatedIds))
-      : Promise.resolve([]),
+  const [linked] = await Promise.all([
     rows.length > 0
       ? db
           .select({
@@ -235,37 +230,76 @@ export async function getTutorAbsenceRequests(
           )
       : Promise.resolve([]),
   ]);
+  const designatedIds = [
+    ...new Set(
+      [
+        ...rows.map((r) => r.designatedSubstituteId),
+        ...linked.map((l) => l.nominatedTutorId),
+      ].filter((v): v is string => !!v),
+    ),
+  ];
+  const [nameRows] = await Promise.all([
+    designatedIds.length > 0
+      ? db
+          .select({ id: profiles.id, name: profiles.displayName })
+          .from(profiles)
+          .where(inArray(profiles.id, designatedIds))
+      : Promise.resolve([]),
+  ]);
   const nameById = new Map(nameRows.map((n) => [n.id, n.name]));
 
-  return rows.map((r) => ({
-    designatedName: r.designatedSubstituteId
-      ? (nameById.get(r.designatedSubstituteId) ?? "不明")
-      : null,
-    designation: designationState({
+  return rows.map((r) => {
+    const mine = linked
+      .filter((l) => l.absenceRequestId === r.id)
+      .map((l) => ({
+        status: l.status as LinkedSwap["status"],
+        nominatedTutorId: l.nominatedTutorId,
+        closeKind: l.closeKind,
+      }));
+    const designation = designationState({
       absenceStatus: r.status as AbsenceStatus,
       designatedId: r.designatedSubstituteId,
-      linkedSwaps: linked
-        .filter((l) => l.absenceRequestId === r.id)
-        .map((l) => ({
-          status: l.status as LinkedSwap["status"],
-          nominatedTutorId: l.nominatedTutorId,
-          closeKind: l.closeKind,
-        })),
+      linkedSwaps: mine,
       isEnded: isSlotPast(r.date, slotLabelOf(meta, r.slotNumber).end),
-    }),
-    id: r.id,
-    isProxy: r.createdBy !== null && r.createdBy !== r.tutorId,
-    ...absenceCloseFlags(r.closeKind),
-    date: r.date,
-    slotNumber: r.slotNumber,
-    slotLabel: slotLabelOf(meta, r.slotNumber).label,
-    weekdayLabel: weekdayOf(r.date).label,
-    reason: r.reason,
-    status: r.status as AbsenceStatus,
-    decisionNote: r.decisionNote,
-    decidedAt: r.decidedAt ? r.decidedAt.toISOString() : null,
-    createdAt: r.createdAt.toISOString(),
-  }));
+    });
+    const namesWhere = (pred: (l: LinkedSwap) => boolean) =>
+      [
+        ...new Set(
+          mine
+            .filter(pred)
+            .map((l) => l.nominatedTutorId)
+            .filter((v): v is string => v !== null),
+        ),
+      ]
+        .map((id) => `${nameById.get(id) ?? "不明"}さん`)
+        .join("・");
+    return {
+      designatedName: r.designatedSubstituteId
+        ? (nameById.get(r.designatedSubstituteId) ?? "不明")
+        : null,
+      designationNames:
+        designation.kind === "requested"
+          ? namesWhere((l) => l.status === "pending")
+          : designation.kind === "accepted"
+            ? namesWhere((l) => l.status === "approved")
+            : designation.kind === "declined"
+              ? namesWhere((l) => l.closeKind === "nominee_declined")
+              : "",
+      designation,
+      id: r.id,
+      isProxy: r.createdBy !== null && r.createdBy !== r.tutorId,
+      ...absenceCloseFlags(r.closeKind),
+      date: r.date,
+      slotNumber: r.slotNumber,
+      slotLabel: slotLabelOf(meta, r.slotNumber).label,
+      weekdayLabel: weekdayOf(r.date).label,
+      reason: r.reason,
+      status: r.status as AbsenceStatus,
+      decisionNote: r.decisionNote,
+      decidedAt: r.decidedAt ? r.decidedAt.toISOString() : null,
+      createdAt: r.createdAt.toISOString(),
+    };
+  });
 }
 
 /** 教室長: 未対応 (pending) の欠勤申請 */
@@ -367,7 +401,11 @@ export async function getApprovedAbsenceKeysAll(
   );
 }
 
-/** #331: 指定した相手に断られ、代講が決まっていない欠勤 (教室長の未対応) */
+/**
+ * #331: 代講の相手を指名したが、まだ代講が決まっていない欠勤。
+ * 要望2で、断られたもの (declined) に加えて返事待ち (requested) も出す
+ * (返事が遅いときに、ほかの講師にも指名できるように)
+ */
 export type UnfilledAbsence = {
   id: string;
   tutorId: string;
@@ -377,21 +415,27 @@ export type UnfilledAbsence = {
   slotLabel: string;
   weekdayLabel: string;
   reason: string;
-  /** 断った相手 (今の指定) */
-  declinedName: string;
-  /** この欠勤の代講を断った講師全員 (指定し直しの候補から外す) */
+  /** requested: 誰かの返事待ち / declined: 指名した全員に断られた */
+  state: "requested" | "declined";
+  /** 返事待ちの相手の名前 */
+  waitingNames: string[];
+  /** 断った相手の名前 */
+  declinedNames: string[];
+  /** 返事待ちの相手 (足す候補から外す) */
+  waitingIds: string[];
+  /** この欠勤の代講を断った講師全員 (足す候補から外す) */
   declinedIds: string[];
 };
 
 /**
- * 教室長が代講の相手を指定した承認済みの欠勤のうち、相手に断られて、
- * まだ代講が決まっていないもの (#331)。次の相手を指定し直すか、代理募集に
- * 出すための一覧。
+ * 教室長が代講の相手を指定した承認済みの欠勤のうち、まだ代講が決まって
+ * いないもの (#331)。相手に断られたもの (次の相手を指名するか、代理募集に
+ * 出す) と、要望2で返事待ちのもの (ほかの講師にも指名する) を出す。
  *
  * 出さないもの:
  * - コマが終わった欠勤 (今から代わってもらう相手が居ない)
  * - 休む講師がもう担当でないコマ
- * - そのコマに出したままの交代申請がある (代理募集に出した・別の依頼中)
+ * - そのコマに出したままの交代申請がある (代理募集に出したなど。指名の依頼は除く)
  */
 export async function getUnfilledDesignatedAbsences(): Promise<
   UnfilledAbsence[]
@@ -453,19 +497,22 @@ export async function getUnfilledDesignatedAbsences(): Promise<
         and(
           inArray(swapRequests.status, ["pending", "approved"]),
           gte(swapRequests.date, today),
-          inArray(
-            swapRequests.requesterId,
-            [...new Set(candidates.map((c) => c.tutorId))],
-          ),
+          // 指名の依頼 (この欠勤に紐づく) は下の linked で見る
+          isNull(swapRequests.absenceRequestId),
+          inArray(swapRequests.requesterId, [
+            ...new Set(candidates.map((c) => c.tutorId)),
+          ]),
         ),
       ),
+    // 名前は、指名した相手全員の分を引く (下で linked から集める)
     db
       .select({ id: profiles.id, name: profiles.displayName })
       .from(profiles)
+      .innerJoin(swapRequests, eq(swapRequests.nominatedTutorId, profiles.id))
       .where(
         inArray(
-          profiles.id,
-          [...new Set(candidates.map((c) => c.designatedId as string))],
+          swapRequests.absenceRequestId,
+          candidates.map((c) => c.id),
         ),
       ),
   ]);
@@ -474,39 +521,47 @@ export async function getUnfilledDesignatedAbsences(): Promise<
   );
   const nameById = new Map(names.map((n) => [n.id, n.name]));
 
-  return candidates
-    .filter(
-      (c) =>
-        !activeKeys.has(`${c.tutorId}|${c.date}|${c.slotNumber}`) &&
-        designationState({
-          absenceStatus: "approved",
-          designatedId: c.designatedId,
-          linkedSwaps: linked
-            .filter((l) => l.absenceRequestId === c.id)
-            .map((l) => ({
-              status: l.status as LinkedSwap["status"],
-              nominatedTutorId: l.nominatedTutorId,
-              closeKind: l.closeKind,
-            })),
-          isEnded: false,
-        }).kind === "declined",
-    )
-    .map((c) => ({
-      id: c.id,
-      tutorId: c.tutorId,
-      tutorName: c.tutorName,
-      date: c.date,
-      slotNumber: c.slotNumber,
-      slotLabel: slotLabelOf(meta, c.slotNumber).label,
-      weekdayLabel: weekdayOf(c.date).label,
-      reason: c.reason,
-      declinedName: nameById.get(c.designatedId as string) ?? "不明",
-      declinedIds: linked
-        .filter(
-          (l) =>
-            l.absenceRequestId === c.id && l.closeKind === "nominee_declined",
-        )
-        .map((l) => l.nominatedTutorId)
-        .filter((v): v is string => v !== null),
-    }));
+  return candidates.flatMap((c) => {
+    if (activeKeys.has(`${c.tutorId}|${c.date}|${c.slotNumber}`)) return [];
+    const mine = linked.filter((l) => l.absenceRequestId === c.id);
+    const kind = designationState({
+      absenceStatus: "approved",
+      designatedId: c.designatedId,
+      linkedSwaps: mine.map((l) => ({
+        status: l.status as LinkedSwap["status"],
+        nominatedTutorId: l.nominatedTutorId,
+        closeKind: l.closeKind,
+      })),
+      isEnded: false,
+    }).kind;
+    if (kind !== "requested" && kind !== "declined") return [];
+    const idsOf = (pred: (l: (typeof mine)[number]) => boolean) => [
+      ...new Set(
+        mine
+          .filter(pred)
+          .map((l) => l.nominatedTutorId)
+          .filter((v): v is string => v !== null),
+      ),
+    ];
+    const waitingIds = idsOf((l) => l.status === "pending");
+    const declinedIds = idsOf((l) => l.closeKind === "nominee_declined");
+    const nameOf = (id: string) => nameById.get(id) ?? "不明";
+    return [
+      {
+        id: c.id,
+        tutorId: c.tutorId,
+        tutorName: c.tutorName,
+        date: c.date,
+        slotNumber: c.slotNumber,
+        slotLabel: slotLabelOf(meta, c.slotNumber).label,
+        weekdayLabel: weekdayOf(c.date).label,
+        reason: c.reason,
+        state: kind,
+        waitingNames: waitingIds.map(nameOf),
+        declinedNames: declinedIds.map(nameOf),
+        waitingIds,
+        declinedIds,
+      },
+    ];
+  });
 }

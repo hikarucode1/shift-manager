@@ -78,7 +78,7 @@ export default async function AdminRequestsPage({
       : Promise.resolve({ rows: [], truncated: false }),
     // #331: 欠勤を承認するときに選ぶ「代講を頼む相手」
     fetchActiveTutors(),
-    // #331: 指定した相手に断られ、代講が決まっていない欠勤
+    // #331 / 要望2: 指名した相手の返事待ち・断られて、代講が決まっていない欠勤
     getUnfilledDesignatedAbsences(),
     // #333: 提出期間外のシフト変更申請
     getPendingChangeRequests(),

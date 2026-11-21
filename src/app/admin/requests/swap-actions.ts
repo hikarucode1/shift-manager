@@ -3,7 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { after } from "next/server";
 import { z } from "zod";
-import { and, arrayContains, eq, inArray, isNull, ne } from "drizzle-orm";
+import { and, arrayContains, eq, inArray, isNotNull, isNull, ne } from "drizzle-orm";
 import { requireRole } from "@/lib/auth";
 import { notify } from "@/lib/notifications";
 import { shouldExpireSubstituteAbsence } from "@/lib/absence-expiry";
@@ -773,6 +773,28 @@ export async function createOpenSwapOnBehalf(
     .limit(1);
   if (shift.length === 0) {
     return { ok: false, error: "その講師はこのコマの担当ではありません。" };
+  }
+
+  // 室長レビュー要望2: 欠勤で指名した相手への依頼は swap_requests_active_uniq
+  // の外なので、返事待ちの指名があるコマに募集を重ねないようここで確かめる
+  const [designation] = await db
+    .select({ id: swapRequests.id })
+    .from(swapRequests)
+    .where(
+      and(
+        eq(swapRequests.requesterId, tutorId),
+        eq(swapRequests.date, date),
+        eq(swapRequests.slotNumber, slotNumber),
+        eq(swapRequests.status, "pending"),
+        isNotNull(swapRequests.absenceRequestId),
+      ),
+    )
+    .limit(1);
+  if (designation) {
+    return {
+      ok: false,
+      error: "このコマには指名した講師の返事待ちの依頼があります。",
+    };
   }
 
   try {
