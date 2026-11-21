@@ -3,7 +3,7 @@ import { CircleHelp, LogOut, Phone, UserRound } from "lucide-react";
 import { SCHOOL_PHONE, SCHOOL_PHONE_HREF } from "@/lib/school";
 import { Button } from "@/components/ui/button";
 import { NotificationBell } from "@/components/notification-bell";
-import { ContactLink } from "@/components/contact/contact-link";
+import { GuideLink } from "@/components/guide/guide-link";
 import { TutorBottomNav } from "@/components/tutor-bottom-nav";
 import type { SessionProfile } from "@/lib/auth";
 
@@ -42,14 +42,15 @@ export function TutorShell({
               <Phone className="size-5" />
             </a>
             <NotificationBell audience="tutor" />
-            {/* #320: お問い合わせ */}
-            <ContactLink
+            {/* 2026/11/21 本人: 操作が分からないときはここから「アプリの使い方」へ。
+                お問い合わせ (#320) は使い方の一番下に移した */}
+            <GuideLink
               base="/tutor"
-              ariaLabel="お問い合わせ"
+              ariaLabel="アプリの使い方"
               className="flex size-8 items-center justify-center rounded-md hover:bg-primary-foreground/10"
             >
               <CircleHelp className="size-5" />
-            </ContactLink>
+            </GuideLink>
             {/* #348: 名前を押すとマイページ */}
             {/* 文字だけだと押せると気づきにくいので、アイコン付きのボタンの形にする */}
             <Link

@@ -3,7 +3,7 @@ import { CircleHelp, LogOut } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { NotificationBell } from "@/components/notification-bell";
 import { AdminTopNav } from "@/components/admin-top-nav";
-import { ContactLink } from "@/components/contact/contact-link";
+import { GuideLink } from "@/components/guide/guide-link";
 import type { SessionProfile } from "@/lib/auth";
 
 /**
@@ -30,14 +30,15 @@ export function AdminShell({
           <div className="flex items-center gap-3">
             {/* #344: 教室長向けの通知 (講師のベルとは別) */}
             <NotificationBell audience="admin" />
-            {/* #320: お問い合わせ */}
-            <ContactLink
+            {/* 2026/11/21 本人: 操作が分からないときはここから「アプリの使い方」へ。
+                お問い合わせ (#320) は使い方の一番下に移した */}
+            <GuideLink
               base="/admin"
               className="flex items-center gap-1 rounded-md px-2 py-1 text-sm text-primary-foreground/90 hover:bg-primary-foreground/10"
             >
               <CircleHelp className="size-4" />
-              お問い合わせ
-            </ContactLink>
+              使い方
+            </GuideLink>
             <span className="hidden text-sm text-primary-foreground/80 sm:inline">
               {profile.displayName}
             </span>
