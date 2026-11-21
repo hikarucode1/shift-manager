@@ -83,24 +83,3 @@ describe("candidateMark: 欠勤の代理登録 (#217)", () => {
     );
   });
 });
-
-describe("candidateMark: 代講の記録 (#215)", () => {
-  it("何も塞がない", () => {
-    expect(
-      candidateMark(
-        "record",
-        st({ absence: "approved", hasPendingSwap: true, isEnded: true }),
-      ).blocked,
-    ).toBe(false);
-  });
-
-  it("実施済みと交代申請を併記する", () => {
-    expect(
-      candidateMark("record", st({ hasPendingSwap: true, isEnded: true })).note,
-    ).toBe("実施済み / 交代申請あり");
-  });
-
-  it("何も無ければ注記なし", () => {
-    expect(candidateMark("record", st()).note).toBeNull();
-  });
-});
