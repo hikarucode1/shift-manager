@@ -27,7 +27,11 @@ import {
   saveMonthlyConfirmation,
   saveRegularConfirmation,
 } from "./confirm-actions";
-import { SubjectFilterBar, TrackDot } from "@/components/subject-filter-bar";
+import {
+  SubjectFilterBar,
+  TrackDot,
+  TutorFilterSelect,
+} from "@/components/subject-filter-bar";
 import {
   NO_SUBJECT_FILTER,
   isSubjectFilterOn,
@@ -208,9 +212,12 @@ export function AdminSubmissionsOverview({
   // (確定済みの人が見えなくなって外し忘れないように。11/18 本人)
   const [subjectFilter, setSubjectFilter] =
     useState<SubjectFilter>(NO_SUBJECT_FILTER);
-  const filterOn = isSubjectFilterOn(subjectFilter);
+  // 室長レビュー要望6: 講師 1 人に絞る (文理・科目と AND)
+  const [tutorFilter, setTutorFilter] = useState<string | null>(null);
+  const filterOn = isSubjectFilterOn(subjectFilter) || tutorFilter !== null;
   const isMatch = (t: TutorView) =>
-    !filterOn || matchesSubjectFilter(t, subjectFilter);
+    (tutorFilter === null || t.id === tutorFilter) &&
+    matchesSubjectFilter(t, subjectFilter);
   const sortedTutors = matchFirst(tutors, isMatch);
 
   // 講師別ステータス: 全員分のカードは開いたときだけ出す (11/18 本人)
@@ -705,8 +712,14 @@ export function AdminSubmissionsOverview({
           )}
           {/* #350 / 室長レビュー要望3: 表のすぐ上に置く（上の講師別ステータスにも効く） */}
           <div className="space-y-1.5 rounded-lg border bg-muted/30 p-3">
-            <p className="text-sm font-medium">文理・科目で絞り込む</p>
-            <SubjectFilterBar value={subjectFilter} onChange={setSubjectFilter} />
+            <p className="text-sm font-medium">文理・科目・講師で絞り込む</p>
+            <SubjectFilterBar value={subjectFilter} onChange={setSubjectFilter}>
+              <TutorFilterSelect
+                tutors={tutors.map((t) => ({ id: t.id, name: t.displayName }))}
+                value={tutorFilter}
+                onChange={setTutorFilter}
+              />
+            </SubjectFilterBar>
             {filterOn && (
               <p className="text-xs text-muted-foreground">
                 合う講師 {tutors.filter(isMatch).length} 人を先頭に出し、合わない講師は薄く表示しています。「＋ 希望に無い講師を入れる」では、合う講師の名前に ● が付きます。

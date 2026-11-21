@@ -109,3 +109,35 @@ export function SubjectFilterBar({
     </div>
   );
 }
+
+/**
+ * 室長レビュー要望6: 講師 1 人に絞る選択。文理・科目の絞り込みと一緒に使う
+ * (SubjectFilterBar の children に置く)。null は「全員」
+ */
+export function TutorFilterSelect({
+  tutors,
+  value,
+  onChange,
+}: {
+  tutors: { id: string; name: string }[];
+  value: string | null;
+  onChange: (next: string | null) => void;
+}) {
+  return (
+    <label className="flex items-center gap-2 text-sm">
+      <span className="text-muted-foreground">講師</span>
+      <select
+        value={value ?? ""}
+        onChange={(e) => onChange(e.target.value || null)}
+        className="h-9 rounded-md border bg-background px-2 text-sm"
+      >
+        <option value="">全員</option>
+        {tutors.map((t) => (
+          <option key={t.id} value={t.id}>
+            {t.name}
+          </option>
+        ))}
+      </select>
+    </label>
+  );
+}
