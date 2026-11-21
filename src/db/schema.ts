@@ -2,6 +2,7 @@ import { relations, sql } from "drizzle-orm";
 import {
   boolean,
   check,
+  customType,
   date,
   index,
   integer,
@@ -133,6 +134,9 @@ export const notificationTypeEnum = pgEnum("notification_type", [
   // 室長レビュー要望4: 講師宛て。講習・レギュラーのシフト提出の受付が始まった
   // (dedupKey = course-open:<id> / regular-open:<id>)
   "submission_opened",
+  // 室長レビュー要望12: 講師宛て。月のスケジュール (PDF) が出た
+  // (dedupKey = monthly-schedule:<YYYY-MM>)
+  "monthly_schedule",
 ]);
 
 /* ------------------------------------------------------------------ */
@@ -1445,3 +1449,30 @@ export const announcementRecipients = pgTable(
     ),
   }),
 );
+
+/* ------------------------------------------------------------------ */
+/*  monthly_schedules — 月のスケジュール PDF (室長レビュー要望12)        */
+/* ------------------------------------------------------------------ */
+/*  休校日・時間割の回数などが載った塾の月の予定表。教室長がアップロード  */
+/*  し、講師はアプリで開く。1 か月 1 枚で、上げ直すと置き換える。        */
+/*  数百 KB の PDF が月 1 枚なので、Storage を足さずに DB に持つ。       */
+
+const bytea = customType<{ data: Buffer; driverData: Buffer }>({
+  dataType() {
+    return "bytea";
+  },
+});
+
+export const monthlySchedules = pgTable("monthly_schedules", {
+  /** その月の 1 日 (YYYY-MM-01) */
+  month: date("month").primaryKey(),
+  fileName: text("file_name").notNull(),
+  content: bytea("content").notNull(),
+  byteSize: integer("byte_size").notNull(),
+  uploadedBy: uuid("uploaded_by").references(() => profiles.id, {
+    onDelete: "set null",
+  }),
+  updatedAt: timestamp("updated_at", { withTimezone: true })
+    .notNull()
+    .defaultNow(),
+});
