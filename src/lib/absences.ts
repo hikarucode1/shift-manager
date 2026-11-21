@@ -8,7 +8,6 @@ import {
   gt,
   gte,
   inArray,
-  isNotNull,
   isNull,
   sql,
   type SQL,
@@ -22,8 +21,10 @@ import {
 } from "@/db/schema";
 import {
   designationState,
+  unfilledAbsenceState,
   type DesignationState,
   type LinkedSwap,
+  type UnfilledState,
 } from "@/lib/designated-substitution";
 import { absenceCloseFlags } from "@/lib/absence-close-kind";
 import { getSlotMeta } from "@/lib/slot-meta";
@@ -486,9 +487,12 @@ export async function getApprovedAbsenceKeysAll(
 }
 
 /**
- * #331: 代講の相手を指名したが、まだ代講が決まっていない欠勤。
- * 要望2で、断られたもの (declined) に加えて返事待ち (requested) も出す
- * (返事が遅いときに、ほかの講師にも指名できるように)
+ * 承認済みで、まだ代講が決まっていない欠勤 (教室長の「代講が決まっていない欠勤」)。
+ * - #331: 代講の相手を指名したが断られたもの (declined)
+ * - 要望2: 返事待ちのもの (requested)。返事が遅いときに、ほかの講師にも
+ *   指名できるように
+ * - 2026/11/21 本人: 代講を決めずに承認したもの (none)。「何もしない」で承認した
+ *   あとでも、ここから指名・募集ができるように
  */
 export type UnfilledAbsence = {
   id: string;
@@ -499,8 +503,11 @@ export type UnfilledAbsence = {
   slotLabel: string;
   weekdayLabel: string;
   reason: string;
-  /** requested: 誰かの返事待ち / declined: 指名した全員に断られた */
-  state: "requested" | "declined";
+  /**
+   * requested: 誰かの返事待ち / declined: 指名した全員に断られた /
+   * none: 代講を決めずに承認した (「何もしない」)
+   */
+  state: UnfilledState;
   /** 返事待ちの相手の名前 */
   waitingNames: string[];
   /** 断った相手の名前 */
@@ -512,18 +519,19 @@ export type UnfilledAbsence = {
 };
 
 /**
- * 教室長が代講の相手を指定した承認済みの欠勤のうち、まだ代講が決まって
- * いないもの (#331)。相手に断られたもの (次の相手を指名するか、代理募集に
- * 出す) と、要望2で返事待ちのもの (ほかの講師にも指名する) を出す。
+ * 承認済みの欠勤のうち、まだ代講が決まっていないもの。
+ *
+ * - 指名した相手に断られた (次の相手を指名するか、代理募集に出す) / 返事待ち
+ *   (ほかの講師にも指名する)
+ * - 代講を決めずに承認した (「何もしない」)。ここから指名するか、募集に出す
  *
  * 出さないもの:
  * - コマが終わった欠勤 (今から代わってもらう相手が居ない)
  * - 休む講師がもう担当でないコマ
  * - そのコマに出したままの交代申請がある (代理募集に出したなど。指名の依頼は除く)
+ * - 代講を決めていない欠勤のうち、研修・未定のコマ (代講を立てない決まり)
  */
-export async function getUnfilledDesignatedAbsences(): Promise<
-  UnfilledAbsence[]
-> {
+export async function getUnfilledAbsences(): Promise<UnfilledAbsence[]> {
   const meta = await getSlotMeta();
   const today = jstToday();
   const rows = await db
@@ -536,13 +544,14 @@ export async function getUnfilledDesignatedAbsences(): Promise<
       reason: absenceRequests.reason,
       designatedId: absenceRequests.designatedSubstituteId,
       tutorAssigned: absenceTutorAssigned(),
+      isTraining: absenceIsTraining(),
+      isUndecided: absenceIsUndecided(),
     })
     .from(absenceRequests)
     .innerJoin(profiles, eq(profiles.id, absenceRequests.tutorId))
     .where(
       and(
         eq(absenceRequests.status, "approved"),
-        isNotNull(absenceRequests.designatedSubstituteId),
         gte(absenceRequests.date, today),
       ),
     )
@@ -608,17 +617,16 @@ export async function getUnfilledDesignatedAbsences(): Promise<
   return candidates.flatMap((c) => {
     if (activeKeys.has(`${c.tutorId}|${c.date}|${c.slotNumber}`)) return [];
     const mine = linked.filter((l) => l.absenceRequestId === c.id);
-    const kind = designationState({
-      absenceStatus: "approved",
+    const state = unfilledAbsenceState({
       designatedId: c.designatedId,
       linkedSwaps: mine.map((l) => ({
         status: l.status as LinkedSwap["status"],
         nominatedTutorId: l.nominatedTutorId,
         closeKind: l.closeKind,
       })),
-      isEnded: false,
-    }).kind;
-    if (kind !== "requested" && kind !== "declined") return [];
+      noSubstituteSlot: c.isTraining || c.isUndecided,
+    });
+    if (state === null) return [];
     const idsOf = (pred: (l: (typeof mine)[number]) => boolean) => [
       ...new Set(
         mine
@@ -640,7 +648,7 @@ export async function getUnfilledDesignatedAbsences(): Promise<
         slotLabel: slotLabelOf(meta, c.slotNumber).label,
         weekdayLabel: weekdayOf(c.date).label,
         reason: c.reason,
-        state: kind,
+        state,
         waitingNames: waitingIds.map(nameOf),
         declinedNames: declinedIds.map(nameOf),
         waitingIds,

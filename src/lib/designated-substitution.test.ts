@@ -1,5 +1,9 @@
 import { describe, expect, it } from "vitest";
-import { designationState, type LinkedSwap } from "./designated-substitution";
+import {
+  designationState,
+  unfilledAbsenceState,
+  type LinkedSwap,
+} from "./designated-substitution";
 
 const base = {
   absenceStatus: "approved" as const,
@@ -124,5 +128,54 @@ describe("designationState (#331)", () => {
         }).kind,
       ).toBe("accepted");
     });
+  });
+});
+
+describe("unfilledAbsenceState (代講が決まっていない欠勤)", () => {
+  const input = {
+    designatedId: "B" as string | null,
+    linkedSwaps: [] as LinkedSwap[],
+    noSubstituteSlot: false,
+  };
+  it("指名した相手の返事待ち", () => {
+    expect(unfilledAbsenceState({ ...input, linkedSwaps: [swap({})] })).toBe(
+      "requested",
+    );
+  });
+  it("指名した相手に断られた", () => {
+    expect(
+      unfilledAbsenceState({
+        ...input,
+        linkedSwaps: [
+          swap({ status: "cancelled", closeKind: "nominee_declined" }),
+        ],
+      }),
+    ).toBe("declined");
+  });
+  it("代講を決めずに承認した欠勤 (「何もしない」) も出す", () => {
+    expect(unfilledAbsenceState({ ...input, designatedId: null })).toBe("none");
+  });
+  it("承認前に戻して依頼を取り下げたあと、代講を決めずに承認し直した欠勤も出す", () => {
+    expect(
+      unfilledAbsenceState({
+        ...input,
+        designatedId: null,
+        linkedSwaps: [
+          swap({ status: "cancelled", closeKind: "admin_withdraw" }),
+        ],
+      }),
+    ).toBe("none");
+  });
+  it("研修・未定のコマは代講を立てないので、決めていなくても出さない", () => {
+    expect(
+      unfilledAbsenceState({
+        ...input,
+        designatedId: null,
+        noSubstituteSlot: true,
+      }),
+    ).toBeNull();
+  });
+  it("指名したが依頼を送れていない欠勤は出さない (休む講師の画面に依頼ボタンが出る)", () => {
+    expect(unfilledAbsenceState(input)).toBeNull();
   });
 });

@@ -2,7 +2,7 @@ import Link from "next/link";
 import { requireRole } from "@/lib/auth";
 import {
   getPendingAbsenceRequests,
-  getUnfilledDesignatedAbsences,
+  getUnfilledAbsences,
 } from "@/lib/absences";
 import { getPendingSwapRequests } from "@/lib/swaps";
 import { fetchActiveTutors } from "@/lib/upload-commit";
@@ -77,8 +77,9 @@ export default async function AdminRequestsPage({
       : Promise.resolve({ rows: [], truncated: false }),
     // #331: 欠勤を承認するときに選ぶ「代講を頼む相手」
     fetchActiveTutors(),
-    // #331 / 要望2: 指名した相手の返事待ち・断られて、代講が決まっていない欠勤
-    getUnfilledDesignatedAbsences(),
+    // #331 / 要望2: 指名した相手の返事待ち・断られて、代講が決まっていない欠勤。
+    // 2026/11/21 本人: 代講を決めずに承認した欠勤 (「何もしない」) も出す
+    getUnfilledAbsences(),
     // #333: 提出期間外のシフト変更申請
     getPendingChangeRequests(),
     // #360: 先の日の休み希望
@@ -90,10 +91,13 @@ export default async function AdminRequestsPage({
     name: t.displayName,
   }));
 
+  // 代講を決めずに承認した欠勤 (state: none) は、教室長が「代講なし」と決めた
+  // ものなので未対応の件数には数えない (一覧には出す)。数えると、コマが終わる
+  // まで件数が 0 に戻らない
   const pendingCount =
     pendingAbsences.length +
     pendingSwaps.length +
-    unfilled.length +
+    unfilled.filter((u) => u.state !== "none").length +
     pendingChanges.length +
     pendingDayOffs.length;
   const today = jstToday();

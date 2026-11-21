@@ -28,6 +28,10 @@ import {
 } from "@/lib/absence-expiry";
 import { absenceTutorAssigned } from "@/lib/absences";
 import {
+  unfilledAbsenceState,
+  type LinkedSwap,
+} from "@/lib/designated-substitution";
+import {
   designeeNoteNames,
   sendDesignatedRequest,
   sendDesignatedRequests,
@@ -479,7 +483,7 @@ export async function closeUnassignedAbsence(
 }
 
 /* ------------------------------------------------------------------ */
-/*  #331 / 要望2 代講を頼む相手を足す (断られたあと・返事待ちのあいだ)   */
+/*  #331 / 要望2 代講を頼む相手を足す (断られたあと・返事待ち・代講なし) */
 /* ------------------------------------------------------------------ */
 
 const AddDesigneeInput = z.object({
@@ -494,6 +498,8 @@ const AddDesigneeInput = z.object({
  * - 室長レビュー要望2: 返事が遅いときに、待ったまま別の講師にも指名する。
  *   今の相手への依頼は残し、最初に引き受けた人で決まる (早い者勝ち。
  *   ほかの依頼は `acceptDesignatedSubstitution` が閉じる)
+ * - 2026/11/21 本人: 代講を決めずに承認した欠勤 (「何もしない」) に、あとから
+ *   最初の相手を指名する
  *
  * 本番チェック メモ21: 新しい相手には、教室長からそのまま依頼が届く。
  */
@@ -515,6 +521,7 @@ export async function addDesignatedSubstitute(
       tutorId: absenceRequests.tutorId,
       date: absenceRequests.date,
       slotNumber: absenceRequests.slotNumber,
+      designatedId: absenceRequests.designatedSubstituteId,
     })
     .from(absenceRequests)
     .where(
@@ -556,6 +563,28 @@ export async function addDesignatedSubstitute(
     };
   }
 
+  // 代講を決めずに承認した欠勤 (「何もしない」) への、最初の指名か。
+  // 休む講師への通知の言い方を変える (「増えました」は 2 人目から)。
+  // 一覧の「代講なし」と同じ関数で見分ける
+  const linkedBefore = await db
+    .select({
+      status: swapRequests.status,
+      nominatedTutorId: swapRequests.nominatedTutorId,
+      closeKind: swapRequests.closeKind,
+    })
+    .from(swapRequests)
+    .where(eq(swapRequests.absenceRequestId, absenceId));
+  const isFirstDesignee =
+    unfilledAbsenceState({
+      designatedId: absence.designatedId,
+      linkedSwaps: linkedBefore.map((l) => ({
+        status: l.status as LinkedSwap["status"],
+        nominatedTutorId: l.nominatedTutorId,
+        closeKind: l.closeKind,
+      })),
+      noSubstituteSlot: false,
+    }) === "none";
+
   // 「最後に指定した相手」として残す (`designationState` が、依頼を送れな
   // かったときに休む講師の画面へ依頼ボタンを出すのに使う)
   await db
@@ -585,8 +614,10 @@ export async function addDesignatedSubstitute(
   const slotLabel = await slotLabelSafe(absence.slotNumber);
   await notify([absence.tutorId], {
     type: "absence_result",
-    title: "代講を頼む相手が増えました",
-    body: `対象: ${noticeDate(absence.date)} ${slotLabel} ／ ${sent.designeeName}さんにも代講を依頼しました（返事待ち）`,
+    title: isFirstDesignee
+      ? "代講を頼む相手が決まりました"
+      : "代講を頼む相手が増えました",
+    body: `対象: ${noticeDate(absence.date)} ${slotLabel} ／ ${sent.designeeName}さん${isFirstDesignee ? "に" : "にも"}代講を依頼しました（返事待ち）`,
     href: "/tutor/absences",
   });
 

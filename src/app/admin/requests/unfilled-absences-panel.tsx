@@ -13,12 +13,29 @@ import { addDesignatedSubstitute } from "./absence-actions";
 import { createOpenSwapOnBehalf } from "./swap-actions";
 
 /**
- * #331: 代講の相手を指名したが、まだ決まっていない欠勤。
+ * #331: 承認済みで、まだ代講が決まっていない欠勤。
  * - 断られた: 「別の講師を指名する」(その講師に直接依頼が届く) か
  *   「代講を募集に出す」(今ある代理募集) を選ぶ
  * - 返事待ち (室長レビュー要望2): 待ったまま「ほかの講師にも指名する」。
  *   最初に引き受けた人で決まる (早い者勝ち)
+ * - 代講なし (2026/11/21 本人): 代講を決めずに承認した (「何もしない」)。
+ *   あとから必要になったら、ここで指名するか募集に出す
  */
+const BADGE: Record<
+  UnfilledAbsence["state"],
+  { label: string; variant: "accent" | "secondary" | "outline" }
+> = {
+  declined: { label: "代講未定", variant: "accent" },
+  requested: { label: "返事待ち", variant: "secondary" },
+  none: { label: "代講なし", variant: "outline" },
+};
+
+const PICK_LABEL: Record<UnfilledAbsence["state"], string> = {
+  declined: "別の講師を指名する",
+  requested: "ほかの講師にも指名する",
+  none: "講師を指名する",
+};
+
 export function UnfilledAbsencesPanel({
   absences,
   tutors,
@@ -83,15 +100,19 @@ export function UnfilledAbsencesPanel({
           <div className="space-y-0.5">
             <div className="flex flex-wrap items-center gap-2">
               <span className="font-medium">{a.tutorName}</span>
-              <Badge variant={a.state === "declined" ? "accent" : "secondary"}>
-                {a.state === "declined" ? "代講未定" : "返事待ち"}
+              <Badge variant={BADGE[a.state].variant}>
+                {BADGE[a.state].label}
               </Badge>
             </div>
             <p className="text-sm text-muted-foreground">
               {shortDate(a.date)}（{a.weekdayLabel}） {a.slotLabel} ／ 理由:{" "}
               {a.reason}
             </p>
-            {a.state === "declined" ? (
+            {a.state === "none" ? (
+              <p className="text-sm">
+                代講の指名も募集もしていません。必要になったら、講師を指名するか、募集に出せます。
+              </p>
+            ) : a.state === "declined" ? (
               <p className="text-sm">
                 指名した {names(a.declinedNames)}
                 に断られました。次の手を選んでください。
@@ -111,9 +132,7 @@ export function UnfilledAbsencesPanel({
               htmlFor={`redesignate-${a.id}`}
               className="text-xs text-muted-foreground"
             >
-              {a.state === "declined"
-                ? "別の講師を指名する"
-                : "ほかの講師にも指名する"}
+              {PICK_LABEL[a.state]}
             </label>
             <select
               id={`redesignate-${a.id}`}
@@ -157,7 +176,7 @@ export function UnfilledAbsencesPanel({
           </div>
 
           {/* 返事待ちの依頼があるあいだは募集に出せない (同じコマに並べない) */}
-          {a.state === "declined" && (
+          {a.state !== "requested" && (
             <div className="flex flex-wrap items-center gap-2">
               <Button
                 variant="outline"
