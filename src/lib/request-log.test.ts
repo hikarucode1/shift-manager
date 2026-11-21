@@ -335,9 +335,9 @@ describe("取り消しの安全網 (#213 / #219 の引き継ぎ)", () => {
     expect(toSwapLogEntry(swap()).cancelLabel).toBe("この代講を取り消す");
   });
 
-  it("代講: 終了済みのコマは講師の再申請で戻せないことを出す (#215)", () => {
+  it("代講: 終了済みのコマは取り消すと入れ直せないことを出す", () => {
     expect(toSwapLogEntry(swap({ isEnded: true })).cancelHint).toContain(
-      "「あとから代講を記録する」から記録し直してください",
+      "代講を入れ直せません",
     );
     expect(toSwapLogEntry(swap({ isEnded: false })).cancelHint).toBeNull();
   });

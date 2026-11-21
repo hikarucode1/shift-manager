@@ -375,9 +375,9 @@ export function toSwapLogEntry(i: SwapLogInput): RequestLogEntry {
     i.swapKind === "named" ? "指名交代" : "代講",
     "この代講を取り消す",
     swapCancelWarning(i),
-    // 講師の再申請は hasSlotEnded で塞がるので、戻すには #215 の記録が要る
+    // 講師の再申請は hasSlotEnded で塞がる。#215 の記録は 2026/11/21 に外した
     i.isEnded
-      ? "このコマは既に終了しているため、講師の再申請では戻せません。戻す場合は「あとから代講を記録する」から記録し直してください。"
+      ? "このコマは既に終了しているため、取り消すと代講を入れ直せません。"
       : null,
   );
 }

@@ -12,7 +12,12 @@ import {
   swapRequests,
   weeklyShifts,
 } from "@/db/schema";
-import { findPendingSwap, hasSlotEnded } from "@/lib/swaps";
+import {
+  findPendingSwap,
+  hasSlotEnded,
+  isTrainingShift,
+  TRAINING_NO_SUBSTITUTE,
+} from "@/lib/swaps";
 import { designeeError } from "@/lib/designee-check";
 import { isUniqueViolation } from "@/lib/db-errors";
 import { slotLabelSafe } from "@/lib/slot-meta";
@@ -295,6 +300,13 @@ export async function createAbsenceOnBehalf(
       error: "その講師はこのコマの担当ではありません。",
     };
   }
+  // 2026/11/21 本人: 研修のコマは欠勤だけ (代講の指名・募集はしない)
+  if (
+    followUp !== "none" &&
+    (await isTrainingShift(tutorId, date, slotNumber))
+  ) {
+    return { ok: false, error: TRAINING_NO_SUBSTITUTE };
+  }
 
   // 記録・取り消し (#253 / #283) と同じ関数で探す
   const swapDup = await findPendingSwap(tutorId, date, slotNumber);
@@ -519,7 +531,7 @@ export async function addDesignatedSubstitute(
     return { ok: false, error: "対象の欠勤が見つかりません（取り消されたか、代講が決まった可能性があります）。" };
   }
   if (await hasSlotEnded(absence.date, absence.slotNumber)) {
-    return { ok: false, error: "終了したコマです。実際に入った代講は「あとから代講を記録する」から記録してください。" };
+    return { ok: false, error: "終了したコマには代講を指名できません。" };
   }
   const error = await designeeError({
     absentTutorId: absence.tutorId,

@@ -38,6 +38,10 @@ export type UpcomingShift = {
   slotLabel: string;
   startTime: string;
   endTime: string;
+  /** 研修のコマ (#335)。2026/11/21 本人: 欠勤だけで、代講の対象にしない */
+  isTraining: boolean;
+  /** 体験授業の生徒がいるコマ (#335)。印を出すだけ */
+  isTrial: boolean;
   weekdayLabel: string;
 };
 
@@ -106,6 +110,10 @@ export type PendingAbsence = AbsenceRequestRow & {
    * (`pendingAbsenceActions`) に使う。条件は `absenceTutorAssigned`
    */
   tutorAssigned: boolean;
+  /** 研修のコマ。2026/11/21 本人: 承認のときに代講 (指名・募集) を出さない */
+  isTraining: boolean;
+  /** 体験授業の生徒がいるコマ (印だけ) */
+  isTrial: boolean;
 };
 
 /**
@@ -125,6 +133,35 @@ export function absenceTutorAssigned(): SQL<boolean> {
     where ${weeklyShifts.tutorId} = ${absenceRequests.tutorId}
       and ${weeklyShifts.date} = ${absenceRequests.date}
       and ${weeklyShifts.slotNumber} = ${absenceRequests.slotNumber}
+  )`;
+}
+
+/**
+ * 欠勤申請のコマが研修か / 体験授業の生徒がいるか (2026/11/21 本人: 一覧に
+ * 印を出し、研修は代講を出さない)。`absenceTutorAssigned` と同じく、欠勤の
+ * 講師がそのコマに持っている `weekly_shifts` の行を見る
+ */
+// ⚠️ select の列に置く相関サブクエリでは、drizzle が `${table.col}` を
+// **テーブル名なし** ("id" など) で出す。外側の行を指したつもりが内側の
+// テーブルの列に解決され、条件が常に真/偽になる。なのでここは名前を直書きする
+export function absenceIsTraining(): SQL<boolean> {
+  return sql<boolean>`exists (
+    select 1 from "weekly_shifts" ws
+    where ws."tutor_id" = "absence_requests"."tutor_id"
+      and ws."date" = "absence_requests"."date"
+      and ws."slot_number" = "absence_requests"."slot_number"
+      and ws."is_training"
+  )`;
+}
+
+export function absenceHasTrial(): SQL<boolean> {
+  return sql<boolean>`exists (
+    select 1 from "weekly_shifts" ws
+    join "shift_assignments" sa on sa."weekly_shift_id" = ws."id"
+    where ws."tutor_id" = "absence_requests"."tutor_id"
+      and ws."date" = "absence_requests"."date"
+      and ws."slot_number" = "absence_requests"."slot_number"
+      and sa."is_trial"
   )`;
 }
 
@@ -159,6 +196,13 @@ export async function getTutorUpcomingShifts(
       .select({
         date: weeklyShifts.date,
         slotNumber: weeklyShifts.slotNumber,
+        isTraining: weeklyShifts.isTraining,
+        // ⚠️ 外側の列はテーブル名を直書き (absenceIsTraining の注記)
+        isTrial: sql<boolean>`exists (
+          select 1 from "shift_assignments" sa
+          where sa."weekly_shift_id" = "weekly_shifts"."id"
+            and sa."is_trial"
+        )`,
       })
       .from(weeklyShifts)
       .where(
@@ -201,6 +245,8 @@ export async function getTutorUpcomingShifts(
       startTime: sl.start,
       endTime: sl.end,
       weekdayLabel: weekdayOf(s.date).label,
+      isTraining: s.isTraining,
+      isTrial: s.isTrial,
     });
   }
   return out;
@@ -325,6 +371,8 @@ export async function getPendingAbsenceRequests(): Promise<PendingAbsence[]> {
       createdBy: absenceRequests.createdBy,
       createdAt: absenceRequests.createdAt,
       tutorAssigned: absenceTutorAssigned(),
+      isTraining: absenceIsTraining(),
+      isTrial: absenceHasTrial(),
     })
     .from(absenceRequests)
     .innerJoin(profiles, eq(profiles.id, absenceRequests.tutorId))
@@ -351,6 +399,8 @@ export async function getPendingAbsenceRequests(): Promise<PendingAbsence[]> {
     ...absenceCloseFlags(r.closeKind),
     isEnded: isSlotPast(r.date, slotLabelOf(meta, r.slotNumber).end),
     tutorAssigned: r.tutorAssigned,
+    isTraining: r.isTraining,
+    isTrial: r.isTrial,
   }));
 }
 

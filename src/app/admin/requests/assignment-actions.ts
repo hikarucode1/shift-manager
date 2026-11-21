@@ -22,6 +22,8 @@ export type AssignmentOption = {
   slotLabel: string;
   /** コマが既に終了しているか。欠勤は選べる (むしろ本命)、代講の募集は不可 */
   isEnded: boolean;
+  /** 研修のコマか。研修は欠勤だけで、代講の指名・募集はしない */
+  isTraining: boolean;
   /** その用途では選べないコマ */
   blocked: boolean;
   /** 選択肢に添える短い注記。blocked の理由か、判断材料 */
@@ -67,6 +69,7 @@ export async function listAssignmentsForDate(
         tutorName: profiles.displayName,
         date: weeklyShifts.date,
         slotNumber: weeklyShifts.slotNumber,
+        isTraining: weeklyShifts.isTraining,
       })
       .from(weeklyShifts)
       .innerJoin(profiles, eq(profiles.id, weeklyShifts.tutorId))
@@ -134,6 +137,7 @@ export async function listAssignmentsForDate(
         absence: absentBy.get(k) ?? "none",
         hasPendingSwap: swapping.has(k),
         isEnded,
+        isTraining: s.isTraining,
       });
       return {
         tutorId: s.tutorId,
@@ -141,6 +145,7 @@ export async function listAssignmentsForDate(
         slotNumber: s.slotNumber,
         slotLabel: slot?.label ?? `${s.slotNumber}限`,
         isEnded,
+        isTraining: s.isTraining,
         blocked,
         note,
       };

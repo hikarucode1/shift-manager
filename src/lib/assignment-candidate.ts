@@ -24,6 +24,11 @@ export type CandidateState = {
   hasPendingSwap: boolean;
   /** コマが既に終了しているか */
   isEnded: boolean;
+  /**
+   * 研修のコマか。研修は欠勤だけ登録でき、代講の対象にしない
+   * (2026/11/21 本人の判断)
+   */
+  isTraining: boolean;
 };
 
 export type CandidateMark = {
@@ -43,11 +48,15 @@ export function candidateMark(
     if (s.absence !== "none") {
       return { blocked: true, note: "既に欠勤の申請あり" };
     }
+    if (s.isTraining) {
+      return { blocked: false, note: s.isEnded ? "研修・実施済み" : "研修" };
+    }
     return { blocked: false, note: s.isEnded ? "実施済み" : null };
   }
 
   // 代講の代理募集: 同一コマの pending 交代が衝突する。加えて**終了済みは不可**
   // — 今から代わってもらう相手が居ないため (#178 と同じ規則、#227)
+  if (s.isTraining) return { blocked: true, note: "研修は代講なし" };
   if (s.hasPendingSwap) return { blocked: true, note: "既に交代申請あり" };
   if (s.isEnded) return { blocked: true, note: "終了済み" };
   // ⚠️ 欠勤があっても塞がない —「欠勤が確定していて代講を探す」が本命。
