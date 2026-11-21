@@ -1,0 +1,472 @@
+{
+  "admin/absence-designate": {
+    "w": 1992,
+    "h": 638,
+    "dpr": 2
+  },
+  "admin/absence-recruit": {
+    "w": 1992,
+    "h": 518,
+    "dpr": 2
+  },
+  "admin/absence-reject": {
+    "w": 1992,
+    "h": 468,
+    "dpr": 2
+  },
+  "admin/admins": {
+    "w": 2012,
+    "h": 674,
+    "dpr": 2
+  },
+  "admin/announce-confirm": {
+    "w": 1300,
+    "h": 244,
+    "dpr": 2
+  },
+  "admin/announce-form": {
+    "w": 1384,
+    "h": 1036,
+    "dpr": 2
+  },
+  "admin/announce-sent": {
+    "w": 1400,
+    "h": 782,
+    "dpr": 2
+  },
+  "admin/change-request": {
+    "w": 1992,
+    "h": 424,
+    "dpr": 2
+  },
+  "admin/dashboard": {
+    "w": 2048,
+    "h": 2506,
+    "dpr": 2
+  },
+  "admin/dayoff": {
+    "w": 1992,
+    "h": 768,
+    "dpr": 2
+  },
+  "admin/grant-change": {
+    "w": 1992,
+    "h": 466,
+    "dpr": 2
+  },
+  "admin/header": {
+    "w": 2048,
+    "h": 194,
+    "dpr": 2
+  },
+  "admin/log-absence": {
+    "w": 1992,
+    "h": 382,
+    "dpr": 2
+  },
+  "admin/log-swap-cancel": {
+    "w": 1992,
+    "h": 638,
+    "dpr": 2
+  },
+  "admin/log-tab": {
+    "w": 2008,
+    "h": 270,
+    "dpr": 2
+  },
+  "admin/monthly-schedule": {
+    "w": 1384,
+    "h": 624,
+    "dpr": 2
+  },
+  "admin/nav-upload": {
+    "w": 2048,
+    "h": 194,
+    "dpr": 2
+  },
+  "admin/notifications": {
+    "w": 1428,
+    "h": 1140,
+    "dpr": 2
+  },
+  "admin/period-create": {
+    "w": 1992,
+    "h": 408,
+    "dpr": 2
+  },
+  "admin/period-list": {
+    "w": 1992,
+    "h": 382,
+    "dpr": 2
+  },
+  "admin/proxy-absence": {
+    "w": 1860,
+    "h": 972,
+    "dpr": 2
+  },
+  "admin/proxy-recruit": {
+    "w": 1992,
+    "h": 682,
+    "dpr": 2
+  },
+  "admin/regular-decide": {
+    "w": 1912,
+    "h": 1430,
+    "dpr": 2
+  },
+  "admin/regular-decide-save": {
+    "w": 1908,
+    "h": 858,
+    "dpr": 2
+  },
+  "admin/regular-period-create": {
+    "w": 1992,
+    "h": 736,
+    "dpr": 2
+  },
+  "admin/regular-status": {
+    "w": 2014,
+    "h": 1394,
+    "dpr": 2
+  },
+  "admin/requests-overview": {
+    "w": 2048,
+    "h": 1006,
+    "dpr": 2
+  },
+  "admin/sheet-links-input": {
+    "w": 1992,
+    "h": 658,
+    "dpr": 2
+  },
+  "admin/sheet-links-saved": {
+    "w": 1992,
+    "h": 354,
+    "dpr": 2
+  },
+  "admin/swap-applicants": {
+    "w": 1992,
+    "h": 864,
+    "dpr": 2
+  },
+  "admin/training-cell": {
+    "w": 824,
+    "h": 576,
+    "dpr": 2
+  },
+  "admin/training-heatmap": {
+    "w": 1698,
+    "h": 714,
+    "dpr": 2
+  },
+  "admin/training-list": {
+    "w": 2036,
+    "h": 546,
+    "dpr": 2
+  },
+  "admin/training-notify": {
+    "w": 2022,
+    "h": 308,
+    "dpr": 2
+  },
+  "admin/training-wish-table": {
+    "w": 1992,
+    "h": 1304,
+    "dpr": 2
+  },
+  "admin/tutor-edit": {
+    "w": 1988,
+    "h": 600,
+    "dpr": 2
+  },
+  "admin/tutor-invite": {
+    "w": 2008,
+    "h": 452,
+    "dpr": 2
+  },
+  "admin/tutor-link": {
+    "w": 1988,
+    "h": 552,
+    "dpr": 2
+  },
+  "admin/tutor-resend": {
+    "w": 1988,
+    "h": 648,
+    "dpr": 2
+  },
+  "admin/tutor-subjects": {
+    "w": 2028,
+    "h": 1210,
+    "dpr": 2
+  },
+  "admin/tutors-list": {
+    "w": 2022,
+    "h": 1108,
+    "dpr": 2
+  },
+  "admin/unfilled": {
+    "w": 1992,
+    "h": 784,
+    "dpr": 2
+  },
+  "admin/upload-done": {
+    "w": 1992,
+    "h": 548,
+    "dpr": 2
+  },
+  "admin/upload-file": {
+    "w": 1992,
+    "h": 600,
+    "dpr": 2
+  },
+  "admin/upload-mapping": {
+    "w": 1992,
+    "h": 922,
+    "dpr": 2
+  },
+  "admin/upload-publish": {
+    "w": 2010,
+    "h": 994,
+    "dpr": 2
+  },
+  "admin/upload-summary": {
+    "w": 1992,
+    "h": 556,
+    "dpr": 2
+  },
+  "admin/weekly": {
+    "w": 2278,
+    "h": 1946,
+    "dpr": 2
+  },
+  "admin/weekly-confirmed": {
+    "w": 2000,
+    "h": 188,
+    "dpr": 2
+  },
+  "admin/weekly-undo": {
+    "w": 1616,
+    "h": 150,
+    "dpr": 2
+  },
+  "tutor/absence-decided": {
+    "w": 756,
+    "h": 430,
+    "dpr": 2
+  },
+  "tutor/absence-nav": {
+    "w": 780,
+    "h": 378,
+    "dpr": 2
+  },
+  "tutor/absence-pending": {
+    "w": 756,
+    "h": 398,
+    "dpr": 2
+  },
+  "tutor/absence-phone": {
+    "w": 780,
+    "h": 114,
+    "dpr": 2
+  },
+  "tutor/absence-reason": {
+    "w": 740,
+    "h": 792,
+    "dpr": 2
+  },
+  "tutor/absence-requested": {
+    "w": 756,
+    "h": 470,
+    "dpr": 2
+  },
+  "tutor/absence-target": {
+    "w": 740,
+    "h": 992,
+    "dpr": 2
+  },
+  "tutor/announcement": {
+    "w": 780,
+    "h": 860,
+    "dpr": 2
+  },
+  "tutor/bell": {
+    "w": 780,
+    "h": 114,
+    "dpr": 2
+  },
+  "tutor/change-approved": {
+    "w": 756,
+    "h": 516,
+    "dpr": 2
+  },
+  "tutor/change-form": {
+    "w": 756,
+    "h": 684,
+    "dpr": 2
+  },
+  "tutor/change-pending": {
+    "w": 756,
+    "h": 412,
+    "dpr": 2
+  },
+  "tutor/dayoff-form": {
+    "w": 756,
+    "h": 1068,
+    "dpr": 2
+  },
+  "tutor/dayoff-nav": {
+    "w": 780,
+    "h": 458,
+    "dpr": 2
+  },
+  "tutor/dayoff-pending": {
+    "w": 756,
+    "h": 452,
+    "dpr": 2
+  },
+  "tutor/header": {
+    "w": 780,
+    "h": 170,
+    "dpr": 2
+  },
+  "tutor/home-after-sub": {
+    "w": 756,
+    "h": 636,
+    "dpr": 2
+  },
+  "tutor/home-confirmed": {
+    "w": 780,
+    "h": 550,
+    "dpr": 2
+  },
+  "tutor/home-links": {
+    "w": 756,
+    "h": 530,
+    "dpr": 2
+  },
+  "tutor/home-next-week": {
+    "w": 756,
+    "h": 728,
+    "dpr": 2
+  },
+  "tutor/home-overview": {
+    "w": 780,
+    "h": 2258,
+    "dpr": 2
+  },
+  "tutor/home-week": {
+    "w": 780,
+    "h": 600,
+    "dpr": 2
+  },
+  "tutor/me-profile": {
+    "w": 780,
+    "h": 630,
+    "dpr": 2
+  },
+  "tutor/me-profile-edit": {
+    "w": 780,
+    "h": 1608,
+    "dpr": 2
+  },
+  "tutor/me-reminder": {
+    "w": 756,
+    "h": 748,
+    "dpr": 2
+  },
+  "tutor/notifications": {
+    "w": 764,
+    "h": 856,
+    "dpr": 2
+  },
+  "tutor/push": {
+    "w": 756,
+    "h": 412,
+    "dpr": 2
+  },
+  "tutor/regular-grid": {
+    "w": 720,
+    "h": 760,
+    "dpr": 2
+  },
+  "tutor/regular-list": {
+    "w": 780,
+    "h": 558,
+    "dpr": 2
+  },
+  "tutor/regular-submit": {
+    "w": 756,
+    "h": 282,
+    "dpr": 2
+  },
+  "tutor/regular-submitted": {
+    "w": 756,
+    "h": 322,
+    "dpr": 2
+  },
+  "tutor/schedules": {
+    "w": 780,
+    "h": 520,
+    "dpr": 2
+  },
+  "tutor/sub-applied": {
+    "w": 756,
+    "h": 352,
+    "dpr": 2
+  },
+  "tutor/sub-asked": {
+    "w": 756,
+    "h": 432,
+    "dpr": 2
+  },
+  "tutor/sub-decline": {
+    "w": 756,
+    "h": 480,
+    "dpr": 2
+  },
+  "tutor/sub-nav": {
+    "w": 780,
+    "h": 474,
+    "dpr": 2
+  },
+  "tutor/sub-open": {
+    "w": 756,
+    "h": 352,
+    "dpr": 2
+  },
+  "tutor/tab-absence": {
+    "w": 780,
+    "h": 118,
+    "dpr": 2
+  },
+  "tutor/tab-regular": {
+    "w": 780,
+    "h": 118,
+    "dpr": 2
+  },
+  "tutor/tab-training": {
+    "w": 780,
+    "h": 118,
+    "dpr": 2
+  },
+  "tutor/training-days": {
+    "w": 764,
+    "h": 1240,
+    "dpr": 2
+  },
+  "tutor/training-list": {
+    "w": 780,
+    "h": 598,
+    "dpr": 2
+  },
+  "tutor/training-submit": {
+    "w": 780,
+    "h": 320,
+    "dpr": 2
+  },
+  "tutor/training-submitted": {
+    "w": 780,
+    "h": 328,
+    "dpr": 2
+  }
+}
