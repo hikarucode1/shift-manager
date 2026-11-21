@@ -475,17 +475,6 @@ export function AdminSubmissionsOverview({
         </p>
       )}
 
-      {/* #350: 下の 2 つのカードに効く */}
-      <div className="space-y-1.5 rounded-lg border bg-muted/30 p-3">
-        <p className="text-sm font-medium">文理・科目で絞り込む</p>
-        <SubjectFilterBar value={subjectFilter} onChange={setSubjectFilter} />
-        {filterOn && (
-          <p className="text-xs text-muted-foreground">
-            合う講師 {tutors.filter(isMatch).length} 人を先頭に出し、合わない講師は薄く表示しています。「＋ 希望に無い講師を入れる」では、合う講師の名前に ● が付きます。
-          </p>
-        )}
-      </div>
-
       {/* 講師ごとのステータスカード
           (11/18 本人: 1 人 1 枚のカードだと縦に長いので、数と「まだの人」だけを
           先に出し、全員分は開いたときだけ出す) */}
@@ -714,6 +703,16 @@ export function AdminSubmissionsOverview({
               まだ決定していない変更は、この表示には出ません（「全員を表示」で確かめてください）。
             </p>
           )}
+          {/* #350 / 室長レビュー要望3: 表のすぐ上に置く（上の講師別ステータスにも効く） */}
+          <div className="space-y-1.5 rounded-lg border bg-muted/30 p-3">
+            <p className="text-sm font-medium">文理・科目で絞り込む</p>
+            <SubjectFilterBar value={subjectFilter} onChange={setSubjectFilter} />
+            {filterOn && (
+              <p className="text-xs text-muted-foreground">
+                合う講師 {tutors.filter(isMatch).length} 人を先頭に出し、合わない講師は薄く表示しています。「＋ 希望に無い講師を入れる」では、合う講師の名前に ● が付きます。
+              </p>
+            )}
+          </div>
           <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-muted-foreground">
             <span className="flex items-center gap-1"><span className="inline-block h-3 w-5 rounded border border-input bg-background" />出られる（○）</span>
             <span className="flex items-center gap-1"><span className="inline-block h-3 w-5 rounded border border-amber-300 bg-amber-50" />できれば避けたい（△）</span>
