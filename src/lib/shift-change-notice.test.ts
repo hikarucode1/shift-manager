@@ -47,6 +47,13 @@ describe("shiftChangesByTutor", () => {
     ]);
   });
 
+  it("増えたコマが未定 (名前だけ) なら undecided を付ける", () => {
+    const m = shiftChangesByTutor([], [c("t1", "2026-12-04", 3, false)]);
+    expect(m.get("t1")).toEqual([
+      { kind: "added", date: "2026-12-04", slotNumber: 3, undecided: true },
+    ]);
+  });
+
   it("担当の講師が入れ替わったら、両方に届く", () => {
     const m = shiftChangesByTutor(
       [c("t1", "2026-12-03", 5)],
@@ -73,6 +80,15 @@ describe("shiftChangeBody", () => {
     ).toBe(
       "授業が入った 12/3（木）5限、追加 12/4（金）3限、なし 12/5（土）2限",
     );
+  });
+
+  it("未定で増えたコマは「追加（未定）」と書く", () => {
+    expect(
+      shiftChangeBody(
+        [{ kind: "added", date: "2026-12-04", slotNumber: 3, undecided: true }],
+        label,
+      ),
+    ).toBe("追加（未定） 12/4（金）3限");
   });
 
   it("多いときは「ほか N コマ」にまとめる", () => {

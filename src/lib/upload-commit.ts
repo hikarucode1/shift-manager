@@ -1,5 +1,5 @@
 import "server-only";
-import { and, arrayContains, eq, inArray, sql } from "drizzle-orm";
+import { and, arrayContains, eq, inArray } from "drizzle-orm";
 import { db } from "@/db/client";
 import {
   profiles,
@@ -10,7 +10,11 @@ import {
   swapRequests,
   weeklyShifts,
 } from "@/db/schema";
-import type { ParsedShiftCsv } from "@/lib/shift-csv-parser";
+import {
+  isUndecidedAssignment,
+  type ParsedShiftCsv,
+} from "@/lib/shift-csv-parser";
+import { removeUndecidedShift, SHIFT_IS_FILLED } from "@/lib/shift-filled";
 import { findMappingDuplicates } from "@/lib/mapping-validation";
 import { findNonTutorIds } from "@/lib/tutor-validation";
 import { substitutionNote } from "@/lib/substitution-note";
@@ -239,12 +243,8 @@ export async function commitShiftUpload(
               tutorId: weeklyShifts.tutorId,
               date: weeklyShifts.date,
               slotNumber: weeklyShifts.slotNumber,
-              // 要望9: 生徒 (体験を含む) か研修が入っているか。false = 未定。
-              // ⚠️ select 列の相関サブクエリなので外側はテーブル名を直書き
-              filled: sql<boolean>`("weekly_shifts"."is_training" or exists (
-                select 1 from "shift_assignments" sa
-                where sa."weekly_shift_id" = "weekly_shifts"."id"
-              ))`,
+              // 要望9: 生徒 (体験を含む) か研修が入っているか。false = 未定
+              filled: SHIFT_IS_FILLED,
             })
             .from(weeklyShifts)
             .where(inArray(weeklyShifts.date, uploadedDates))
@@ -301,6 +301,9 @@ export async function commitShiftUpload(
             tutorId,
             date: day.date,
             slotNumber: slot.slotNumber,
+            // 室長レビュー要望9: 名前だけの行は「未定」。代講の再適用では
+            // そのコマに居ると数えない
+            filled: !isUndecidedAssignment(a),
           });
 
           if (a.students.length > 0) {
@@ -426,6 +429,11 @@ export async function commitShiftUpload(
       names.find((n) => n.id === id)?.name ?? "不明";
 
     for (const a of plan.applies) {
+      // 代講者が座席表に名前だけ載っている (未定) ときは、その行を消してから
+      // 付け替える (weekly_shifts_unique に当たるため)
+      if (a.clearUndecided) {
+        await removeUndecidedShift(tx, a.setTutorId, a.date, a.slotNumber);
+      }
       await tx
         .update(weeklyShifts)
         .set({
@@ -453,12 +461,8 @@ export async function commitShiftUpload(
               tutorId: weeklyShifts.tutorId,
               date: weeklyShifts.date,
               slotNumber: weeklyShifts.slotNumber,
-              // 要望9: 生徒 (体験を含む) か研修が入っているか。false = 未定。
-              // ⚠️ select 列の相関サブクエリなので外側はテーブル名を直書き
-              filled: sql<boolean>`("weekly_shifts"."is_training" or exists (
-                select 1 from "shift_assignments" sa
-                where sa."weekly_shift_id" = "weekly_shifts"."id"
-              ))`,
+              // 要望9: 生徒 (体験を含む) か研修が入っているか。false = 未定
+              filled: SHIFT_IS_FILLED,
             })
             .from(weeklyShifts)
             .where(inArray(weeklyShifts.date, uploadedDates))

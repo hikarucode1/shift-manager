@@ -11,6 +11,7 @@ import {
   weeklyShifts,
 } from "@/db/schema";
 import { candidateMark } from "@/lib/assignment-candidate";
+import { SHIFT_BLOCKS_SUBSTITUTION } from "@/lib/shift-filled";
 import { getSlotMeta } from "@/lib/slot-meta";
 import { isSlotPast } from "@/lib/slot-time";
 import { isValidIsoDate } from "@/lib/week";
@@ -168,6 +169,7 @@ export async function listAssignmentsForDate(
  * 指定コマの代講者候補 (#215)。現役の tutor から、担当本人と**そのコマに
  * 既に出勤予定の講師**を除く (`weekly_shifts_unique` に当たるため)。
  * `getEligibleApplicantIds` の氏名つき版で、判定条件は同じ。
+ * 未定のコマ (名前だけ) の講師は候補に残す (室長レビュー要望9)。
  */
 export async function listEligibleSubstitutes(
   input: unknown,
@@ -211,6 +213,8 @@ export async function listEligibleSubstitutes(
         and(
           eq(weeklyShifts.date, date),
           eq(weeklyShifts.slotNumber, slotNumber),
+          // 未定のコマの講師は候補に出す (isTutorBusyAt と同じ決まり)
+          SHIFT_BLOCKS_SUBSTITUTION,
         ),
       ),
   ]);

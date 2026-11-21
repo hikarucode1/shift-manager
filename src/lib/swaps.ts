@@ -30,6 +30,7 @@ import {
   assignmentKey,
   visibleOpenSwaps,
 } from "@/lib/open-swap-visibility";
+import { SHIFT_BLOCKS_SUBSTITUTION } from "@/lib/shift-filled";
 import { busySlotKey } from "@/lib/slot-key";
 import { getSlotMeta } from "@/lib/slot-meta";
 import { isSlotPast } from "@/lib/slot-time";
@@ -199,6 +200,11 @@ export type Executor =
  * 指名の作成時検証 (createSwapRequest)・承認時の applicant 検証
  * (admin/requests/swap-actions) はいずれもこの 1 箇所を通す。transaction 内から
  * 呼ぶ場合は executor に tx を渡す (省略時は db 本体)。
+ *
+ * ⚠️ **「未定」のコマ (座席表に名前だけ、室長レビュー要望9) は出勤予定に
+ * 数えない** (そのコマに欠勤の申請が無い限り)。授業が入っていない講師こそ
+ * 代講を頼む相手なので、塞ぐと指名も応募もできなくなる。担当を付け替える側は
+ * 直前に `removeUndecidedShift` で未定の行を消すこと (一意制約に当たる)。
  */
 export async function isTutorBusyAt(
   date: string,
@@ -214,6 +220,7 @@ export async function isTutorBusyAt(
         eq(weeklyShifts.tutorId, tutorId),
         eq(weeklyShifts.date, date),
         eq(weeklyShifts.slotNumber, slotNumber),
+        SHIFT_BLOCKS_SUBSTITUTION,
       ),
     )
     .limit(1);
@@ -474,6 +481,8 @@ export async function getEligibleApplicantIds(
         and(
           eq(weeklyShifts.date, date),
           eq(weeklyShifts.slotNumber, slotNumber),
+          // 未定のコマの講師は応募できる (isTutorBusyAt と同じ決まり)
+          SHIFT_BLOCKS_SUBSTITUTION,
         ),
       ),
   ]);

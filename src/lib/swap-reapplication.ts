@@ -29,6 +29,15 @@ export type InsertedShift = {
   tutorId: string;
   date: string;
   slotNumber: number;
+  /**
+   * 室長レビュー要望9: 予定 (授業・体験・研修) が入っているか。false =「未定」
+   * (座席表に名前だけ)。省略時は true。
+   *
+   * ⚠️ **未定の行は「そのコマに居る」と数えない**。数えると、代講者が座席表に
+   * 名前だけ載っている (よくある) だけで `applicant-conflict` になり、承認済みの
+   * 代講が取り込みのたびに巻き戻る。
+   */
+  filled?: boolean;
 };
 
 export type SkipReason =
@@ -62,6 +71,11 @@ export type PlannedUpdate = {
   /** note に書く「A → B」の A / B */
   noteFromId: string;
   noteToId: string;
+  /**
+   * 付け替え先 (setTutorId) がそのコマに「未定」の行を持っている。付け替える
+   * 前にその行を消すこと (`weekly_shifts_unique` に当たる)
+   */
+  clearUndecided: boolean;
 };
 
 export type ReapplicationPlan = {
@@ -83,11 +97,14 @@ export function planSwapReapplication(
   inserted: InsertedShift[],
   approvedSwaps: ApprovedSwap[],
 ): ReapplicationPlan {
-  // コマごとの在席者。適用のたびに更新するので、連鎖が正しく積み上がる
+  // コマごとの在席者 (予定が入っている人だけ)。適用のたびに更新するので、
+  // 連鎖が正しく積み上がる。未定の人は別に持つ (付け替え先になれる)
   const occupancy = new Map<string, Set<string>>();
+  const undecided = new Map<string, Set<string>>();
   for (const row of inserted) {
     const k = key(row.date, row.slotNumber);
-    (occupancy.get(k) ?? occupancy.set(k, new Set()).get(k)!).add(row.tutorId);
+    const map = row.filled === false ? undecided : occupancy;
+    (map.get(k) ?? map.set(k, new Set()).get(k)!).add(row.tutorId);
   }
 
   // ⚠️ 決定的に並べる。decidedAt が同値だと Array#sort は安定ソートなので
@@ -121,6 +138,7 @@ export function planSwapReapplication(
           matchTutorId: sw.applicantId,
           setTutorId: sw.applicantId,
           ...note,
+          clearUndecided: false,
         });
         plan.skipped.push({
           swapId: sw.id,
@@ -156,6 +174,8 @@ export function planSwapReapplication(
     // C→A が applicant-conflict と誤判定され復元されない (レビューで実測)。
     here.delete(sw.requesterId);
     here.add(sw.applicantId);
+    // 代講者が座席表に名前だけ載っている (未定) なら、その行を消してから付け替える
+    const clearUndecided = undecided.get(k)?.delete(sw.applicantId) ?? false;
     plan.applies.push({
       swapId: sw.id,
       date: sw.date,
@@ -163,6 +183,7 @@ export function planSwapReapplication(
       matchTutorId: sw.requesterId,
       setTutorId: sw.applicantId,
       ...note,
+      clearUndecided,
     });
   }
 
